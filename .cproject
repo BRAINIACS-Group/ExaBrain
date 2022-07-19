@@ -1,0 +1,390 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?fileVersion 4.0.0?><cproject storage_type_id="org.eclipse.cdt.core.XmlProjectDescriptionStorage">
+    	
+    <storageModule moduleId="org.eclipse.cdt.core.settings">
+        		
+        <cconfiguration id="0.502702645">
+            			
+            <storageModule buildSystemId="org.eclipse.cdt.managedbuilder.core.configurationDataProvider" id="0.502702645" moduleId="org.eclipse.cdt.core.settings" name="Default">
+                				
+                <externalSettings/>
+                				
+                <extensions>
+                    					
+                    <extension id="org.eclipse.cdt.core.GASErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+                    					
+                    <extension id="org.eclipse.cdt.core.GmakeErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+                    					
+                    <extension id="org.eclipse.cdt.core.GLDErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+                    					
+                    <extension id="org.eclipse.cdt.core.VCErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+                    					
+                    <extension id="org.eclipse.cdt.core.CWDLocator" point="org.eclipse.cdt.core.ErrorParser"/>
+                    					
+                    <extension id="org.eclipse.cdt.core.GCCErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+                    				
+                </extensions>
+                			
+            </storageModule>
+            			
+            <storageModule moduleId="cdtBuildSystem" version="4.0.0">
+                				
+                <configuration buildProperties="" description="" id="0.502702645" name="Default" optionalBuildProperties="" parent="org.eclipse.cdt.build.core.prefbase.cfg">
+                    					
+                    <folderInfo id="0.502702645." name="/" resourcePath="">
+                        						
+                        <toolChain id="org.eclipse.cdt.build.core.prefbase.toolchain.1195319461" name="No ToolChain" resourceTypeBasedDiscovery="false" superClass="org.eclipse.cdt.build.core.prefbase.toolchain">
+                            							
+                            <targetPlatform id="org.eclipse.cdt.build.core.prefbase.toolchain.1195319461.954460323" name=""/>
+                            							
+                            <builder id="org.eclipse.cdt.build.core.settings.default.builder.1266057142" keepEnvironmentInBuildfile="false" managedBuildOn="false" name="Gnu Make Builder" superClass="org.eclipse.cdt.build.core.settings.default.builder"/>
+                            							
+                            <tool id="org.eclipse.cdt.build.core.settings.holder.libs.1053034753" name="holder for library settings" superClass="org.eclipse.cdt.build.core.settings.holder.libs"/>
+                            							
+                            <tool id="org.eclipse.cdt.build.core.settings.holder.866282349" name="Assembly" superClass="org.eclipse.cdt.build.core.settings.holder">
+                                								
+                                <option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="org.eclipse.cdt.build.core.settings.holder.incpaths.1799097396" name="Include Paths" superClass="org.eclipse.cdt.build.core.settings.holder.incpaths" valueType="includePath">
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/dealii-9.2.0-hhnshee3fa5xzivzwuq22hkghpocfn5z/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/trilinos-13.0.0-bvjjehic4tml7fkzoi7qkuakn6waheuh/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include/c++/v1"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/openmpi-3.1.6-7txgki6ad4t2nwusqypt32vs3hb4wzll/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/adol-c-2.7.2-ve6hhyqapl3toctrqlor7vfsfrv3n27b/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/arpack-ng-develop-n6wf4pgam3yjjxymhhzbnll3fq3yxr7d/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/assimp-4.0.1-p7lhoyf6hurytgconmodtb334rcik2bp/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/boost-1.74.0-2z3443gu2anaely3uzu4bfqvipqsowfe/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/bzip2-1.0.8-6ntaixwb6u5izywisp54kz3ma4qrtddi/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/glm-0.9.7.1-l5hqcxzfve5xj2kbjl2gm3m542jfrpow/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/hdf5-1.10.7-brdwv5u7coml2yp3bgh7wlo5nexe67w2/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/gsl-2.5-adnxindrzdhn4kjdzheppf3l4jqrddyt/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/hwloc-1.11.11-xqeg6vnz35ro3errdnuxackumgj4htuu/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/hypre-2.18.2-75ol6dbgackownzlofbmfdwrxngapao5/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/intel-tbb-2020.3-sh5fpoukg5dsqkhpekqiwszmuyffdeey/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/libxml2-2.9.10-dqzlvh6klvk75t2gw7qnt64s3bspzozx/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/matio-1.5.17-jexc2vcgixzkr3kqgxzjuysv3wvnnxmg/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/metis-5.1.0-vp3hrgecwzupiggbd3iq24f2abnhmlwy/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/mpc-1.1.0-ipzjelf4ltad6vlzse6qmrr2tqdbkopt/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/mpfr-4.0.2-uf3rwfsx4gpd3erlxx2fl44jd2x6a3vz/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/muparser-2.2.6.1-abhzovr4swev3sgcwdkb666glnaenrnp/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/nanoflann-1.2.3-yzo2pg4wddxcc73gqomuta6vyt2ogaio/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/ncurses-6.2-eli4aaxvywk6frof7d4exqzj3vtsxk6z/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/netcdf-c-4.7.4-ouutgzbrmmivwo3mhpv7yge42cpqj7of/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/netcdf-cxx-4.2-pubiho7wqrd5yhznkbss3mqxpxruybwp/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/libiconv-1.16-xrjlxcvkn62ahhgvknu3nreo4ehaqex2/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/netgen-5.3.1-2u52x6p4jse6pbb7ofgra6szjekkyasq/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/oce-0.18.3-g7ey7ghfxm4vmwdnff6eozutzrgicorl/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/openblas-develop-7snxdhpo2pw2ua3e52oivqxjmokjv4lj/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/gmp-6.1.2-thkt4irpgheoqflf5tzkfuwkqmkqz4mc/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/gmsh-4.5.4-b52y73j6df7nvd4zkvwe7krtdb7awsda/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/p4est-2.2-slbm42jwfyuiitdvmnffloui6snyc76o/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/parmetis-4.0.3-t6bnqtzndkw66uvstojsux4g36t2pesh/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/petsc-3.13.4-g2zy32kx64uw565dvxevgzz6ljringvm/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/slepc-3.13.4-ucasusbsrdsqn6td5tctwarl2x5doksw/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/suite-sparse-5.7.2-nf4i3n3mjmhhfinwyrxayv5fjf36ugsq/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/sundials-3.2.1-kmo5oqjy4os2opm6sdjhb4qhrawkhyaj/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/superlu-dist-6.3.0-icf5euibii2bdf3owxf24ou74hgk7zj4/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/symengine-0.6.0-4lfwe2eeqynbxojlt57no2tttjwxzrxq/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/tetgen-1.5.0-denf6fgbfwwz5qkq6xsyt2npcboqwaux/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/xz-5.2.5-gfa5h76vfxvbstqeo2ub5aao424gfzks/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/zlib-1.2.11-x2anksgssxsxa7pcnhzg5k3dhgacglze/include"/>
+                                    								
+                                </option>
+                                								
+                                <inputType id="org.eclipse.cdt.build.core.settings.holder.inType.1811479942" languageId="org.eclipse.cdt.core.assembly" languageName="Assembly" sourceContentType="org.eclipse.cdt.core.asmSource" superClass="org.eclipse.cdt.build.core.settings.holder.inType"/>
+                                							
+                            </tool>
+                            							
+                            <tool id="org.eclipse.cdt.build.core.settings.holder.1127744970" name="GNU C++" superClass="org.eclipse.cdt.build.core.settings.holder">
+                                								
+                                <option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="org.eclipse.cdt.build.core.settings.holder.incpaths.461095774" name="Include Paths" superClass="org.eclipse.cdt.build.core.settings.holder.incpaths" valueType="includePath">
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/dealii-9.2.0-hhnshee3fa5xzivzwuq22hkghpocfn5z/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/trilinos-13.0.0-bvjjehic4tml7fkzoi7qkuakn6waheuh/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include/c++/v1"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/openmpi-3.1.6-7txgki6ad4t2nwusqypt32vs3hb4wzll/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/adol-c-2.7.2-ve6hhyqapl3toctrqlor7vfsfrv3n27b/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/arpack-ng-develop-n6wf4pgam3yjjxymhhzbnll3fq3yxr7d/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/assimp-4.0.1-p7lhoyf6hurytgconmodtb334rcik2bp/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/boost-1.74.0-2z3443gu2anaely3uzu4bfqvipqsowfe/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/bzip2-1.0.8-6ntaixwb6u5izywisp54kz3ma4qrtddi/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/glm-0.9.7.1-l5hqcxzfve5xj2kbjl2gm3m542jfrpow/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/hdf5-1.10.7-brdwv5u7coml2yp3bgh7wlo5nexe67w2/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/gsl-2.5-adnxindrzdhn4kjdzheppf3l4jqrddyt/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/hwloc-1.11.11-xqeg6vnz35ro3errdnuxackumgj4htuu/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/hypre-2.18.2-75ol6dbgackownzlofbmfdwrxngapao5/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/intel-tbb-2020.3-sh5fpoukg5dsqkhpekqiwszmuyffdeey/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/libxml2-2.9.10-dqzlvh6klvk75t2gw7qnt64s3bspzozx/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/matio-1.5.17-jexc2vcgixzkr3kqgxzjuysv3wvnnxmg/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/metis-5.1.0-vp3hrgecwzupiggbd3iq24f2abnhmlwy/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/mpc-1.1.0-ipzjelf4ltad6vlzse6qmrr2tqdbkopt/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/mpfr-4.0.2-uf3rwfsx4gpd3erlxx2fl44jd2x6a3vz/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/muparser-2.2.6.1-abhzovr4swev3sgcwdkb666glnaenrnp/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/nanoflann-1.2.3-yzo2pg4wddxcc73gqomuta6vyt2ogaio/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/ncurses-6.2-eli4aaxvywk6frof7d4exqzj3vtsxk6z/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/netcdf-c-4.7.4-ouutgzbrmmivwo3mhpv7yge42cpqj7of/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/netcdf-cxx-4.2-pubiho7wqrd5yhznkbss3mqxpxruybwp/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/libiconv-1.16-xrjlxcvkn62ahhgvknu3nreo4ehaqex2/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/netgen-5.3.1-2u52x6p4jse6pbb7ofgra6szjekkyasq/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/oce-0.18.3-g7ey7ghfxm4vmwdnff6eozutzrgicorl/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/openblas-develop-7snxdhpo2pw2ua3e52oivqxjmokjv4lj/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/gmp-6.1.2-thkt4irpgheoqflf5tzkfuwkqmkqz4mc/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/gmsh-4.5.4-b52y73j6df7nvd4zkvwe7krtdb7awsda/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/p4est-2.2-slbm42jwfyuiitdvmnffloui6snyc76o/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/parmetis-4.0.3-t6bnqtzndkw66uvstojsux4g36t2pesh/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/petsc-3.13.4-g2zy32kx64uw565dvxevgzz6ljringvm/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/slepc-3.13.4-ucasusbsrdsqn6td5tctwarl2x5doksw/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/suite-sparse-5.7.2-nf4i3n3mjmhhfinwyrxayv5fjf36ugsq/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/sundials-3.2.1-kmo5oqjy4os2opm6sdjhb4qhrawkhyaj/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/superlu-dist-6.3.0-icf5euibii2bdf3owxf24ou74hgk7zj4/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/symengine-0.6.0-4lfwe2eeqynbxojlt57no2tttjwxzrxq/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/tetgen-1.5.0-denf6fgbfwwz5qkq6xsyt2npcboqwaux/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/xz-5.2.5-gfa5h76vfxvbstqeo2ub5aao424gfzks/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/zlib-1.2.11-x2anksgssxsxa7pcnhzg5k3dhgacglze/include"/>
+                                    								
+                                </option>
+                                								
+                                <inputType id="org.eclipse.cdt.build.core.settings.holder.inType.489254996" languageId="org.eclipse.cdt.core.g++" languageName="GNU C++" sourceContentType="org.eclipse.cdt.core.cxxSource,org.eclipse.cdt.core.cxxHeader" superClass="org.eclipse.cdt.build.core.settings.holder.inType"/>
+                                							
+                            </tool>
+                            							
+                            <tool id="org.eclipse.cdt.build.core.settings.holder.1855856697" name="GNU C" superClass="org.eclipse.cdt.build.core.settings.holder">
+                                								
+                                <option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="org.eclipse.cdt.build.core.settings.holder.incpaths.1662330842" name="Include Paths" superClass="org.eclipse.cdt.build.core.settings.holder.incpaths" valueType="includePath">
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/dealii-9.2.0-hhnshee3fa5xzivzwuq22hkghpocfn5z/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/trilinos-13.0.0-bvjjehic4tml7fkzoi7qkuakn6waheuh/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include/c++/v1"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/openmpi-3.1.6-7txgki6ad4t2nwusqypt32vs3hb4wzll/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/adol-c-2.7.2-ve6hhyqapl3toctrqlor7vfsfrv3n27b/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/arpack-ng-develop-n6wf4pgam3yjjxymhhzbnll3fq3yxr7d/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/assimp-4.0.1-p7lhoyf6hurytgconmodtb334rcik2bp/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/boost-1.74.0-2z3443gu2anaely3uzu4bfqvipqsowfe/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/bzip2-1.0.8-6ntaixwb6u5izywisp54kz3ma4qrtddi/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/glm-0.9.7.1-l5hqcxzfve5xj2kbjl2gm3m542jfrpow/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/hdf5-1.10.7-brdwv5u7coml2yp3bgh7wlo5nexe67w2/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/gsl-2.5-adnxindrzdhn4kjdzheppf3l4jqrddyt/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/hwloc-1.11.11-xqeg6vnz35ro3errdnuxackumgj4htuu/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/hypre-2.18.2-75ol6dbgackownzlofbmfdwrxngapao5/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/intel-tbb-2020.3-sh5fpoukg5dsqkhpekqiwszmuyffdeey/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/libxml2-2.9.10-dqzlvh6klvk75t2gw7qnt64s3bspzozx/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/matio-1.5.17-jexc2vcgixzkr3kqgxzjuysv3wvnnxmg/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/metis-5.1.0-vp3hrgecwzupiggbd3iq24f2abnhmlwy/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/mpc-1.1.0-ipzjelf4ltad6vlzse6qmrr2tqdbkopt/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/mpfr-4.0.2-uf3rwfsx4gpd3erlxx2fl44jd2x6a3vz/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/muparser-2.2.6.1-abhzovr4swev3sgcwdkb666glnaenrnp/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/nanoflann-1.2.3-yzo2pg4wddxcc73gqomuta6vyt2ogaio/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/ncurses-6.2-eli4aaxvywk6frof7d4exqzj3vtsxk6z/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/netcdf-c-4.7.4-ouutgzbrmmivwo3mhpv7yge42cpqj7of/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/netcdf-cxx-4.2-pubiho7wqrd5yhznkbss3mqxpxruybwp/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/libiconv-1.16-xrjlxcvkn62ahhgvknu3nreo4ehaqex2/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/netgen-5.3.1-2u52x6p4jse6pbb7ofgra6szjekkyasq/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/oce-0.18.3-g7ey7ghfxm4vmwdnff6eozutzrgicorl/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/openblas-develop-7snxdhpo2pw2ua3e52oivqxjmokjv4lj/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/gmp-6.1.2-thkt4irpgheoqflf5tzkfuwkqmkqz4mc/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/gmsh-4.5.4-b52y73j6df7nvd4zkvwe7krtdb7awsda/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/p4est-2.2-slbm42jwfyuiitdvmnffloui6snyc76o/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/parmetis-4.0.3-t6bnqtzndkw66uvstojsux4g36t2pesh/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/petsc-3.13.4-g2zy32kx64uw565dvxevgzz6ljringvm/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/slepc-3.13.4-ucasusbsrdsqn6td5tctwarl2x5doksw/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/suite-sparse-5.7.2-nf4i3n3mjmhhfinwyrxayv5fjf36ugsq/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/sundials-3.2.1-kmo5oqjy4os2opm6sdjhb4qhrawkhyaj/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/superlu-dist-6.3.0-icf5euibii2bdf3owxf24ou74hgk7zj4/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/symengine-0.6.0-4lfwe2eeqynbxojlt57no2tttjwxzrxq/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/tetgen-1.5.0-denf6fgbfwwz5qkq6xsyt2npcboqwaux/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/xz-5.2.5-gfa5h76vfxvbstqeo2ub5aao424gfzks/include"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="/Users/alexandergreiner/spack_alex/opt/spack/darwin-catalina-x86_64/apple-clang-12.0.0/zlib-1.2.11-x2anksgssxsxa7pcnhzg5k3dhgacglze/include"/>
+                                    								
+                                </option>
+                                								
+                                <inputType id="org.eclipse.cdt.build.core.settings.holder.inType.1132268522" languageId="org.eclipse.cdt.core.gcc" languageName="GNU C" sourceContentType="org.eclipse.cdt.core.cSource,org.eclipse.cdt.core.cHeader" superClass="org.eclipse.cdt.build.core.settings.holder.inType"/>
+                                							
+                            </tool>
+                            						
+                        </toolChain>
+                        					
+                    </folderInfo>
+                    				
+                </configuration>
+                			
+            </storageModule>
+            			
+            <storageModule moduleId="org.eclipse.cdt.core.externalSettings"/>
+            		
+        </cconfiguration>
+        	
+    </storageModule>
+    	
+    <storageModule moduleId="cdtBuildSystem" version="4.0.0">
+        		
+        <project id="DACH.null.1968765554" name="DACH"/>
+        	
+    </storageModule>
+    	
+    <storageModule moduleId="scannerConfiguration">
+        		
+        <autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+        		
+        <scannerConfigBuildInfo instanceId="0.502702645">
+            			
+            <autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+            		
+        </scannerConfigBuildInfo>
+        		
+        <scannerConfigBuildInfo instanceId="0.1525242494">
+            			
+            <autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+            		
+        </scannerConfigBuildInfo>
+        	
+    </storageModule>
+    	
+    <storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
+    	
+    <storageModule moduleId="org.eclipse.cdt.make.core.buildtargets">
+        		
+        <buildTargets>
+            			
+            <target name="all" path="" targetID="org.eclipse.cdt.build.MakeTargetBuilder">
+                				
+                <buildCommand>make</buildCommand>
+                				
+                <buildArguments/>
+                				
+                <buildTarget>all</buildTarget>
+                				
+                <stopOnError>true</stopOnError>
+                				
+                <useDefaultCommand>true</useDefaultCommand>
+                				
+                <runAllBuilders>true</runAllBuilders>
+                			
+            </target>
+            		
+        </buildTargets>
+        	
+    </storageModule>
+    
+</cproject>

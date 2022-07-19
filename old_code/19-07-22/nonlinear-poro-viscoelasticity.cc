@@ -8281,38 +8281,13 @@ namespace NonLinearPoroViscoElasticity
     			const double r_pt = std::sqrt(pt[0]*pt[0]+pt[1]*pt[1]);		// radius of THIS point
     			const double r_c = std::sqrt(2*r_i*std::abs(d_c)-std::abs(d_c)*std::abs(d_c));		// current indentation radius
     			const double r_p = std::sqrt(2*r_i*std::abs(d_p)-std::abs(d_p)*std::abs(d_p));		// previous indentation radius
-    			const double dz_pt = 20 - pt[2]; 	// current z-displacement of this point
 
-    			const double height = 20;
-    			const double z_0 = height + r_i + d_c; 	// current z-position of center of spherical indenter (d_c is negative)
-    			const double pt_z_c = z_0 - std::sqrt((r_i*r_i) - (pt[0]*pt[0]) - (pt[1]*pt[1])); 	// current z-position of a point on the indenter surface
-
-    			if (pt[2] > pt_z_c) {
-    				values(2) = -1.0*(pt[2]-pt_z_c);
-			 std::ofstream z_displ;
-            		 z_displ.open("z_displ", std::ofstream::app);
-            		 z_displ << std::setprecision(5) << std::scientific;
-            		 z_displ << std::setw(16) << pt[0] << ","
-				 << std::setw(16) << pt[1] << ","
-				 << std::setw(16) << pt[2] << ","
-				 << std::setw(16) << z_0 << ","
-				 << std::setw(16) << pt_z_c << ","
-				 << std::setw(16) << values(2) << std::endl;
-            		 z_displ.close();
-		}
-			else
-				std::cout << "point below indenter" << std::endl;
-
-    			/*double counter = 0; // count point that have boundary_id 100 but are outside the current indentation radius r_c and get 0 displ
     			if (r_pt <= r_p) {
     				values(2) = d_c - d_p;
     			}  else if ( r_pt  > r_p && r_pt <= r_c) {
-    				values(2) = -1.0 * ((std::abs(d_c)-r_i + std::sqrt((r_i*r_i)-(r_pt*r_pt))) - dz_pt);
+    				values(2) = -1.0 * (std::abs(d_c)-r_i + std::sqrt((r_i*r_i)-(r_pt*r_pt)));
 
-    			} else {
-    				++counter;
-    				std::cout << "Point " << pt[0] << " " << pt[1] << " " << pt[2] << " outside r_c!" << std::endl;
-    			}*/
+    			}
     		}
 
     		void vector_value_list(const std::vector<Point<dim>> &points, std::vector<Vector<double>> &value_list) const
@@ -8375,9 +8350,9 @@ namespace NonLinearPoroViscoElasticity
 								cell->face(face)->set_boundary_id(1);
 
 							else if (cell->face(face)->center()[2] == height) {
-								//if ((cell->face(face)->center()[0]*cell->face(face)->center()[0] + cell->face(face)->center()[1]*cell->face(face)->center()[1]) <= 0.1*r_max )
-								//	cell->face(face)->set_boundary_id(100);
-								//else
+								if ((cell->face(face)->center()[0]*cell->face(face)->center()[0] + cell->face(face)->center()[1]*cell->face(face)->center()[1]) <= 0.1*r_max )
+									cell->face(face)->set_boundary_id(100);
+								else
 									cell->face(face)->set_boundary_id(2);	// remainder of top surface
 							}
 							else if (cell->face(face)->center()[0] == 0.0)
@@ -8432,13 +8407,6 @@ namespace NonLinearPoroViscoElasticity
 
 				this->triangulation.execute_coarsening_and_refinement();
 
-				/*for (const auto &cell : this->triangulation.active_cell_iterators()) {
-					if (displ_center.distance(cell->center()) < 1.9 && cell->center()[2] > (height - 0.1))
-						cell->set_refine_flag();
-				}
-
-				this->triangulation.execute_coarsening_and_refinement();*/
-
 
 				// Assign boundary IDs
 				// loaded surface cell counter
@@ -8450,12 +8418,12 @@ namespace NonLinearPoroViscoElasticity
 								cell->face(face)->set_boundary_id(1);
 
 							else if (cell->face(face)->center()[2] == height) {
-								//if ((cell->face(face)->center()[0]*cell->face(face)->center()[0] + cell->face(face)->center()[1]*cell->face(face)->center()[1]) <= 0.1*r_max )
-								//	{
-								//	cell->face(face)->set_boundary_id(100);
-								//	cell_counter++;// final loaded surface
-								//	}
-								//else
+								if ((cell->face(face)->center()[0]*cell->face(face)->center()[0] + cell->face(face)->center()[1]*cell->face(face)->center()[1]) <= 0.1*r_max )
+									{
+									cell->face(face)->set_boundary_id(100);
+									cell_counter++;// final loaded surface
+									}
+								else
 									cell->face(face)->set_boundary_id(2);	// remainder of top surface
 							}
 							else if (cell->face(face)->center()[0] == 0.0)
@@ -8488,44 +8456,12 @@ namespace NonLinearPoroViscoElasticity
 				// Update boundary conditions
 				// loaded surface cell counter
 				const std::vector<double> r_c = get_dirichlet_load(100,2);
-				std::cout << "current indenter radius = " << r_c[3] << std::endl;
-
-				const double height = 20;	// specimen heigth
-				const double r_i = 2;		// indenter radius
-				const double z_0 = height + r_i + r_c[0]; 	// current z-position of indenter center (r_c[0]=d_c and is negative)
-				const Point<dim> i_center(0.0,0.0,z_0);
-				std::cout << "current indenter center z = " << z_0 << std::endl;
-
-				double cell_counter_add = 0;
-				double cell_counter_remove = 0;
+				double cell_counter = 0;
 				for (auto cell : this->triangulation.active_cell_iterators()) {
 					for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
 						if (cell->face(face)->at_boundary() == true) {
 							if (cell->face(face)->boundary_id() == 2) {
-								if (i_center.distance((cell->face(face)->center())) < r_i) // && std::sqrt((cell->face(face)->center()[0]*cell->face(face)->center()[0] + cell->face(face)->center()[1]*cell->face(face)->center()[1])) <= r_c[3]-0.07)
-								{
-									cell->face(face)->set_boundary_id(100);
-									cell_counter_add++;		// add cells to loaded surface
-								}
-							} else if (cell->face(face)->boundary_id() == 100) {
-								if (i_center.distance((cell->face(face)->center())) > r_i)
-								{
-									cell->face(face)->set_boundary_id(2);
-									cell_counter_remove++;		// remove cells from loaded surface
-								}
-							}
-						}
-					}
-				}
-				std::cout << "number of cells with boundary ID 100 added = " << cell_counter_add << std::endl;
-				std::cout << "number of cells with boundary ID 100 removed = " << cell_counter_remove << std::endl;
-
-				/*double cell_counter = 0;
-				for (auto cell : this->triangulation.active_cell_iterators()) {
-					for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
-						if (cell->face(face)->at_boundary() == true) {
-							if (cell->face(face)->boundary_id() == 2) {
-								if (std::sqrt((cell->face(face)->center()[0]*cell->face(face)->center()[0] + cell->face(face)->center()[1]*cell->face(face)->center()[1])) <= r_c[3]-0.07)
+								if ((cell->face(face)->center()[0]*cell->face(face)->center()[0] + cell->face(face)->center()[1]*cell->face(face)->center()[1]) <= r_c[3]-0.07)
 								{
 									cell->face(face)->set_boundary_id(100);
 									cell_counter++;// final loaded surface
@@ -8534,7 +8470,7 @@ namespace NonLinearPoroViscoElasticity
 						}
 					}
 				}
-				std::cout << "number of cells with boundary ID 100 = " << cell_counter << std::endl;*/
+				std::cout << "number of cells with boundary ID 100 = " << cell_counter << std::endl;
 
 				// Cylinder hull is drained
 				if (this->parameters.lateral_drained == "drained") {
@@ -8574,7 +8510,7 @@ namespace NonLinearPoroViscoElasticity
 					}
 				}
 
-				/*// Unloaded Top drained
+				// Unloaded Top drained
 				if (this->parameters.bottom_drained == "drained") {
 					if (this->time.get_timestep() < 2) {
 						VectorTools::interpolate_boundary_values(
@@ -8591,7 +8527,7 @@ namespace NonLinearPoroViscoElasticity
 								constraints,
 								this->fe.component_mask(this->pressure));
 					}
-				}*/
+				}
 
 				// Define symmetry boundary conditions for lateral surfaces
 				VectorTools::interpolate_boundary_values(
@@ -8629,23 +8565,19 @@ namespace NonLinearPoroViscoElasticity
 				if (this->parameters.load_type == "displacement") {
 					if (this->time.get_current()<=this->parameters.end_load_time) {
 						const std::vector<double> value = get_dirichlet_load(100,2);
-						std::cout << "current indenter depth    = " << r_c[0] << std::endl;
-						std::cout << "previous indenter depth   = " << r_c[1] << std::endl;
-						std::cout << "current indenter radius 2 = " << r_c[3] << std::endl;
-
 						VectorTools::interpolate_boundary_values(
 								 this->dof_handler_ref,
 								 100,
 								 get_dirichlet_bc_HydroNanoGrazSpherIndent<dim>(value[0],value[1],value[2]),
 								 constraints,
-								 this->fe.component_mask(this->z_displacement));
+								 this->fe.component_mask(this->z_displacement)                    );
 					} else {
 						VectorTools::interpolate_boundary_values(
 								 this->dof_handler_ref,
 								 100,
 								 ZeroFunction<dim>(this->n_components),
 								 constraints,
-								 this->fe.component_mask(this->z_displacement));
+								 this->fe.component_mask(this->z_displacement) );
 					}
 				}
 			}
