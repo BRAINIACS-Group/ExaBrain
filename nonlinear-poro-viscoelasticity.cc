@@ -1564,6 +1564,7 @@ namespace NonLinearPoroViscoElasticity
         unsigned int global_refinement;
         double       scale;
         std::string  load_type;
+        std::string  load_input;
         double       load;
         unsigned int num_cycle_sets;
         double       fluid_flow;
@@ -1618,10 +1619,17 @@ namespace NonLinearPoroViscoElasticity
           prm.declare_entry("Grid scale", "1.0",
                             Patterns::Double(0.0),
                             "Global grid scaling factor");
+        }
+        prm.leave_subsection();
+
+        prm.enter_subsection("testing-device")
+		{
 
           prm.declare_entry("Load type", "pressure",
                             Patterns::Selection("pressure|displacement|none"),
                             "Type of loading");
+
+          prm.declare_entry("Load input")
 
           prm.declare_entry("Load value", "-7.5e+6",
                             Patterns::Double(),
@@ -7941,8 +7949,6 @@ namespace NonLinearPoroViscoElasticity
     	    // Input data
     	        std::vector<InputData> input_data;
 
-    		//template <int dim>
-    		//inline
     		void
     		read_test_protocol (const std::string &filename, const std::string &column_name_displacement)
     		{
