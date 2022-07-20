@@ -3898,6 +3898,22 @@ namespace NonLinearPoroViscoElasticity
 
         if (apply_dirichlet_bc)
         {
+        	for (auto cell : this->triangulation.active_cell_iterators())
+            {
+
+                const UpdateFlags uf_face(update_quadrature_points | update_normal_vectors |
+                                          update_values | update_JxW_values );
+                FEFaceValues<dim> fe_face_values_ref(fe, qf_face, uf_face);
+
+                //Start loop over faces in element
+                for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+                {
+                  if (cell->face(face)->at_boundary() == true)
+                  {
+                      fe_face_values_ref.reinit(cell, face);
+                  }
+                }
+            }
           constraints.clear();
           make_dirichlet_constraints(constraints);
         }
@@ -7829,6 +7845,48 @@ namespace NonLinearPoroViscoElasticity
     		BrainRheometerLTMCyclicTensionCompression (const Parameters::AllParameters &parameters) : BrainRheometerLTMBase<dim> (parameters) {}
     		virtual ~BrainRheometerLTMCyclicTensionCompression () {}
 
+
+    	    /// Helper struct for storing input data.
+    	    struct InputData
+    	    {
+    	        /// Filename of the input data.
+    	        std::string filename;
+
+    	        /// Time (first) and rotation angle (second) data.
+    	        std::vector<std::pair<double,double>> data;
+    	    };
+
+
+    	    // Input data
+    	        std::vector<InputData> input_data;
+
+    		//template <int dim>
+    		//inline
+    		void
+    		read_test_protocol (const std::string &filename, const std::string &column_name_displacement)
+    		{
+    		    using namespace dealii;
+
+    		    //Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
+    		    //        ExcFileNotOpen (filename));
+
+
+    		    efi::io::CSVReader<2> in (filename);
+
+    		    in.read_header(efi::io::ignore_extra_column,"time",column_name_displacement);
+
+    		    this->input_data.emplace_back();
+
+    		    InputData& indata = this->input_data.back();
+    		    indata.filename = filename;
+
+    		    double time, angle;
+    		    while (in.read_row (time, angle))
+    		    {
+    		        indata.data.emplace_back (time, angle);
+    		    }
+    		}
+
         private:
     		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
     		{
@@ -9904,6 +9962,7 @@ namespace NonLinearPoroViscoElasticity
 				}
 				std::cout << "number of cells with boundary ID 100 added = " << cell_counter_add << std::endl;
 				std::cout << "number of cells with boundary ID 100 removed = " << cell_counter_remove << std::endl;
+
 
 				/*double cell_counter = 0;
 				for (auto cell : this->triangulation.active_cell_iterators()) {
