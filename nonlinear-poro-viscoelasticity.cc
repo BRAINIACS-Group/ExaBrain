@@ -8072,47 +8072,39 @@ namespace NonLinearPoroViscoElasticity
     class BrainRheometerLTMCyclicTensionCompressionExp : public BrainRheometerLTMBase<dim>
     {
     public:
-    	BrainRheometerLTMCyclicTensionCompressionExp (const Parameters::AllParameters &parameters) : BrainRheometerLTMBase<dim> (parameters) {}
+    	BrainRheometerLTMCyclicTensionCompressionExp (const Parameters::AllParameters &parameters) 
+      : BrainRheometerLTMBase<dim> (parameters)
+      {
+        this->read_input_file(parameters.input_file);
+      }
     	virtual ~BrainRheometerLTMCyclicTensionCompressionExp () {}
 
 
-    	/// Helper struct for storing input data.
-    	struct InputData
-		{
-    		/// Filename of the input data.
-    		std::string filename;
-
-    		/// Time (first) and rotation angle (second) data.
-    		std::vector<std::pair<double,double>> data;
-		};
-
-
+   
+      std::vector<std::pair<double>> d;
+	
     	// Input data
     	std::vector<InputData> input_data;
 
     	void
-		read_test_protocol (const std::string &filename, const std::string &column_name_displacement)
+		read_input_file (const std::string &filename, const std::string &column_name_displacement)
     	{
     		using namespace dealii;
 
-    		//Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
-    		//        ExcFileNotOpen (filename));
+    		Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
+    		        ExcFileNotOpen (filename));
 
 
     		efi::io::CSVReader<2> in (filename);
 
-    		in.read_header(efi::io::ignore_extra_column,"time",column_name_displacement);
+    		in.read_header(efi::io::ignore_extra_column,"displacement");
 
-    		this->input_data.emplace_back();
-
-    		InputData& indata = this->input_data.back();
-    		indata.filename = filename;
-
-    		double time, angle;
-    		while (in.read_row (time, angle))
+    		double displacement;
+    		while (in.read_row (displacement))
     		{
-    			indata.data.emplace_back (time, angle);
+    			this->displacement_data.push_back(displacement);
     		}
+
     	}
 
     private:
@@ -8162,35 +8154,26 @@ namespace NonLinearPoroViscoElasticity
     	}
 
     	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
-            			{
+      {
     		std::vector<double> displ_incr (dim,0.0);
 
     		if ((boundary_id == 2) && (direction == 2)) {
-    			const double final_time   = this->time.get_end();
-    			const double delta_time   = this->time.get_delta_t();
-    			const double current_time = this->time.get_current();
-    			const double final_displ  = this->parameters.load;
-    			const double num_cycles   = this->parameters.num_cycle_sets;
-    			const double cycle_time   = final_time/(4*num_cycles);
-    			const double displ_increment = (delta_time/cycle_time) * final_displ;
-
-    			if (current_time <= cycle_time)
-    				displ_incr[2] = -displ_increment;
-    			else if (current_time <= 3*cycle_time)
-    				displ_incr[2] = +displ_increment;
-    			else if (current_time <= 5*cycle_time)
-    				displ_incr[2] = -displ_increment;
-    			else if (current_time <= 7*cycle_time)
-    				displ_incr[2] = +displ_increment;
-    			else if (current_time <= 9*cycle_time)
-    				displ_incr[2] = -displ_increment;
-    			else if (current_time <= 11*cycle_time)
-    				displ_incr[2] = +displ_increment;
-    			else
-    				displ_incr[2] = -displ_increment;
+    			
+    				displ_incr[2] = this->get_displacement(this->time.get_timestep())
     		}
     		return displ_incr;
-            			}
+      }
+
+    private:
+
+      double get_displacement(int timestep)
+      {
+        
+        return this->displacement_data[timestep];
+
+      }
+      std:: vector<double> displacement_data;
+
     };
 
 
