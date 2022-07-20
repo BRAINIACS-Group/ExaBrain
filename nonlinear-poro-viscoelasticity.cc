@@ -1600,7 +1600,9 @@ namespace NonLinearPoroViscoElasticity
                             		 	 	 	 "|brain_nanoindentation_flat_ramp"
                 		 	 	 	 	 	 	 "|brain_rheometer_cyclic_trapezoidal_tension_compression"
                             		 	 	 	 "|brain_rheometer_relaxation_tension_compression"
+                            		 	 	     "|brain_rheometer_cyclic_tension_compression"
                             		 	 	 	 "|brain_rheometer_cyclic_tension_compression_quarter"
+                            		 	 	     "|brain_rheometer_cyclic_tension_compression_exp"
                             		 	 	 	 "|brain_rheometer_cyclic_compression_quarter"
                             		 	 	 	 "|brain_rheometer_cyclic_tension_quarter"
                             		 	 	 	 "|brain_rheometer_cyclic_trapezoidal_tension_compression_quarter"
@@ -7972,6 +7974,136 @@ namespace NonLinearPoroViscoElasticity
     };
 
 
+
+    //@sect4{Derived class: Cyclic Tension and Compression}
+    template <int dim>
+    class BrainRheometerLTMCyclicTensionCompressionExp : public BrainRheometerLTMBase<dim>
+    {
+    public:
+    	BrainRheometerLTMCyclicTensionCompressionExp (const Parameters::AllParameters &parameters) : BrainRheometerLTMBase<dim> (parameters) {}
+    	virtual ~BrainRheometerLTMCyclicTensionCompressionExp () {}
+
+
+    	/// Helper struct for storing input data.
+    	struct InputData
+		{
+    		/// Filename of the input data.
+    		std::string filename;
+
+    		/// Time (first) and rotation angle (second) data.
+    		std::vector<std::pair<double,double>> data;
+		};
+
+
+    	// Input data
+    	std::vector<InputData> input_data;
+
+    	void
+		read_test_protocol (const std::string &filename, const std::string &column_name_displacement)
+    	{
+    		using namespace dealii;
+
+    		//Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
+    		//        ExcFileNotOpen (filename));
+
+
+    		efi::io::CSVReader<2> in (filename);
+
+    		in.read_header(efi::io::ignore_extra_column,"time",column_name_displacement);
+
+    		this->input_data.emplace_back();
+
+    		InputData& indata = this->input_data.back();
+    		indata.filename = filename;
+
+    		double time, angle;
+    		while (in.read_row (time, angle))
+    		{
+    			indata.data.emplace_back (time, angle);
+    		}
+    	}
+
+    private:
+    	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+    	{
+    		// Cylinder hull is drained
+    		if (this->time.get_timestep() < 2) {
+    			VectorTools::interpolate_boundary_values(
+    					this->dof_handler_ref,
+						0,
+						ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+						constraints,
+						this->fe.component_mask(this->pressure));
+    		} else {
+    			VectorTools::interpolate_boundary_values(
+    					this->dof_handler_ref,
+						0,
+						ZeroFunction<dim>(this->n_components),
+						constraints,
+						this->fe.component_mask(this->pressure));
+    		}
+    		// Cylinder bottom is fully fixed in space (glued)
+    		VectorTools::interpolate_boundary_values(
+    				this->dof_handler_ref,
+					1,
+					ZeroFunction<dim>(this->n_components),
+					constraints,
+					(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
+
+    		// Apply vertical displacement on cylinder top surface and fix in x- and y-direction to account for glue
+    		if (this->parameters.load_type == "displacement") {
+    			const std::vector<double> value = get_dirichlet_load(2,2);
+
+    			VectorTools::interpolate_boundary_values(
+    					this->dof_handler_ref,
+						2,
+						ConstantFunction<dim>(value[2],this->n_components),
+						constraints,
+						this->fe.component_mask(this->z_displacement));
+    			VectorTools::interpolate_boundary_values(
+    					this->dof_handler_ref,
+						2,
+						ZeroFunction<dim>(this->n_components),
+						constraints,
+						(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
+    		}
+    	}
+
+    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+            			{
+    		std::vector<double> displ_incr (dim,0.0);
+
+    		if ((boundary_id == 2) && (direction == 2)) {
+    			const double final_time   = this->time.get_end();
+    			const double delta_time   = this->time.get_delta_t();
+    			const double current_time = this->time.get_current();
+    			const double final_displ  = this->parameters.load;
+    			const double num_cycles   = this->parameters.num_cycle_sets;
+    			const double cycle_time   = final_time/(4*num_cycles);
+    			const double displ_increment = (delta_time/cycle_time) * final_displ;
+
+    			if (current_time <= cycle_time)
+    				displ_incr[2] = -displ_increment;
+    			else if (current_time <= 3*cycle_time)
+    				displ_incr[2] = +displ_increment;
+    			else if (current_time <= 5*cycle_time)
+    				displ_incr[2] = -displ_increment;
+    			else if (current_time <= 7*cycle_time)
+    				displ_incr[2] = +displ_increment;
+    			else if (current_time <= 9*cycle_time)
+    				displ_incr[2] = -displ_increment;
+    			else if (current_time <= 11*cycle_time)
+    				displ_incr[2] = +displ_increment;
+    			else
+    				displ_incr[2] = -displ_increment;
+    		}
+    		return displ_incr;
+            			}
+    };
+
+
+
+
     //@sect4{Derived class: Cyclic Tension and Compression}
         template <int dim>
         class BrainRheometerLTMCyclicTrapezoidalTensionCompression : public BrainRheometerLTMBase<dim>
@@ -10247,6 +10379,11 @@ int main (int argc, char *argv[])
       {
     	BrainRheometerLTMCyclicTensionCompression<3> solid_3d(parameters);
     	solid_3d.run();
+      }
+      else if (parameters.geom_type == "brain_rheometer_cyclic_tension_compression_exp")
+      {
+    	  BrainRheometerLTMCyclicTensionCompressionExp<3> solid_3d(parameters);
+    	  solid_3d.run();
       }
       else if (parameters.geom_type == "brain_rheometer_cyclic_trapezoidal_tension_compression")
       {
