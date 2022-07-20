@@ -1564,7 +1564,7 @@ namespace NonLinearPoroViscoElasticity
         unsigned int global_refinement;
         double       scale;
         std::string  load_type;
-        std::string  load_input;
+        std::string  input_file;
         double       load;
         unsigned int num_cycle_sets;
         double       fluid_flow;
@@ -1624,12 +1624,13 @@ namespace NonLinearPoroViscoElasticity
 
         prm.enter_subsection("testing-device")
 		{
-
           prm.declare_entry("Load type", "pressure",
                             Patterns::Selection("pressure|displacement|none"),
                             "Type of loading");
 
-          prm.declare_entry("Load input")
+          prm.declare_entry("Input file","",
+                            Patterns::FileName(),
+                            "input file path")
 
           prm.declare_entry("Load value", "-7.5e+6",
                             Patterns::Double(),
@@ -1673,6 +1674,7 @@ namespace NonLinearPoroViscoElasticity
           global_refinement = prm.get_integer("Global refinement");
           scale = prm.get_double("Grid scale");
           load_type = prm.get("Load type");
+          input_file = prm.get("Input file");
           load = prm.get_double("Load value");
           num_cycle_sets = prm.get_integer("Number of cycle sets");
           fluid_flow = prm.get_double("Fluid flow value");
@@ -3655,7 +3657,6 @@ namespace NonLinearPoroViscoElasticity
         pcout(std::cout, this_mpi_process == 0),
         parameters(parameters),
         triangulation(mpi_communicator,Triangulation<dim>::maximum_smoothing),
-        time(parameters.end_time, parameters.end_load_time, parameters.delta_t),
         timerconsole( mpi_communicator,
                       pcout,
                       TimerOutput::summary,
@@ -3691,6 +3692,16 @@ namespace NonLinearPoroViscoElasticity
     Solid<dim>::~Solid()
     {
         dof_handler_ref.clear();
+
+        if (parameters.input_file.empty())
+        {
+          this->time = time(parameters.end_time, parameters.end_load_time, parameters.delta_t);
+        }
+        else
+        {
+          this->time = time(parameters.input_file);
+          this->read_input_file(parameters.input_file);
+        }
     }
 
 //Runs the 3D solid problem
