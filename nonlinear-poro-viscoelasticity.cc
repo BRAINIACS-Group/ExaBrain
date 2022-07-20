@@ -135,8 +135,7 @@
 #include <fstream>
 #include <iostream>
 
-
-
+#include <boost/filesystem.hpp>
 
 
 namespace efi {
@@ -2109,9 +2108,91 @@ namespace NonLinearPoroViscoElasticity
     class Time
     {
         public:
-          Time (const double time_end,
-                const double time_end_load,
-                double delta_t)
+          Time (){}
+
+          virtual ~Time() = default;
+
+          virtual double get_current() const = 0;
+        
+          virtual double get_end() const = 0;
+          
+          virtual double get_delta_t() const = 0;
+         
+          virtual unsigned int get_timestep() const = 0;
+          
+          virtual void increment_time () = 0;
+        
+    };
+
+    class TimeFile : public Time
+    {
+        public:
+          Time (std::string &filename)
+            :
+            timestep(0.)
+          {
+            self.read_testfile(filename);
+          }
+
+          virtual ~Time()
+          {}
+
+          double get_current() const
+          {
+            return this->timepoints[this->timestep];
+          }
+          double get_end() const
+          {
+            return this->time_points.back()
+          }
+          double get_delta_t() const
+          {
+             Assert ((this->timestep +1) < this->time_points.size(),
+                    ExcMessage("timestep greater then timesteps vector length -1"))
+             double delta_t = this->time_points[this->timestep+1] - this->time_points[this->timestep]
+          }
+          unsigned int get_timestep() const
+          {
+            return this->timestep;
+          }
+          void increment_time ()
+          {
+              Assert (this->timestep < this->time_points.size(),
+                    ExcMessage("timestep exceeds vector length"))
+              this->timestep++;
+          }
+
+        private:
+
+          void read_testfile(std::string &filename)
+          {
+            Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
+            ExcFileNotOpen (filename));
+    
+            io::CSVReader<2> in (filename);
+
+            in.read_header(io::ignore_extra_column,"time");
+
+            double time
+            while (in.read_row (time))
+            {
+              Assert (time >= this->timepoints.back(),
+                    ExcMessage("decreasing time value found"))
+              this->time_points.push_back(time);
+            }
+          }
+
+          std::vector<double> time_points;
+          int timestep;
+          
+    };
+
+    class TimeFixed: public Time
+    {
+        public:
+          TimeFixed (const double time_end,
+                     const double time_end_load,
+                     double delta_t)
             :
             timestep(0),
             time_current(0.0),
