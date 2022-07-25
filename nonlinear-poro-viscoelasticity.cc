@@ -1624,7 +1624,7 @@ namespace NonLinearPoroViscoElasticity
         }
         prm.leave_subsection();
 
-        prm.enter_subsection("testing-device")
+        prm.enter_subsection("testing-device");
 		{
           prm.declare_entry("Load type", "pressure",
                             Patterns::Selection("pressure|displacement|none"),
@@ -1632,7 +1632,7 @@ namespace NonLinearPoroViscoElasticity
 
           prm.declare_entry("Input file","",
                             Patterns::FileName(),
-                            "input file path")
+                            "input file path");
 
           prm.declare_entry("Load value", "-7.5e+6",
                             Patterns::Double(),
@@ -2139,29 +2139,32 @@ namespace NonLinearPoroViscoElasticity
     class TimeFile : public Time
     {
         public:
-          Time (std::string &filename)
+          TimeFile (std::string &filename)
             :
-            timestep(0.)
-          {
-            self.read_testfile(filename);
-          }
+            timestep(0),
+			delta_t(0.0)
+            {
+            //self.read_testfile(filename)
+            this->read_testfile(filename);
+            }
 
-          virtual ~Time()
+          virtual ~TimeFile()
           {}
 
           double get_current() const
           {
-            return this->timepoints[this->timestep];
+            return this->time_points[this->timestep];
           }
           double get_end() const
           {
-            return this->time_points.back()
+            return this->time_points.back();
           }
           double get_delta_t() const
           {
              Assert ((this->timestep +1) < this->time_points.size(),
                     ExcMessage("timestep greater then timesteps vector length -1"))
-             double delta_t = this->time_points[this->timestep+1] - this->time_points[this->timestep]
+             double delta_t = this->time_points[this->timestep+1] - this->time_points[this->timestep];
+             return this->delta_t;
           }
           unsigned int get_timestep() const
           {
@@ -2181,21 +2184,22 @@ namespace NonLinearPoroViscoElasticity
             Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
             ExcFileNotOpen (filename));
     
-            io::CSVReader<2> in (filename);
+            efi::io::CSVReader<2> in (filename);
 
-            in.read_header(io::ignore_extra_column,"time");
+            in.read_header(efi::io::ignore_extra_column,"time");
 
-            double time
+            double time;
             while (in.read_row (time))
             {
-              Assert (time >= this->timepoints.back(),
+              Assert (time >= this->time_points.back(),
                     ExcMessage("decreasing time value found"))
               this->time_points.push_back(time);
             }
           }
 
           std::vector<double> time_points;
-          int timestep;
+          unsigned int timestep;
+          double delta_t;
           
     };
 
@@ -2213,7 +2217,7 @@ namespace NonLinearPoroViscoElasticity
             delta_t(delta_t)
           {}
 
-          virtual ~Time()
+          virtual ~TimeFixed()
           {}
 
           double get_current() const
@@ -3695,7 +3699,7 @@ namespace NonLinearPoroViscoElasticity
     {
         dof_handler_ref.clear();
 
-        if (parameters.input_file.empty())
+        /*if (parameters.input_file.empty())
         {
           this->time = time(parameters.end_time, parameters.end_load_time, parameters.delta_t);
         }
@@ -3703,7 +3707,8 @@ namespace NonLinearPoroViscoElasticity
         {
           this->time = time(parameters.input_file);
           this->read_input_file(parameters.input_file);
-        }
+          this->read_testfile(parameters.input_file);
+        }*/
     }
 
 //Runs the 3D solid problem
@@ -3719,6 +3724,17 @@ namespace NonLinearPoroViscoElasticity
           {
               outfile.open("console-output.sol");
               print_console_file_header(outfile);
+          }
+
+          if (parameters.input_file.empty())
+          {
+        	  this->time = time(parameters.end_time, parameters.end_load_time, parameters.delta_t);
+          }
+          else
+          {
+        	  this->time = time(parameters.input_file);
+        	  this->read_input_file(parameters.input_file);
+        	  this->read_testfile(parameters.input_file);
           }
 
           //Generate mesh
@@ -7947,46 +7963,6 @@ namespace NonLinearPoroViscoElasticity
     		BrainRheometerLTMCyclicTensionCompression (const Parameters::AllParameters &parameters) : BrainRheometerLTMBase<dim> (parameters) {}
     		virtual ~BrainRheometerLTMCyclicTensionCompression () {}
 
-
-    	    /// Helper struct for storing input data.
-    	    struct InputData
-    	    {
-    	        /// Filename of the input data.
-    	        std::string filename;
-
-    	        /// Time (first) and rotation angle (second) data.
-    	        std::vector<std::pair<double,double>> data;
-    	    };
-
-
-    	    // Input data
-    	        std::vector<InputData> input_data;
-
-    		void
-    		read_test_protocol (const std::string &filename, const std::string &column_name_displacement)
-    		{
-    		    using namespace dealii;
-
-    		    //Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
-    		    //        ExcFileNotOpen (filename));
-
-
-    		    efi::io::CSVReader<2> in (filename);
-
-    		    in.read_header(efi::io::ignore_extra_column,"time",column_name_displacement);
-
-    		    this->input_data.emplace_back();
-
-    		    InputData& indata = this->input_data.back();
-    		    indata.filename = filename;
-
-    		    double time, angle;
-    		    while (in.read_row (time, angle))
-    		    {
-    		        indata.data.emplace_back (time, angle);
-    		    }
-    		}
-
         private:
     		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
     		{
@@ -8081,10 +8057,10 @@ namespace NonLinearPoroViscoElasticity
 
 
    
-      std::vector<std::pair<double>> d;
+      std::vector<double> displacement_data;
 	
     	// Input data
-    	std::vector<InputData> input_data;
+    	//std::vector<InputData> input_data;
 
     	void
 		read_input_file (const std::string &filename, const std::string &column_name_displacement)
@@ -8159,7 +8135,7 @@ namespace NonLinearPoroViscoElasticity
 
     		if ((boundary_id == 2) && (direction == 2)) {
     			
-    				displ_incr[2] = this->get_displacement(this->time.get_timestep())
+    				displ_incr[2] = this->get_displacement(this->time.get_timestep());
     		}
     		return displ_incr;
       }
@@ -8172,7 +8148,7 @@ namespace NonLinearPoroViscoElasticity
         return this->displacement_data[timestep];
 
       }
-      std:: vector<double> displacement_data;
+      //std:: vector<double> displacement_data;
 
     };
 
@@ -9934,10 +9910,10 @@ namespace NonLinearPoroViscoElasticity
     			Assert (values.size() == (dim+1), ExcDimensionMismatch (values.size(), (dim)));
 
     			values = 0.0;
-    			const double r_pt = std::sqrt(pt[0]*pt[0]+pt[1]*pt[1]);		// radius of THIS point
-    			const double r_c = std::sqrt(2*r_i*std::abs(d_c)-std::abs(d_c)*std::abs(d_c));		// current indentation radius
-    			const double r_p = std::sqrt(2*r_i*std::abs(d_p)-std::abs(d_p)*std::abs(d_p));		// previous indentation radius
-    			const double dz_pt = 20 - pt[2]; 	// current z-displacement of this point
+    			//const double r_pt = std::sqrt(pt[0]*pt[0]+pt[1]*pt[1]);		// radius of THIS point
+    			//const double r_c = std::sqrt(2*r_i*std::abs(d_c)-std::abs(d_c)*std::abs(d_c));		// current indentation radius
+    			//const double r_p = std::sqrt(2*r_i*std::abs(d_p)-std::abs(d_p)*std::abs(d_p));		// previous indentation radius
+    			//const double dz_pt = 20 - pt[2]; 	// current z-displacement of this point
 
     			const double height = 20;
     			const double z_0 = height + r_i + d_c; 	// current z-position of center of spherical indenter (d_c is negative)
