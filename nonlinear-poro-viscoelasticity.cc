@@ -2120,19 +2120,20 @@ namespace NonLinearPoroViscoElasticity
     class Time
     {
         public:
-          Time (){}
+    	  Time() = default;
+          Time (const double time_end, const double time_end_load, double delta_t){}
+
+          virtual double get_current() const;// = 0;
+        
+          virtual double get_end() const;// = 0;
+          
+          virtual double get_delta_t() const;// = 0;
+         
+          virtual unsigned int get_timestep() const;// = 0;
+          
+          virtual void increment_time ();// = 0;
 
           virtual ~Time() = default;
-
-          virtual double get_current() const = 0;
-        
-          virtual double get_end() const = 0;
-          
-          virtual double get_delta_t() const = 0;
-         
-          virtual unsigned int get_timestep() const = 0;
-          
-          virtual void increment_time () = 0;
         
     };
 
@@ -2184,7 +2185,7 @@ namespace NonLinearPoroViscoElasticity
             Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
             ExcFileNotOpen (filename));
     
-            efi::io::CSVReader<2> in (filename);
+            efi::io::CSVReader<1> in (filename);
 
             in.read_header(efi::io::ignore_extra_column,"time");
 
@@ -2210,6 +2211,7 @@ namespace NonLinearPoroViscoElasticity
                      const double time_end_load,
                      double delta_t)
             :
+            Time(time_end, time_end_load, delta_t),
             timestep(0),
             time_current(0.0),
             time_end(time_end),
@@ -3663,6 +3665,7 @@ namespace NonLinearPoroViscoElasticity
         pcout(std::cout, this_mpi_process == 0),
         parameters(parameters),
         triangulation(mpi_communicator,Triangulation<dim>::maximum_smoothing),
+		time(parameters.end_time, parameters.end_load_time, parameters.delta_t), //remove?
         timerconsole( mpi_communicator,
                       pcout,
                       TimerOutput::summary,
@@ -3726,7 +3729,7 @@ namespace NonLinearPoroViscoElasticity
               print_console_file_header(outfile);
           }
 
-          if (parameters.input_file.empty())
+          /*if (parameters.input_file.empty())
           {
         	  this->time = time(parameters.end_time, parameters.end_load_time, parameters.delta_t);
           }
@@ -3735,7 +3738,7 @@ namespace NonLinearPoroViscoElasticity
         	  this->time = time(parameters.input_file);
         	  this->read_input_file(parameters.input_file);
         	  this->read_testfile(parameters.input_file);
-          }
+          }*/
 
           //Generate mesh
           make_grid();
@@ -8043,44 +8046,34 @@ namespace NonLinearPoroViscoElasticity
 
 
 
-    //@sect4{Derived class: Cyclic Tension and Compression}
+    //Derived class: Cyclic Tension and Compression, read load data from file
     template <int dim>
     class BrainRheometerLTMCyclicTensionCompressionExp : public BrainRheometerLTMBase<dim>
     {
     public:
-    	BrainRheometerLTMCyclicTensionCompressionExp (const Parameters::AllParameters &parameters) 
-      : BrainRheometerLTMBase<dim> (parameters)
-      {
-        this->read_input_file(parameters.input_file);
-      }
+    	BrainRheometerLTMCyclicTensionCompressionExp (const Parameters::AllParameters &parameters) : BrainRheometerLTMBase<dim> (parameters)
+		{
+    		this->read_input_file(parameters.input_file);
+		}
     	virtual ~BrainRheometerLTMCyclicTensionCompressionExp () {}
 
+    	std::vector<double> displacement_data;
 
-   
-      std::vector<double> displacement_data;
-	
-    	// Input data
-    	//std::vector<InputData> input_data;
-
-    	void
-		read_input_file (const std::string &filename, const std::string &column_name_displacement)
+    	void read_input_file (const std::string &filename)
     	{
     		using namespace dealii;
 
     		Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
     		        ExcFileNotOpen (filename));
 
-
-    		efi::io::CSVReader<2> in (filename);
+    		efi::io::CSVReader<1> in (filename);
 
     		in.read_header(efi::io::ignore_extra_column,"displacement");
 
     		double displacement;
-    		while (in.read_row (displacement))
-    		{
+    		while (in.read_row (displacement)) {
     			this->displacement_data.push_back(displacement);
     		}
-
     	}
 
     private:
@@ -8130,26 +8123,19 @@ namespace NonLinearPoroViscoElasticity
     	}
 
     	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
-      {
+        {
     		std::vector<double> displ_incr (dim,0.0);
 
     		if ((boundary_id == 2) && (direction == 2)) {
-    			
     				displ_incr[2] = this->get_displacement(this->time.get_timestep());
     		}
     		return displ_incr;
-      }
+        }
 
-    private:
-
-      double get_displacement(int timestep)
-      {
-        
-        return this->displacement_data[timestep];
-
-      }
-      //std:: vector<double> displacement_data;
-
+        double get_displacement(int timestep) const
+        {
+        	return this->displacement_data[timestep];
+        }
     };
 
 
