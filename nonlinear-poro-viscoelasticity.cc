@@ -1969,7 +1969,7 @@ namespace NonLinearPoroViscoElasticity
       }
 
 // @sect4{Time}
-// Here we set the timestep size $ \varDelta t $ and the simulation end-time.
+// Here we set the timestep size $ \varDelta t $ and the simulation end-time->
       struct Time
       {
         double end_time;
@@ -2010,7 +2010,7 @@ namespace NonLinearPoroViscoElasticity
           delta_t = prm.get_double("Time step size");
           
           if ( end_load_time>end_time )
-            AssertThrow(false, ExcMessage("End load time cannot be larger than End time."));
+            AssertThrow(false, ExcMessage("End load time cannot be larger than End time->"));
         }
         prm.leave_subsection();
       }
@@ -2121,17 +2121,16 @@ namespace NonLinearPoroViscoElasticity
     {
         public:
     	  Time() = default;
-          Time (const double time_end, const double time_end_load, double delta_t){}
 
-          virtual double get_current() const;// = 0;
+          virtual double get_current() const = 0;
         
-          virtual double get_end() const;// = 0;
+          virtual double get_end() const = 0;
           
-          virtual double get_delta_t() const;// = 0;
+          virtual double get_delta_t() const = 0;
          
-          virtual unsigned int get_timestep() const;// = 0;
+          virtual unsigned int get_timestep() const = 0;
           
-          virtual void increment_time ();// = 0;
+          virtual void increment_time () = 0;
 
           virtual ~Time() = default;
         
@@ -2140,12 +2139,11 @@ namespace NonLinearPoroViscoElasticity
     class TimeFile : public Time
     {
         public:
-          TimeFile (std::string &filename)
+          TimeFile (const std::string &filename)
             :
             timestep(0),
 			delta_t(0.0)
             {
-            //self.read_testfile(filename)
             this->read_testfile(filename);
             }
 
@@ -2180,10 +2178,10 @@ namespace NonLinearPoroViscoElasticity
 
         private:
 
-          void read_testfile(std::string &filename)
+          void read_testfile(const std::string &filename)
           {
-            Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
-            ExcFileNotOpen (filename));
+            //Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
+            //ExcFileNotOpen (filename));
     
             efi::io::CSVReader<1> in (filename);
 
@@ -2211,7 +2209,6 @@ namespace NonLinearPoroViscoElasticity
                      const double time_end_load,
                      double delta_t)
             :
-            Time(time_end, time_end_load, delta_t),
             timestep(0),
             time_current(0.0),
             time_end(time_end),
@@ -2299,7 +2296,7 @@ namespace NonLinearPoroViscoElasticity
     {
         public:
           Material_Hyperelastic(const Parameters::AllParameters &parameters,
-                                const Time                      &time)
+                                const std::shared_ptr<Time>     time)
             :
             n_OS (parameters.solid_vol_frac),
             lambda (parameters.lambda),
@@ -2348,7 +2345,7 @@ namespace NonLinearPoroViscoElasticity
 
           const double n_OS;
           const double lambda;
-          const Time  &time;
+          std::shared_ptr<Time>  time;
           double det_F;
           double det_F_converged;
           const enum SymmetricTensorEigenvectorMethod eigen_solver;
@@ -2376,7 +2373,7 @@ namespace NonLinearPoroViscoElasticity
     {
         public:
             NeoHooke(const Parameters::AllParameters &parameters,
-                     const Time                      &time)
+                     const std::shared_ptr<Time>     time)
             :
             Material_Hyperelastic< dim, NumberType > (parameters,time),
             mu(parameters.mu),
@@ -2426,7 +2423,7 @@ namespace NonLinearPoroViscoElasticity
             		 std::ofstream eigenvalues;
             		 eigenvalues.open("eigenvalues", std::ofstream::app);
             		 eigenvalues << std::setprecision(6) << std::scientific;
-            		 eigenvalues << std::setw(16) << this->time.get_current() << ","
+            		 eigenvalues << std::setw(16) << this->time->get_current() << ","
             				 << std::setw(16) << lambda_1 << ","
 							 << std::setw(16) << lambda_2 << ","
 							 << std::setw(16) << lambda_3 << std::endl;
@@ -2436,7 +2433,7 @@ namespace NonLinearPoroViscoElasticity
             		 std::ofstream eigenvectors;
             		 eigenvectors.open("eigenvectors", std::ofstream::app);
             		 eigenvectors << std::setprecision(6) << std::scientific;
-            		 eigenvectors << std::setw(16) << this->time.get_current() << ","
+            		 eigenvectors << std::setw(16) << this->time->get_current() << ","
             				 << std::setw(16) << ev_1[0] << ","
 							 << std::setw(16) << ev_1[1] << ","
 							 << std::setw(16) << ev_1[2] << ","
@@ -2470,7 +2467,7 @@ namespace NonLinearPoroViscoElasticity
                std::ofstream eigenvalues;
                eigenvalues.open("eigenvalues", std::ofstream::app);
                eigenvalues << std::setprecision(6) << std::scientific;
-               eigenvalues << std::setw(16) << this->time.get_current() << ","
+               eigenvalues << std::setw(16) << this->time->get_current() << ","
             		   	   << std::setw(16) << lambda_1 << ","
 						   << std::setw(16) << lambda_2 << ","
 						   << std::setw(16) << lambda_3 << std::endl;
@@ -2480,7 +2477,7 @@ namespace NonLinearPoroViscoElasticity
                std::ofstream eigenvectors_B;
                eigenvectors_B.open("eigenvectors_B", std::ofstream::app);
                eigenvectors_B << std::setprecision(6) << std::scientific;
-               eigenvectors_B << std::setw(16) << this->time.get_current() << ","
+               eigenvectors_B << std::setw(16) << this->time->get_current() << ","
                             << std::setw(16) << ev_1[0] << ","
 						    << std::setw(16) << ev_1[1] << ","
 						    << std::setw(16) << ev_1[2] << ","
@@ -2534,7 +2531,7 @@ namespace NonLinearPoroViscoElasticity
             	   std::ofstream cauchy_green_ev;
             	   cauchy_green_ev.open("cauchy_green_ev", std::ofstream::app);
             	   cauchy_green_ev << std::setprecision(6) << std::scientific;
-            	   cauchy_green_ev << std::setw(16) << this->time.get_current() << ","
+            	   cauchy_green_ev << std::setw(16) << this->time->get_current() << ","
             			   << std::setw(16) << B_ev_p[0][0] << ","
 						   << std::setw(16) << B_ev_p[0][1] << ","
 						   << std::setw(16) << B_ev_p[0][2] << ","
@@ -2564,7 +2561,7 @@ namespace NonLinearPoroViscoElasticity
 			   std::ofstream eigenvalues_ev;
 			   eigenvalues_ev.open("eigenvalues_ev", std::ofstream::app);
 			   eigenvalues_ev << std::setprecision(6) << std::scientific;
-			   eigenvalues_ev << std::setw(16) << this->time.get_current() << ","
+			   eigenvalues_ev << std::setw(16) << this->time->get_current() << ","
 					   << std::setw(16) << lambda_1_ev << ","
 					   << std::setw(16) << lambda_2_ev << ","
 					   << std::setw(16) << lambda_3_ev << std::endl;
@@ -2574,7 +2571,7 @@ namespace NonLinearPoroViscoElasticity
 			   std::ofstream eigenvectors_ev;
 			   eigenvectors_ev.open("eigenvectors_ev", std::ofstream::app);
 			   eigenvectors_ev << std::setprecision(6) << std::scientific;
-			   eigenvectors_ev << std::setw(16) << this->time.get_current() << ","
+			   eigenvectors_ev << std::setw(16) << this->time->get_current() << ","
 					   << std::setw(16) << ev_1_ev[0] << ","
 					   << std::setw(16) << ev_1_ev[1] << ","
 					   << std::setw(16) << ev_1_ev[2] << ","
@@ -2592,7 +2589,7 @@ namespace NonLinearPoroViscoElasticity
 			   std::ofstream cauchy_green_ev2;
 			   cauchy_green_ev2.open("cauchy_green_ev2", std::ofstream::app);
 			   cauchy_green_ev2 << std::setprecision(6) << std::scientific;
-			   cauchy_green_ev2 << std::setw(16) << this->time.get_current() << ","
+			   cauchy_green_ev2 << std::setw(16) << this->time->get_current() << ","
 					   << std::setw(16) << B_ev_p[0][0] << ","
 					   << std::setw(16) << B_ev_p[0][1] << ","
 					   << std::setw(16) << B_ev_p[0][2] << ","
@@ -2614,7 +2611,7 @@ namespace NonLinearPoroViscoElasticity
             	 std::ofstream cauchy_green_ev;
             	 cauchy_green_ev.open("cauchy_green_ev", std::ofstream::app);
             	 cauchy_green_ev << std::setprecision(6) << std::scientific;
-            	 cauchy_green_ev << std::setw(16) << this->time.get_current() << ","
+            	 cauchy_green_ev << std::setw(16) << this->time->get_current() << ","
             			 << std::setw(16) << B_p[0][0] << ","
 						 << std::setw(16) << B_p[0][1] << ","
 						 << std::setw(16) << B_p[0][2] << ","
@@ -2639,7 +2636,7 @@ namespace NonLinearPoroViscoElasticity
             	 std::ofstream invariants_miehe;
             	 invariants_miehe.open("invariants_miehe", std::ofstream::app);
             	 invariants_miehe << std::setprecision(6) << std::scientific;
-            	 invariants_miehe << std::setw(16) << this->time.get_current() << ","
+            	 invariants_miehe << std::setw(16) << this->time->get_current() << ","
             			 << std::setw(16) << I_1p << ","
 						 << std::setw(16) << I_2p << ","
 						 << std::setw(16) << I_3p << std::endl;
@@ -2667,7 +2664,7 @@ namespace NonLinearPoroViscoElasticity
             	 std::ofstream theta_miehe;
             	 theta_miehe.open("theta_miehe", std::ofstream::app);
             	 theta_miehe << std::setprecision(6) << std::scientific;
-            	 theta_miehe << std::setw(16) << this->time.get_current() << ","
+            	 theta_miehe << std::setw(16) << this->time->get_current() << ","
             			 << std::setw(16) << thetap << std::endl;
             	 theta_miehe.close();
 
@@ -2693,7 +2690,7 @@ namespace NonLinearPoroViscoElasticity
             	 std::ofstream eigenvalues_miehe;
             	 eigenvalues_miehe.open("eigenvalues_miehe", std::ofstream::app);
             	 eigenvalues_miehe << std::setprecision(6) << std::scientific;
-            	 eigenvalues_miehe << std::setw(16) << this->time.get_current() << ","
+            	 eigenvalues_miehe << std::setw(16) << this->time->get_current() << ","
             			 << std::setw(16) << lambda_1p << ","
 						 << std::setw(16) << lambda_2p << ","
 						 << std::setw(16) << lambda_3p << std::endl;
@@ -2732,7 +2729,7 @@ namespace NonLinearPoroViscoElasticity
             	 std::ofstream disturbed_ev_miehe;
             	 disturbed_ev_miehe.open("disturbed_ev_miehe", std::ofstream::app);
             	 disturbed_ev_miehe << std::setprecision(10) << std::scientific;
-            	 disturbed_ev_miehe << std::setw(20) << this->time.get_current() << ","
+            	 disturbed_ev_miehe << std::setw(20) << this->time->get_current() << ","
             			 << std::setw(20) << lambda_1dp << ","
 						 << std::setw(20) << lambda_2dp << ","
 						 << std::setw(20) << lambda_3dp << std::endl;
@@ -2771,7 +2768,7 @@ namespace NonLinearPoroViscoElasticity
             	 std::ofstream ev_basis;
             	 ev_basis.open("ev_basis", std::ofstream::app);
             	 ev_basis << std::setprecision(6) << std::scientific;
-            	 ev_basis << std::setw(16) << this->time.get_current() << ","
+            	 ev_basis << std::setw(16) << this->time->get_current() << ","
             			 << std::setw(16) << ev_Bp[0][0] << ","
 						 << std::setw(16) << ev_Bp[0][1] << ","
 						 << std::setw(16) << ev_Bp[0][2] << ","
@@ -2794,7 +2791,7 @@ namespace NonLinearPoroViscoElasticity
             	 std::ofstream cauchy_green_ev2;
             	 cauchy_green_ev2.open("cauchy_green_ev2", std::ofstream::app);
             	 cauchy_green_ev2 << std::setprecision(6) << std::scientific;
-            	 cauchy_green_ev2 << std::setw(16) << this->time.get_current() << ","
+            	 cauchy_green_ev2 << std::setw(16) << this->time->get_current() << ","
             			 << std::setw(16) << B_ev_p[0][0] << ","
 						 << std::setw(16) << B_ev_p[0][1] << ","
 						 << std::setw(16) << B_ev_p[0][2] << ","
@@ -2831,7 +2828,7 @@ namespace NonLinearPoroViscoElasticity
     {
         public:
           Ogden(const Parameters::AllParameters &parameters,
-                const Time                      &time)
+                const std::shared_ptr<Time>     time)
           :
           Material_Hyperelastic< dim, NumberType > (parameters,time),
           mu({parameters.mu1_infty,
@@ -2894,7 +2891,7 @@ namespace NonLinearPoroViscoElasticity
     {
         public:
             visco_Ogden(const Parameters::AllParameters &parameters,
-                        const Time                      &time)
+                        const std::shared_ptr<Time>     time)
             :
             Material_Hyperelastic< dim, NumberType > (parameters,time),
             mu_infty({parameters.mu1_infty,
@@ -2967,14 +2964,14 @@ namespace NonLinearPoroViscoElasticity
                   for (unsigned int a = 0; a < dim; ++a)
                   {
                       residual[a] = get_beta_mode_1(lambdas_e_1_iso, a);
-                      residual[a] *= this->time.get_delta_t()/(2.0*viscosity_mode_1);
+                      residual[a] *= this->time->get_delta_t()/(2.0*viscosity_mode_1);
                       residual[a] += epsilon_e_1[a];
                       residual[a] -= epsilon_e_1_tr[a];
 
                       for (unsigned int b = 0; b < dim; ++b)
                       {
                           tangent[a][b]  = get_gamma_mode_1(lambdas_e_1_iso, a, b);
-                          tangent[a][b] *= this->time.get_delta_t()/(2.0*viscosity_mode_1);
+                          tangent[a][b] *= this->time->get_delta_t()/(2.0*viscosity_mode_1);
                           tangent[a][b] += I[a][b];
                       }
 
@@ -3320,7 +3317,7 @@ namespace NonLinearPoroViscoElasticity
             {}
 
             void setup_lqp (const Parameters::AllParameters &parameters,
-                            const Time                      &time)
+                            const std::shared_ptr<Time>     &time)
             {
                 if (parameters.mat_type == "Neo-Hooke")
                     solid_material.reset(new NeoHooke<dim,NumberType>(parameters,time));
@@ -3520,7 +3517,7 @@ namespace NonLinearPoroViscoElasticity
             parallel::shared::Triangulation<dim>  triangulation;
 
             // Keep track of the current time and the time spent evaluating certain functions
-            Time          time;
+            std::shared_ptr<Time>    time;
             TimerOutput   timerconsole;
             TimerOutput   timerfile;
 
@@ -3665,7 +3662,6 @@ namespace NonLinearPoroViscoElasticity
         pcout(std::cout, this_mpi_process == 0),
         parameters(parameters),
         triangulation(mpi_communicator,Triangulation<dim>::maximum_smoothing),
-		time(parameters.end_time, parameters.end_load_time, parameters.delta_t), //remove?
         timerconsole( mpi_communicator,
                       pcout,
                       TimerOutput::summary,
@@ -3694,6 +3690,15 @@ namespace NonLinearPoroViscoElasticity
         {
          Assert(dim==3, ExcMessage("This problem only works in 3 space dimensions."));
          determine_component_extractors();
+
+         if (parameters.input_file.empty())
+         {
+        	 this->time = std::make_shared<TimeFixed>(parameters.end_time, parameters.end_load_time, parameters.delta_t);
+         }
+         else
+         {
+        	 this->time = std::make_shared<TimeFile>(parameters.input_file);
+         }
         }
 
     //The class destructor simply clears the data held by the DOFHandler
@@ -3701,17 +3706,6 @@ namespace NonLinearPoroViscoElasticity
     Solid<dim>::~Solid()
     {
         dof_handler_ref.clear();
-
-        /*if (parameters.input_file.empty())
-        {
-          this->time = time(parameters.end_time, parameters.end_load_time, parameters.delta_t);
-        }
-        else
-        {
-          this->time = time(parameters.input_file);
-          this->read_input_file(parameters.input_file);
-          this->read_testfile(parameters.input_file);
-        }*/
     }
 
 //Runs the 3D solid problem
@@ -3728,17 +3722,6 @@ namespace NonLinearPoroViscoElasticity
               outfile.open("console-output.sol");
               print_console_file_header(outfile);
           }
-
-          /*if (parameters.input_file.empty())
-          {
-        	  this->time = time(parameters.end_time, parameters.end_load_time, parameters.delta_t);
-          }
-          else
-          {
-        	  this->time = time(parameters.input_file);
-        	  this->read_input_file(parameters.input_file);
-        	  this->read_testfile(parameters.input_file);
-          }*/
 
           //Generate mesh
           make_grid();
@@ -3760,28 +3743,28 @@ namespace NonLinearPoroViscoElasticity
           //Print results to output file
           if (parameters.outfiles_requested == "all")
           {
-                output_results_to_vtu(time.get_timestep(),
-                                      time.get_current(),
+                output_results_to_vtu(time->get_timestep(),
+                                      time->get_current(),
                                       solution_n           );
-                output_bcs_to_vtu(time.get_timestep(),
-                                  time.get_current(),
+                output_bcs_to_vtu(time->get_timestep(),
+                                  time->get_current(),
                                   solution_n           );
           }
           else if (parameters.outfiles_requested == "solution")
           {
-                output_results_to_vtu(time.get_timestep(),
-                                      time.get_current(),
+                output_results_to_vtu(time->get_timestep(),
+                                      time->get_current(),
                                       solution_n           );
           }
           else if (parameters.outfiles_requested == "bcs")
           {
-                output_bcs_to_vtu(time.get_timestep(),
-                                  time.get_current(),
+                output_bcs_to_vtu(time->get_timestep(),
+                                  time->get_current(),
                                   solution_n           );
           }
 
-          output_results_to_plot(time.get_timestep(),
-                                 time.get_current(),
+          output_results_to_plot(time->get_timestep(),
+                                 time->get_current(),
                                  solution_n,
                                  tracked_vertices,
                                  pointfile);
@@ -3789,7 +3772,7 @@ namespace NonLinearPoroViscoElasticity
           //Increment time step (=load step)
           //NOTE: In solving the quasi-static problem, the time becomes a loading parameter,
           //i.e. we increase the loading linearly with time, making the two concepts interchangeable.
-          time.increment_time();
+          time->increment_time();
 
           //Print information on screen
           pcout << "\nSolver:";
@@ -3803,7 +3786,7 @@ namespace NonLinearPoroViscoElasticity
           outfile << "\n  ASM_SYS = assemble system";
           outfile << "\n  SLV     = linear solver \n";
 
-          while ( (time.get_end() - time.get_current()) > -1.0*parameters.tol_u )
+          while ( (time->get_end() - time->get_current()) > -1.0*parameters.tol_u )
             {
               //Initialize the current solution increment to zero
               solution_delta = 0.0;
@@ -3818,39 +3801,39 @@ namespace NonLinearPoroViscoElasticity
               update_end_timestep();
 
               //Output results
-              if ( (time.get_timestep()%parameters.timestep_output) == 0 )
+              if ( (time->get_timestep()%parameters.timestep_output) == 0 )
               {
                 if (parameters.outfiles_requested == "all")
                 {
-                      output_results_to_vtu(time.get_timestep(),
-                                            time.get_current(),
+                      output_results_to_vtu(time->get_timestep(),
+                                            time->get_current(),
                                             solution_n           );
-                      output_bcs_to_vtu(time.get_timestep(),
-                                        time.get_current(),
+                      output_bcs_to_vtu(time->get_timestep(),
+                                        time->get_current(),
                                         solution_n           );
                 }
                 else if (parameters.outfiles_requested == "solution")
                 {
-                      output_results_to_vtu(time.get_timestep(),
-                                            time.get_current(),
+                      output_results_to_vtu(time->get_timestep(),
+                                            time->get_current(),
                                             solution_n           );
                 }
                 else if (parameters.outfiles_requested == "bcs")
                 {
-                      output_bcs_to_vtu(time.get_timestep(),
-                                        time.get_current(),
+                      output_bcs_to_vtu(time->get_timestep(),
+                                        time->get_current(),
                                         solution_n           );
                 }
               }
 
-              output_results_to_plot(time.get_timestep(),
-                                     time.get_current(),
+              output_results_to_plot(time->get_timestep(),
+                                     time->get_current(),
                                      solution_n,
                                      tracked_vertices,
                                      pointfile);
 
               //Increment the time step (=load step)
-              time.increment_time();
+              time->increment_time();
             }
 
           //Print the footers and close files
@@ -4272,16 +4255,16 @@ namespace NonLinearPoroViscoElasticity
     	//Print the load step
         pcout  << std::endl
                << "\nTimestep "
-               << time.get_timestep()
+               << time->get_timestep()
                << " @ "
-               << time.get_current()
+               << time->get_current()
                << "s"
                << std::endl;
         outfile  << std::endl
                  << "\nTimestep "
-                 << time.get_timestep()
+                 << time->get_timestep()
                  << " @ "
-                 << time.get_current()
+                 << time->get_current()
                  << "s"
                  << std::endl;
 
@@ -4422,7 +4405,7 @@ namespace NonLinearPoroViscoElasticity
         	std::ofstream solve_nonlinear_timestep_time;
         	solve_nonlinear_timestep_time.open("solve_nonlinear_timestep_time", std::ofstream::app);
         	solve_nonlinear_timestep_time << std::setprecision(6) << std::scientific;
-        	solve_nonlinear_timestep_time << std::setw(16) << this->time.get_current() << ","
+        	solve_nonlinear_timestep_time << std::setw(16) << this->time->get_current() << ","
         			<< std::setw(16) << end - start << std::endl;
         	solve_nonlinear_timestep_time.close();
         }
@@ -4598,7 +4581,7 @@ namespace NonLinearPoroViscoElasticity
         	std::ofstream assemble_system_time;
         	assemble_system_time.open("assemble_system_time", std::ofstream::app);
         	assemble_system_time << std::setprecision(6) << std::scientific;
-        	assemble_system_time << std::setw(16) << this->time.get_current() << ","
+        	assemble_system_time << std::setw(16) << this->time->get_current() << ","
         			<< std::setw(16) << end - start << std::endl;
         	assemble_system_time.close();
         }
@@ -4703,7 +4686,7 @@ namespace NonLinearPoroViscoElasticity
             std::ofstream F;
             F.open("F", std::ofstream::app);
             F << std::setprecision(6) << std::scientific;
-            F << std::setw(16) << this->time.get_current() << ","
+            F << std::setw(16) << this->time->get_current() << ","
               << std::setw(16) << q_point << ","
               << std::setw(16) << F_AG[0][0] << ","
 			  << std::setw(16) << F_AG[0][1] << ","
@@ -4720,7 +4703,7 @@ namespace NonLinearPoroViscoElasticity
             std::ofstream det_F;
             det_F.open("det_F", std::ofstream::app);
             det_F << std::setprecision(6) << std::scientific;
-            det_F << std::setw(16) << this->time.get_current() << ","
+            det_F << std::setw(16) << this->time->get_current() << ","
             	  << std::setw(16) << cell->id() << ","
          		  << std::setw(16) << q_point << ","
 				  << std::setw(16) << det_F_AG << "," << std::endl;
@@ -4780,7 +4763,7 @@ namespace NonLinearPoroViscoElasticity
             /*std::ofstream eigenvalues;
             eigenvalues.open("eigenvalues", std::ofstream::app);
             eigenvalues << std::setprecision(6) << std::scientific;
-            eigenvalues << std::setw(16) << this->time.get_current() << ","
+            eigenvalues << std::setw(16) << this->time->get_current() << ","
             			<< std::setw(16) << cell->id() << ","
 						<< std::setw(16) << q_point << ",";
 			eigenvalues.close();*/
@@ -4823,7 +4806,7 @@ namespace NonLinearPoroViscoElasticity
                     const Tensor<1, dim, ADNumberType> seepage_vel_current
                         = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p);
                     residual_ad[i] += Np[i] * (det_F_AD - det_F_converged) * JxW;
-                    residual_ad[i] -= time.get_delta_t() * grad_Np[i]
+                    residual_ad[i] -= time->get_delta_t() * grad_Np[i]
                                       * seepage_vel_current * JxW;
                   }
                 else
@@ -4949,7 +4932,7 @@ namespace NonLinearPoroViscoElasticity
         	   std::ofstream solve_linear_system_time;
         	   solve_linear_system_time.open("solve_linear_system_time", std::ofstream::app);
         	   solve_linear_system_time << std::setprecision(6) << std::scientific;
-        	   solve_linear_system_time << std::setw(16) << this->time.get_current() << ","
+        	   solve_linear_system_time << std::setw(16) << this->time->get_current() << ","
         			   << std::setw(16) << end - start << std::endl;
         	   solve_linear_system_time.close();
            }
@@ -6245,10 +6228,10 @@ namespace NonLinearPoroViscoElasticity
             }
       // Write the results to the plotting file.
       // Add two blank lines between cycles in the cyclic loading examples so GNUPLOT can detect each cycle as a different block
-            const double delta_time = time.get_delta_t();
-            const double end_time   = time.get_end();
+            const double delta_time = time->get_delta_t();
+            const double end_time   = time->get_end();
             // This was previously called from parameters.
-            // Current time is passed into the function, maybe it can be called from time. too?
+            // Current time is passed into the function, maybe it can be called from time-> too?
             
             if (( (parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
                   (parameters.geom_type == "Budday_cube_tension_compression")||
@@ -6494,7 +6477,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
-            if (this->time.get_timestep() < 2)
+            if (this->time->get_timestep() < 2)
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        2,
@@ -6617,9 +6600,9 @@ namespace NonLinearPoroViscoElasticity
                 {
                   const double initial_load = this->parameters.load;
                   const double final_load = 20.0*initial_load;
-                  const double initial_time = this->time.get_delta_t();
-                  const double final_time = this->time.get_end();
-                  const double current_time = this->time.get_current();
+                  const double initial_time = this->time->get_delta_t();
+                  const double final_time = this->time->get_end();
+                  const double current_time = this->time->get_current();
                   const double load = initial_load + (final_load-initial_load)*(current_time-initial_time)/(final_time-initial_time);
                   return load * N;
                 }
@@ -6687,7 +6670,7 @@ namespace NonLinearPoroViscoElasticity
           virtual void
           make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
-            if (this->time.get_timestep() < 2)
+            if (this->time->get_timestep() < 2)
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        101,
@@ -6863,7 +6846,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
-            if (this->time.get_timestep() < 2)
+            if (this->time->get_timestep() < 2)
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        1,
@@ -6960,8 +6943,8 @@ namespace NonLinearPoroViscoElasticity
                 return (this->parameters.load * N);
                 /*
                 const double final_load = this->parameters.load;
-                const double final_load_time = 10 * this->time.get_delta_t();
-                const double current_time = this->time.get_current();
+                const double final_load_time = 10 * this->time->get_delta_t();
+                const double current_time = this->time->get_current();
 
 
                 const double c = final_load_time / 2.0;
@@ -7068,7 +7051,7 @@ namespace NonLinearPoroViscoElasticity
           virtual void
           make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
-              if (this->time.get_timestep() < 2)
+              if (this->time->get_timestep() < 2)
               {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                            100,
@@ -7129,8 +7112,8 @@ namespace NonLinearPoroViscoElasticity
                 if (boundary_id ==  5)
                 {
                     const double final_load   = this->parameters.load;
-                    const double current_time = this->time.get_current();
-                    const double final_time   = this->time.get_end();
+                    const double current_time = this->time->get_current();
+                    const double final_time   = this->time->get_end();
                     const double num_cycles   = 3.0;
 
                     return  final_load/2.0 * (1.0 - std::sin(numbers::PI * (2.0*num_cycles*current_time/final_time + 0.5))) * N;
@@ -7157,9 +7140,9 @@ namespace NonLinearPoroViscoElasticity
                 if ( (boundary_id == 5) && (direction == 2) )
                 {
                     const double final_displ  = this->parameters.load;
-                    const double current_time = this->time.get_current();
-                    const double final_time   = this->time.get_end();
-                    const double delta_time   = this->time.get_delta_t();
+                    const double current_time = this->time->get_current();
+                    const double final_time   = this->time->get_end();
+                    const double delta_time   = this->time->get_delta_t();
                     const double num_cycles   = 3.0;
                     double current_displ = 0.0;
                     double previous_displ = 0.0;
@@ -7224,7 +7207,7 @@ namespace NonLinearPoroViscoElasticity
           virtual void
           make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
-              if (this->time.get_timestep() < 2)
+              if (this->time->get_timestep() < 2)
               {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                            100,
@@ -7281,8 +7264,8 @@ namespace NonLinearPoroViscoElasticity
                 if (boundary_id ==  5)
                 {
                     const double final_load   = this->parameters.load;
-                    const double current_time = this->time.get_current();
-                    const double final_time   = this->time.get_end();
+                    const double current_time = this->time->get_current();
+                    const double final_time   = this->time->get_end();
                     const double num_cycles   = 3.0;
 
                     return  final_load/2.0 * (1.0 - std::sin(numbers::PI * (2.0*num_cycles*current_time/final_time + 0.5))) * N;
@@ -7309,9 +7292,9 @@ namespace NonLinearPoroViscoElasticity
                 if ( (boundary_id == 5) && (direction == 2) )
                 {
                     const double final_displ  = this->parameters.load;
-                    const double current_time = this->time.get_current();
-                    const double final_time   = this->time.get_end();
-                    const double delta_time   = this->time.get_delta_t();
+                    const double current_time = this->time->get_current();
+                    const double final_time   = this->time->get_end();
+                    const double delta_time   = this->time->get_delta_t();
                     const double num_cycles   = 3.0;
                     double current_displ = 0.0;
                     double previous_displ = 0.0;
@@ -7374,7 +7357,7 @@ namespace NonLinearPoroViscoElasticity
           virtual void
           make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
-              if (this->time.get_timestep() < 2)
+              if (this->time->get_timestep() < 2)
               {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                            100,
@@ -7431,8 +7414,8 @@ namespace NonLinearPoroViscoElasticity
                 if (boundary_id ==  4)
                 {
                     const double final_load   = this->parameters.load;
-                    const double current_time = this->time.get_current();
-                    const double final_time   = this->time.get_end();
+                    const double current_time = this->time->get_current();
+                    const double final_time   = this->time->get_end();
                     const double num_cycles   = 3.0;
                     const Point< 3, double> axis (0.0,1.0,0.0);
                     const double angle = numbers::PI;
@@ -7462,9 +7445,9 @@ namespace NonLinearPoroViscoElasticity
                 if ( (boundary_id == 4) && (direction == 0) )
                 {
                     const double final_displ  = this->parameters.load;
-                    const double current_time = this->time.get_current();
-                    const double final_time   = this->time.get_end();
-                    const double delta_time   = this->time.get_delta_t();
+                    const double current_time = this->time->get_current();
+                    const double final_time   = this->time->get_end();
+                    const double delta_time   = this->time->get_delta_t();
                     const double num_cycles   = 3.0;
                     double current_displ = 0.0;
                     double previous_displ = 0.0;
@@ -7512,7 +7495,7 @@ namespace NonLinearPoroViscoElasticity
           virtual void
           make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
-              if (this->time.get_timestep() < 2)
+              if (this->time->get_timestep() < 2)
               {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                            4,
@@ -7604,8 +7587,8 @@ namespace NonLinearPoroViscoElasticity
                              const int                  &direction) const
           {
                 std::vector<double> displ_incr(dim,0.0);
-                const double current_time = this->time.get_current();
-                const double delta_time   = this->time.get_delta_t();
+                const double current_time = this->time->get_current();
+                const double delta_time   = this->time->get_delta_t();
 
                 if ( (boundary_id == 5) && (direction == 2)
                      && (current_time <= delta_time)         )
@@ -7799,7 +7782,7 @@ namespace NonLinearPoroViscoElasticity
           virtual void
           make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
-            if (this->time.get_timestep() < 2)
+            if (this->time->get_timestep() < 2)
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        0,
@@ -7849,9 +7832,9 @@ namespace NonLinearPoroViscoElasticity
                     if (this->parameters.num_cycle_sets > 1)
                         AssertThrow(false, ExcMessage("Problem type not defined. Rheometer shear experiments implemented only for one set of cycles."));
 
-                    const double final_time    = this->time.get_end();
-                    const double delta_time    = this->time.get_delta_t();
-                    const double current_time  = this->time.get_current();
+                    const double final_time    = this->time->get_end();
+                    const double delta_time    = this->time->get_delta_t();
+                    const double current_time  = this->time->get_current();
                     //const double total_angle   = (this->parameters.load)*(numbers::PI)/180.; //parameter in grad
                     const double total_angle   = this->parameters.load; //parameter in rad, in this case phi=gamma
                     const double num_cycles    = 3.0;
@@ -7886,7 +7869,7 @@ namespace NonLinearPoroViscoElasticity
         private:
           	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
           	{
-          		if (this->time.get_timestep() < 2) {
+          		if (this->time->get_timestep() < 2) {
           			VectorTools::interpolate_boundary_values(
           					this->dof_handler_ref,
                             0,
@@ -7929,9 +7912,9 @@ namespace NonLinearPoroViscoElasticity
                     if (this->parameters.num_cycle_sets > 1)
                         AssertThrow(false, ExcMessage("Problem type not defined. Rheometer shear experiments implemented only for one set of cycles."));
 
-                    //const double final_time    = this->time.get_end();
-                    const double delta_time    = this->time.get_delta_t();
-                    const double current_time  = this->time.get_current();
+                    //const double final_time    = this->time->get_end();
+                    const double delta_time    = this->time->get_delta_t();
+                    const double current_time  = this->time->get_current();
                     const double final_load_time = this->parameters.end_load_time;
                     //const double total_angle   = (this->parameters.load)*(numbers::PI)/180.; //parameter in grad
                     const double total_angle   = this->parameters.load; //parameter in rad, in this case phi=gamma
@@ -7970,7 +7953,7 @@ namespace NonLinearPoroViscoElasticity
     		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
     		{
     			// Cylinder hull is drained
-    			if (this->time.get_timestep() < 2) {
+    			if (this->time->get_timestep() < 2) {
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							0,
@@ -8017,9 +8000,9 @@ namespace NonLinearPoroViscoElasticity
                 std::vector<double> displ_incr (dim,0.0);
 
                 if ((boundary_id == 2) && (direction == 2)) {
-                    const double final_time   = this->time.get_end();
-                    const double delta_time   = this->time.get_delta_t();
-                    const double current_time = this->time.get_current();
+                    const double final_time   = this->time->get_end();
+                    const double delta_time   = this->time->get_delta_t();
+                    const double current_time = this->time->get_current();
                     const double final_displ  = this->parameters.load;
                     const double num_cycles   = this->parameters.num_cycle_sets;
                     const double cycle_time   = final_time/(4*num_cycles);
@@ -8063,8 +8046,8 @@ namespace NonLinearPoroViscoElasticity
     	{
     		using namespace dealii;
 
-    		Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
-    		        ExcFileNotOpen (filename));
+    		//Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
+    		//        ExcFileNotOpen (filename));
 
     		efi::io::CSVReader<1> in (filename);
 
@@ -8080,7 +8063,7 @@ namespace NonLinearPoroViscoElasticity
     	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
     	{
     		// Cylinder hull is drained
-    		if (this->time.get_timestep() < 2) {
+    		if (this->time->get_timestep() < 2) {
     			VectorTools::interpolate_boundary_values(
     					this->dof_handler_ref,
 						0,
@@ -8127,7 +8110,7 @@ namespace NonLinearPoroViscoElasticity
     		std::vector<double> displ_incr (dim,0.0);
 
     		if ((boundary_id == 2) && (direction == 2)) {
-    				displ_incr[2] = this->get_displacement(this->time.get_timestep());
+    				displ_incr[2] = this->get_displacement(this->time->get_timestep());
     		}
     		return displ_incr;
         }
@@ -8153,7 +8136,7 @@ namespace NonLinearPoroViscoElasticity
         		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
         		{
         			// Cylinder hull is drained
-        			if (this->time.get_timestep() < 2) {
+        			if (this->time->get_timestep() < 2) {
         				VectorTools::interpolate_boundary_values(
         						this->dof_handler_ref,
     							0,
@@ -8200,9 +8183,9 @@ namespace NonLinearPoroViscoElasticity
                       std::vector<double> displ_incr (dim,0.0);
 
                       if ((boundary_id == 2) && (direction == 2)) {
-                          const double final_time   = this->time.get_end();
-                          const double delta_time   = this->time.get_delta_t();
-                          const double current_time = this->time.get_current();
+                          const double final_time   = this->time->get_end();
+                          const double delta_time   = this->time->get_delta_t();
+                          const double current_time = this->time->get_current();
                           const double final_displ  = this->parameters.load;
                           const double num_cycles   = this->parameters.num_cycle_sets;
                           const double hold_time    = 7.00;
@@ -8254,7 +8237,7 @@ namespace NonLinearPoroViscoElasticity
             {
             	// Cylinder hull is drained
             	if (this->parameters.lateral_drained == "drained") {
-            		if (this->time.get_timestep() < 2) {
+            		if (this->time->get_timestep() < 2) {
             			VectorTools::interpolate_boundary_values(
             					this->dof_handler_ref,
         						0,
@@ -8273,7 +8256,7 @@ namespace NonLinearPoroViscoElasticity
 
             	// Bottom drained
             	if (this->parameters.bottom_drained == "drained") {
-            	    if (this->time.get_timestep() < 2) {
+            	    if (this->time->get_timestep() < 2) {
             	    	VectorTools::interpolate_boundary_values(
             	    			this->dof_handler_ref,
             	    			1,
@@ -8334,8 +8317,8 @@ namespace NonLinearPoroViscoElasticity
     			if ((boundary_id == 2) && (direction == 2)) {
     				const double final_displ = this->parameters.load;
     				const double final_load_time = this->parameters.end_load_time;
-    				const double current_time = this->time.get_current();
-    				const double delta_time = this->time.get_delta_t();
+    				const double current_time = this->time->get_current();
+    				const double delta_time = this->time->get_delta_t();
 
     				double current_displ = 0.0;
     				double previous_displ = 0.0;
@@ -8435,7 +8418,7 @@ namespace NonLinearPoroViscoElasticity
     		{
     			// Cylinder hull is drained
     			if (this->parameters.lateral_drained == "drained") {
-    				if (this->time.get_timestep() < 2) {
+    				if (this->time->get_timestep() < 2) {
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							0,
@@ -8454,12 +8437,12 @@ namespace NonLinearPoroViscoElasticity
 
     			// Cylinder hull is slowly undrained
     			/*if (this->parameters.lateral_drained == "undrained") {
-    				if (this->time.get_timestep() < 2) {
+    				if (this->time->get_timestep() < 2) {
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							0,
 								ZeroFunction<dim>(this->n_components),
-    							//ConstantFunction<dim>((this->time.get_timestep()-1)*10,this->n_components),
+    							//ConstantFunction<dim>((this->time->get_timestep()-1)*10,this->n_components),
     							constraints,
     							this->fe.component_mask(this->pressure));
     				}
@@ -8467,7 +8450,7 @@ namespace NonLinearPoroViscoElasticity
 
     			// Bottom drained
     			if (this->parameters.bottom_drained == "drained") {
-    				if (this->time.get_timestep() < 2) {
+    				if (this->time->get_timestep() < 2) {
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							1,
@@ -8486,7 +8469,7 @@ namespace NonLinearPoroViscoElasticity
 
     			// Top drained
     			/*if (this->parameters.bottom_drained == "drained") {
-    				if (this->time.get_timestep() < 2) {
+    				if (this->time->get_timestep() < 2) {
     					VectorTools::interpolate_boundary_values(
     							this->dof_handler_ref,
 								2,
@@ -8608,9 +8591,9 @@ namespace NonLinearPoroViscoElasticity
                 std::vector<double> displ_incr (dim,0.0);
 
                 if ((boundary_id == 2) && (direction == 2)) {
-                    const double final_time   = this->time.get_end();
-                    const double delta_time   = this->time.get_delta_t();
-                    const double current_time = this->time.get_current();
+                    const double final_time   = this->time->get_end();
+                    const double delta_time   = this->time->get_delta_t();
+                    const double current_time = this->time->get_current();
                     const double final_displ  = this->parameters.load;
                     const double num_cycles   = this->parameters.num_cycle_sets;
                     const double cycle_time   = final_time/(4*num_cycles);
@@ -8650,9 +8633,9 @@ namespace NonLinearPoroViscoElasticity
 			   std::vector<double> displ_incr (dim,0.0);
 
 			   if ((boundary_id == 2) && (direction == 2)) {
-				   const double final_time   = this->time.get_end();
-				   const double delta_time   = this->time.get_delta_t();
-				   const double current_time = this->time.get_current();
+				   const double final_time   = this->time->get_end();
+				   const double delta_time   = this->time->get_delta_t();
+				   const double current_time = this->time->get_current();
 				   const double final_displ  = this->parameters.load;
 				   const double num_cycles   = this->parameters.num_cycle_sets;
 				   const double cycle_time   = final_time/(2*num_cycles);
@@ -8691,9 +8674,9 @@ namespace NonLinearPoroViscoElasticity
   			   std::vector<double> displ_incr (dim,0.0);
 
   			   if ((boundary_id == 2) && (direction == 2)) {
-  				   const double final_time   = this->time.get_end();
-  				   const double delta_time   = this->time.get_delta_t();
-  				   const double current_time = this->time.get_current();
+  				   const double final_time   = this->time->get_end();
+  				   const double delta_time   = this->time->get_delta_t();
+  				   const double current_time = this->time->get_current();
   				   const double final_displ  = this->parameters.load;
   				   const double num_cycles   = this->parameters.num_cycle_sets;
   				   const double cycle_time   = final_time/(2*num_cycles);
@@ -8730,9 +8713,9 @@ namespace NonLinearPoroViscoElasticity
                 std::vector<double> displ_incr (dim,0.0);
 
                 if ((boundary_id == 2) && (direction == 2)) {
-                    const double final_time   = this->time.get_end();
-                    const double delta_time   = this->time.get_delta_t();
-                    const double current_time = this->time.get_current();
+                    const double final_time   = this->time->get_end();
+                    const double delta_time   = this->time->get_delta_t();
+                    const double current_time = this->time->get_current();
                     const double final_displ  = this->parameters.load;
                     const double num_cycles   = this->parameters.num_cycle_sets;
                     const double hold_time    = 7.00;
@@ -8788,8 +8771,8 @@ namespace NonLinearPoroViscoElasticity
     				if ((boundary_id == 2) && (direction == 2)) {
     					const double final_displ = this->parameters.load;
     					const double final_load_time = this->parameters.end_load_time;
-    					const double current_time = this->time.get_current();
-    					const double delta_time = this->time.get_delta_t();
+    					const double current_time = this->time->get_current();
+    					const double delta_time = this->time->get_delta_t();
 
     					double current_displ = 0.0;
     					double previous_displ = 0.0;
@@ -8814,7 +8797,7 @@ namespace NonLinearPoroViscoElasticity
     				if (boundary_id == 2) {
     					const double final_load = this->parameters.load;
     					const double final_time = this->parameters.end_load_time;
-    					const double current_time = this->time.get_current();
+    					const double current_time = this->time->get_current();
     					double load;
 
     					if (current_time <= final_time) {
@@ -8994,7 +8977,7 @@ namespace NonLinearPoroViscoElasticity
           make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
             // Top (unloaded) surface is drained
-            if (this->time.get_timestep() < 2)
+            if (this->time->get_timestep() < 2)
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        1,
@@ -9033,7 +9016,7 @@ namespace NonLinearPoroViscoElasticity
 
              if (this->parameters.load_type == "displacement")
              {
-                if (this->time.get_current()<=this->parameters.end_load_time)
+                if (this->time->get_current()<=this->parameters.end_load_time)
                 {
                     const std::vector<double> value = get_dirichlet_load(5,-1);
                     VectorTools::interpolate_boundary_values(
@@ -9123,9 +9106,9 @@ namespace NonLinearPoroViscoElasticity
                     
                     const double indent_radius   = std::abs(this->parameters.load);
                     const double final_displ     = 0.1 * indent_radius;
-                    const double current_time    = this->time.get_current();
-                    const double final_time      = this->time.get_end();
-                    const double delta_time      = this->time.get_delta_t();
+                    const double current_time    = this->time->get_current();
+                    const double final_time      = this->time->get_end();
+                    const double delta_time      = this->time->get_delta_t();
                     const double num_cycles      = 1.0;
                     
                     double current_displ = 0.0;
@@ -9167,8 +9150,8 @@ namespace NonLinearPoroViscoElasticity
                     const double indenter_radius = std::abs(this->parameters.load);
                     const double max_indent_dist = 0.1; //final max indentation is 10% of radius
                     const double final_load_time = this->parameters.end_load_time;
-                    const double current_time    = this->time.get_current();
-                    const double delta_time      = this->time.get_delta_t();
+                    const double current_time    = this->time->get_current();
+                    const double delta_time      = this->time->get_delta_t();
                     
                     double current_displ = 0.0;
                     double previous_displ = 0.0;
@@ -9374,7 +9357,7 @@ namespace NonLinearPoroViscoElasticity
     		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
     		{
     			// Top (unloaded) surface is drained
-    			if (this->time.get_timestep() < 2) {
+    			if (this->time->get_timestep() < 2) {
     				VectorTools::interpolate_boundary_values(
     				    	this->dof_handler_ref,
     						5,
@@ -9488,8 +9471,8 @@ namespace NonLinearPoroViscoElasticity
     				const double final_load_time = 10.0; //linear load increase from 0 to 10s
     				const double start_deload_time = 20.0; //time to start deloading
     				const double end_deload_time = 30.0; //time to end deloading
-    				const double current_time = this->time.get_current();
-    				const double delta_time = this->time.get_delta_t();
+    				const double current_time = this->time->get_current();
+    				const double delta_time = this->time->get_delta_t();
 
     				const double deload_time_steps = (end_deload_time-start_deload_time)/delta_time;
 
@@ -9656,7 +9639,7 @@ namespace NonLinearPoroViscoElasticity
     		{
     			// Cylinder hull is drained
     			if (this->parameters.lateral_drained == "drained") {
-    				if (this->time.get_timestep() < 2) {
+    				if (this->time->get_timestep() < 2) {
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							0,
@@ -9675,7 +9658,7 @@ namespace NonLinearPoroViscoElasticity
 
     			// Bottom drained
     			if (this->parameters.bottom_drained == "drained") {
-    				if (this->time.get_timestep() < 2) {
+    				if (this->time->get_timestep() < 2) {
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							1,
@@ -9694,7 +9677,7 @@ namespace NonLinearPoroViscoElasticity
 
     			// Unloaded Top drained
     			if (this->parameters.bottom_drained == "drained") {
-    				if (this->time.get_timestep() < 2) {
+    				if (this->time->get_timestep() < 2) {
     					VectorTools::interpolate_boundary_values(
     							this->dof_handler_ref,
 								2,
@@ -9833,8 +9816,8 @@ namespace NonLinearPoroViscoElasticity
     				if ((boundary_id == 100 || boundary_id == 101) && (direction == 2)) {
     					const double final_displ = this->parameters.load;
     					const double final_load_time = this->parameters.end_load_time;
-    					const double current_time = this->time.get_current();
-    					const double delta_time = this->time.get_delta_t();
+    					const double current_time = this->time->get_current();
+    					const double delta_time = this->time->get_delta_t();
 
     					double current_displ = 0.0;
     					double previous_displ = 0.0;
@@ -9859,7 +9842,7 @@ namespace NonLinearPoroViscoElasticity
     				if (boundary_id == 2) {
     					const double final_load = this->parameters.load;
     					const double final_time = this->parameters.end_load_time;
-    					const double current_time = this->time.get_current();
+    					const double current_time = this->time->get_current();
     					double load;
 
     					if (current_time <= final_time) {
@@ -10157,7 +10140,7 @@ namespace NonLinearPoroViscoElasticity
 
 				// Cylinder hull is drained
 				if (this->parameters.lateral_drained == "drained") {
-					if (this->time.get_timestep() < 2) {
+					if (this->time->get_timestep() < 2) {
 						VectorTools::interpolate_boundary_values(
 								this->dof_handler_ref,
 								0,
@@ -10176,7 +10159,7 @@ namespace NonLinearPoroViscoElasticity
 
 				// Bottom drained
 				if (this->parameters.bottom_drained == "drained") {
-					if (this->time.get_timestep() < 2) {
+					if (this->time->get_timestep() < 2) {
 						VectorTools::interpolate_boundary_values(
 								this->dof_handler_ref,
 								1,
@@ -10195,7 +10178,7 @@ namespace NonLinearPoroViscoElasticity
 
 				/*// Unloaded Top drained
 				if (this->parameters.bottom_drained == "drained") {
-					if (this->time.get_timestep() < 2) {
+					if (this->time->get_timestep() < 2) {
 						VectorTools::interpolate_boundary_values(
 								this->dof_handler_ref,
 								2,
@@ -10246,7 +10229,7 @@ namespace NonLinearPoroViscoElasticity
 
 			    // indenter tip
 				if (this->parameters.load_type == "displacement") {
-					if (this->time.get_current()<=this->parameters.end_load_time) {
+					if (this->time->get_current()<=this->parameters.end_load_time) {
 						const std::vector<double> value = get_dirichlet_load(100,2);
 						std::cout << "current indenter depth    = " << r_c[0] << std::endl;
 						std::cout << "previous indenter depth   = " << r_c[1] << std::endl;
@@ -10321,8 +10304,8 @@ namespace NonLinearPoroViscoElasticity
                     const double r_i = 2;	// indenter radius
                     const double d_max = this->parameters.load;	 // maximal indetation depth
                     const double final_load_time = this->parameters.end_load_time;
-                    const double current_time    = this->time.get_current();
-                    const double delta_time      = this->time.get_delta_t();
+                    const double current_time    = this->time->get_current();
+                    const double delta_time      = this->time->get_delta_t();
 
                     double d_c = 0.0;
                     double d_p = 0.0;
