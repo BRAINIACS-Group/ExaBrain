@@ -1349,7 +1349,6 @@ namespace io {
                                 err.set_file_line(in.get_file_line());
                                 throw;
                         }
-
                         return true;
                 }
         };
@@ -1582,7 +1581,7 @@ namespace NonLinearPoroViscoElasticity
 
       void Geometry::declare_parameters(ParameterHandler &prm)
       {
-        prm.enter_subsection("Geometry");
+        prm.enter_subsection("Geometry@[type=hydro_graz]");
         {
           prm.declare_entry("Geometry type", "Ehlers_tube_step_load",
                              Patterns::Selection("Ehlers_tube_step_load"
@@ -1624,7 +1623,7 @@ namespace NonLinearPoroViscoElasticity
         }
         prm.leave_subsection();
 
-        prm.enter_subsection("testing-device");
+        prm.enter_subsection("testing_device@[type=porous_tension_compression_testing_device,instance=1]");
 		{
           prm.declare_entry("Load type", "pressure",
                             Patterns::Selection("pressure|displacement|none"),
@@ -1668,13 +1667,18 @@ namespace NonLinearPoroViscoElasticity
         prm.leave_subsection();
       }
 
+
       void Geometry::parse_parameters(ParameterHandler &prm)
       {
-        prm.enter_subsection("Geometry");
+        prm.enter_subsection("Geometry@[type=hydro_graz]");
         {
           geom_type = prm.get("Geometry type");
           global_refinement = prm.get_integer("Global refinement");
           scale = prm.get_double("Grid scale");
+        }
+        prm.leave_subsection();
+        prm.enter_subsection("testing_device@[type=porous_tension_compression_testing_device,instance=1]");
+        {
           load_type = prm.get("Load type");
           input_file = prm.get("Input file");
           load = prm.get_double("Load value");
@@ -2142,7 +2146,8 @@ namespace NonLinearPoroViscoElasticity
           TimeFile (const std::string &filename)
             :
             timestep(0),
-			delta_t(0.0)
+			delta_t(0.0),
+			time_points(0)
             {
             this->read_testfile(filename);
             }
@@ -2176,30 +2181,29 @@ namespace NonLinearPoroViscoElasticity
               this->timestep++;
           }
 
+
         private:
 
           void read_testfile(const std::string &filename)
           {
-            //Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
-            //ExcFileNotOpen (filename));
-    
-            efi::io::CSVReader<1> in (filename);
+              efi::io::CSVReader<1> in (filename);
+              in.read_header(efi::io::ignore_extra_column,"time");
 
-            in.read_header(efi::io::ignore_extra_column,"time");
-
-            double time;
-            while (in.read_row (time))
-            {
-              Assert (time >= this->time_points.back(),
-                    ExcMessage("decreasing time value found"))
-              this->time_points.push_back(time);
-            }
+              double time;
+              while (in.read_row (time)) {
+            	  std::cout << time << std::endl;
+                  if (this->time_points.empty() != true) {
+                      //Assert (time >= this->time_points.back(),
+                      //    ExcMessage("decreasing time value found"))
+                  }
+                  this->time_points.push_back(time);
+                  std::cout << this->time_points.back() << std::endl;
+              }
           }
 
-          std::vector<double> time_points;
           unsigned int timestep;
           double delta_t;
-          
+          std::vector<double> time_points;
     };
 
     class TimeFixed: public Time
@@ -8045,9 +8049,6 @@ namespace NonLinearPoroViscoElasticity
     	void read_input_file (const std::string &filename)
     	{
     		using namespace dealii;
-
-    		//Assert (boost::filesystem::exists(boost::filesystem::path(filename)),
-    		//        ExcFileNotOpen (filename));
 
     		efi::io::CSVReader<1> in (filename);
 
