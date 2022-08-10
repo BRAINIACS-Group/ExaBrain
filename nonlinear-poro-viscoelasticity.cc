@@ -47,7 +47,7 @@
 #include <deal.II/base/work_stream.h>
 #include <deal.II/base/mpi.h>
 #include <deal.II/base/quadrature_point_data.h>
-#include <deal.II/base/std_cxx11/shared_ptr.h>
+//#include <deal.II/base/std_cxx11/shared_ptr.h>
 #include <deal.II/base/geometric_utilities.h>
 
 #include <deal.II/differentiation/ad.h>
@@ -1610,7 +1610,7 @@ namespace NonLinearPoroViscoElasticity
 
       void Geometry::declare_parameters(ParameterHandler &prm)
       {
-        prm.enter_subsection("Geometry@[type=hydro_graz]");
+        prm.enter_subsection("geometry@[type=hydro_graz]");
         {
           prm.declare_entry("Geometry type", "Ehlers_tube_step_load",
                              Patterns::Selection("Ehlers_tube_step_load"
@@ -1650,6 +1650,10 @@ namespace NonLinearPoroViscoElasticity
           prm.declare_entry("Grid scale", "1.0",
                             Patterns::Double(0.0),
                             "Global grid scaling factor");
+          prm.declare_entry("height", "8.0",
+                            Patterns::Double(0.0));
+          prm.declare_entry("radius", "4.0",
+                            Patterns::Double(0.0));
         }
         prm.leave_subsection();
 
@@ -1700,7 +1704,7 @@ namespace NonLinearPoroViscoElasticity
 
       void Geometry::parse_parameters(ParameterHandler &prm)
       {
-        prm.enter_subsection("Geometry@[type=hydro_graz]");
+        prm.enter_subsection("geometry@[type=hydro_graz]");
         {
           geom_type = prm.get("Geometry type");
           global_refinement = prm.get_integer("Global refinement");
@@ -1710,7 +1714,7 @@ namespace NonLinearPoroViscoElasticity
         prm.enter_subsection("testing_device@[type=porous_tension_compression_testing_device,instance=1]");
         {
           load_type = prm.get("Load type");
-          input_file = prm.get("Input file");
+          input_file = prm.get("input files");
           load = prm.get_double("Load value");
           num_cycle_sets = prm.get_integer("Number of cycle sets");
           fluid_flow = prm.get_double("Fluid flow value");
@@ -2054,7 +2058,7 @@ namespace NonLinearPoroViscoElasticity
 // We can choose the frequency of the data for the output files.
       struct OutputParam
       {
-
+        std::string  output_directory;
         std::string  outfiles_requested;
         unsigned int timestep_output;
         std::string  outtype;
@@ -2071,6 +2075,9 @@ namespace NonLinearPoroViscoElasticity
       {
         prm.enter_subsection("Output parameters");
         {
+          prm.declare_entry("output directory",".", Patterns::FileName(),
+                            "directory to which the output files will be written");
+
           prm.declare_entry("Output files", "all",
                             Patterns::Selection("none|bcs|solution|all"),
                             "Paraview output files to generate.");
@@ -2093,6 +2100,7 @@ namespace NonLinearPoroViscoElasticity
       {
         prm.enter_subsection("Output parameters");
         {
+          output_directory = prm.get("output directory");
           outfiles_requested = prm.get("Output files");
           timestep_output = prm.get_integer("Time step number output");
           outtype = prm.get("Averaged results");
@@ -2179,7 +2187,7 @@ namespace NonLinearPoroViscoElasticity
           TimeFile (const std::string &filename)
             :
             timestep(0),
-			delta_t(0.0),
+			//delta_t(0.0),
 			time_points(0)
             {
             this->read_testfile(filename);
@@ -2198,10 +2206,14 @@ namespace NonLinearPoroViscoElasticity
           }
           double get_delta_t() const
           {
-             Assert ((this->timestep +1) < this->time_points.size(),
-                    ExcMessage("timestep greater then timesteps vector length -1"))
-             double delta_t = this->time_points[this->timestep+1] - this->time_points[this->timestep];
-             return this->delta_t;
+            // Assert ((this->timestep +1) < this->time_points.size(),
+            //          ExcMessage("timestep greater then timesteps vector length -1"))
+            double delta_t = 0.;
+            if ((this->timestep + 1) >= this->time_points.size())
+              delta_t = this->time_points[this->timestep] - this->time_points[this->timestep-1];
+            else
+              delta_t = this->time_points[this->timestep+1] - this->time_points[this->timestep];
+            return delta_t;
           }
           unsigned int get_timestep() const
           {
@@ -2235,7 +2247,7 @@ namespace NonLinearPoroViscoElasticity
           }
 
           unsigned int timestep;
-          double delta_t;
+          //double delta_t;
           std::vector<double> time_points;
     };
 
@@ -3734,7 +3746,7 @@ namespace NonLinearPoroViscoElasticity
          }
          else
          {
-        	 this->time = std::make_shared<TimeFile>(parameters.input_file);
+        	 this->time = std::make_shared<TimeFile>(parameters.input_directory + '/' + parameters.input_file);
          }
         }
 
@@ -3756,7 +3768,7 @@ namespace NonLinearPoroViscoElasticity
           //Open file
           if (this_mpi_process == 0)
           {
-              outfile.open("console-output.sol");
+              outfile.open(parameters.output_directory+"/console-output.sol");
               print_console_file_header(outfile);
           }
 
@@ -3773,7 +3785,7 @@ namespace NonLinearPoroViscoElasticity
 
           if (this_mpi_process == 0)
           {
-              pointfile.open("data-for-gnuplot.sol");
+              pointfile.open(parameters.output_directory+"/data-for-gnuplot.sol");
               print_plot_file_header(tracked_vertices, pointfile);
           }
 
@@ -3809,7 +3821,7 @@ namespace NonLinearPoroViscoElasticity
           //Increment time step (=load step)
           //NOTE: In solving the quasi-static problem, the time becomes a loading parameter,
           //i.e. we increase the loading linearly with time, making the two concepts interchangeable.
-          time->increment_time();
+          //time->increment_time();
 
           //Print information on screen
           pcout << "\nSolver:";
@@ -3823,7 +3835,7 @@ namespace NonLinearPoroViscoElasticity
           outfile << "\n  ASM_SYS = assemble system";
           outfile << "\n  SLV     = linear solver \n";
 
-          while ( (time->get_end() - time->get_current()) > -1.0*parameters.tol_u )
+          while ( std::abs(time->get_end() - time->get_current()) > 1.0*parameters.tol_u )
             {
               //Initialize the current solution increment to zero
               solution_delta = 0.0;
@@ -4946,7 +4958,7 @@ namespace NonLinearPoroViscoElasticity
            SolverControl solver_control (tangent_matrix_nb.m(),					// (maximum number of iterations, tolerance)
                                          1.0e-6 * system_rhs_nb.l2_norm());
            TrilinosWrappers::SolverDirect::AdditionalData additional_data;		// select solver type
-           additional_data.solver_type = "Amesos_Superludist";						// default: Amesos_Klu
+           additional_data.solver_type = "Amesos_Klu";//"Amesos_Superludist";						// default: Amesos_Klu
            TrilinosWrappers::SolverDirect solver (solver_control, additional_data);
 
            double start = MPI_Wtime();
@@ -8073,7 +8085,7 @@ namespace NonLinearPoroViscoElasticity
     public:
     	BrainRheometerLTMCyclicTensionCompressionExp (const Parameters::AllParameters &parameters) : BrainRheometerLTMBase<dim> (parameters)
 		{
-    		this->read_input_file(parameters.input_file);
+    		this->read_input_file(parameters.input_directory + '/' + parameters.input_file);
 		}
     	virtual ~BrainRheometerLTMCyclicTensionCompressionExp () {}
 
@@ -8660,7 +8672,7 @@ namespace NonLinearPoroViscoElasticity
     public:
     	BrainRheometerLTMCyclicTensionCompressionExpQuarter (const Parameters::AllParameters &parameters) : BrainRheometerLTMBaseQuarter<dim> (parameters)
 		{
-    		this->read_input_file(parameters.input_file);
+    		this->read_input_file(parameters.input_directory + '/' + parameters.input_file);
 		}
     	virtual ~BrainRheometerLTMCyclicTensionCompressionExpQuarter () {}
 
