@@ -1610,7 +1610,7 @@ namespace NonLinearPoroViscoElasticity
 
       void Geometry::declare_parameters(ParameterHandler &prm)
       {
-        prm.enter_subsection("Geometry@[type=hydro_graz]");
+        prm.enter_subsection("geometry@[type=hydro_graz]");
         {
           prm.declare_entry("Geometry type", "Ehlers_tube_step_load",
                              Patterns::Selection("Ehlers_tube_step_load"
