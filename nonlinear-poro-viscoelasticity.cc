@@ -10418,12 +10418,17 @@ int main (int argc, char *argv[])
   using namespace dealii;
   using namespace NonLinearPoroViscoElasticity;
 
-  const unsigned int n_tbb_processes = 1;
+  //const unsigned int n_tbb_processes = 1;
+  const unsigned int n_tbb_processes = Utilities::string_to_int(std::string(argv[1]));
   Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, n_tbb_processes);
 
   try
     {
-      Parameters::AllParameters parameters ("parameters.prm");
+	  std::string parameters_in (argv[2]);
+	  Parameters::AllParameters parameters (parameters_in);
+      //Parameters::AllParameters parameters ("parameters.prm");
+
+
       if (parameters.geom_type == "Ehlers_tube_step_load")
       {
         VerificationEhlers1999StepLoad<3> solid_3d(parameters);
