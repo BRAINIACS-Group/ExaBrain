@@ -1511,6 +1511,35 @@ namespace NonLinearPoroViscoElasticity
 // Here we specify the polynomial order used to approximate the solution,
 // both for the displacements and pressure unknowns.
 // The quadrature order should be adjusted accordingly.
+      struct Global
+	  {
+    	  std::string input_directory;
+
+		  static void declare_parameters(ParameterHandler &prm);
+    	  void parse_parameters(ParameterHandler &prm);
+	  };
+
+      void Global::declare_parameters(ParameterHandler &prm)
+      {
+    	  prm.enter_subsection("global");
+    	  {
+    		  prm.declare_entry("input directory","",
+    				            Patterns::FileName(),
+								"input directory path");
+    	  }
+    	  prm.leave_subsection();
+      }
+
+      void Global::parse_parameters(ParameterHandler &prm)
+      {
+    	  prm.enter_subsection("global");
+    	  {
+    		  input_directory = prm.get("input directory");
+    	  }
+    	  prm.leave_subsection();
+      }
+
+
       struct FESystem
       {
         unsigned int poly_degree_displ;
@@ -1601,6 +1630,7 @@ namespace NonLinearPoroViscoElasticity
                             		 	 	     "|brain_rheometer_cyclic_tension_compression"
                             		 	 	 	 "|brain_rheometer_cyclic_tension_compression_quarter"
                             		 	 	     "|brain_rheometer_cyclic_tension_compression_exp"
+                            		 	 	 	 "|brain_rheometer_cyclic_tension_compression_exp_quarter"
                             		 	 	 	 "|brain_rheometer_cyclic_compression_quarter"
                             		 	 	 	 "|brain_rheometer_cyclic_tension_quarter"
                             		 	 	 	 "|brain_rheometer_cyclic_trapezoidal_tension_compression_quarter"
@@ -1629,7 +1659,7 @@ namespace NonLinearPoroViscoElasticity
                             Patterns::Selection("pressure|displacement|none"),
                             "Type of loading");
 
-          prm.declare_entry("Input file","",
+          prm.declare_entry("input files","",
                             Patterns::FileName(),
                             "input file path");
 
@@ -2073,7 +2103,8 @@ namespace NonLinearPoroViscoElasticity
 
 // @sect4{All parameters}
 // We finally consolidate all of the above structures into a single container that holds all the run-time selections.
-      struct AllParameters : public FESystem,
+      struct AllParameters : public Global,
+    		  	  	  	  	 public FESystem,
                              public Geometry,
                              public Materials,
                              public NonlinearSolver,
@@ -2099,7 +2130,8 @@ namespace NonLinearPoroViscoElasticity
 
       void AllParameters::declare_parameters(ParameterHandler &prm)
       {
-        FESystem::declare_parameters(prm);
+        Global::declare_parameters(prm);
+    	FESystem::declare_parameters(prm);
         Geometry::declare_parameters(prm);
         Materials::declare_parameters(prm);
         NonlinearSolver::declare_parameters(prm);
@@ -2109,7 +2141,8 @@ namespace NonLinearPoroViscoElasticity
 
       void AllParameters::parse_parameters(ParameterHandler &prm)
       {
-        FESystem::parse_parameters(prm);
+        Global::parse_parameters(prm);
+    	FESystem::parse_parameters(prm);
         Geometry::parse_parameters(prm);
         Materials::parse_parameters(prm);
         NonlinearSolver::parse_parameters(prm);
@@ -7624,7 +7657,7 @@ namespace NonLinearPoroViscoElasticity
           make_grid()
           {  const Point<dim-1> mesh_center(0.0, 0.0);
             const double radius = 4.0;
-            const double height = 4.0;
+            const double height = 8.0;
             Triangulation<dim-1> triangulation_in;
             GridGenerator::hyper_ball( triangulation_in,
                                        mesh_center,
@@ -8111,14 +8144,14 @@ namespace NonLinearPoroViscoElasticity
     		std::vector<double> displ_incr (dim,0.0);
 
     		if ((boundary_id == 2) && (direction == 2)) {
-    				displ_incr[2] = this->get_displacement(this->time->get_timestep());
+    				displ_incr[2] = -this->get_displacement(this->time->get_timestep());
     		}
     		return displ_incr;
         }
 
         double get_displacement(int timestep) const
         {
-        	return this->displacement_data[timestep];
+        	return this->displacement_data[timestep]-displacement_data[timestep-1];
         }
     };
 
@@ -8561,7 +8594,7 @@ namespace NonLinearPoroViscoElasticity
             	return 0.0;
             }
 
-            virtual  std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const
+            virtual std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const
 			{
             	if (this->parameters.lateral_drained == "drained" && this->parameters.bottom_drained == "drained") {
 		        	return std::make_pair(0,1);
@@ -8619,6 +8652,52 @@ namespace NonLinearPoroViscoElasticity
           }
     };
 
+
+    //Derived class: Cyclic Tension and Compression, read load data from file
+    template <int dim>
+    class BrainRheometerLTMCyclicTensionCompressionExpQuarter : public BrainRheometerLTMBaseQuarter<dim>
+    {
+    public:
+    	BrainRheometerLTMCyclicTensionCompressionExpQuarter (const Parameters::AllParameters &parameters) : BrainRheometerLTMBaseQuarter<dim> (parameters)
+		{
+    		this->read_input_file(parameters.input_file);
+		}
+    	virtual ~BrainRheometerLTMCyclicTensionCompressionExpQuarter () {}
+
+    	std::vector<double> displacement_data;
+
+    	void read_input_file (const std::string &filename)
+    	{
+    		using namespace dealii;
+
+    		efi::io::CSVReader<1> in (filename);
+
+    		in.read_header(efi::io::ignore_extra_column,"displacement");
+
+    		double displacement;
+    		while (in.read_row (displacement)) {
+    			this->displacement_data.push_back(displacement);
+    		}
+    	}
+
+    private:
+    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+        {
+    		std::vector<double> displ_incr (dim,0.0);
+
+    		if ((boundary_id == 2) && (direction == 2)) {
+    			displ_incr[2] = -this->get_displacement(this->time->get_timestep());
+    		}
+    		return displ_incr;
+        }
+
+    	double get_displacement(int timestep) const
+    	{
+    		return this->displacement_data[timestep]-displacement_data[timestep-1];
+    	}
+    };
+
+
     //@sect4{Derived class: Cyclic Tension and Compression}
    template <int dim>
    class BrainRheometerLTMCyclicCompressionQuarter : public BrainRheometerLTMBaseQuarter<dim>
@@ -8628,7 +8707,6 @@ namespace NonLinearPoroViscoElasticity
 		virtual ~BrainRheometerLTMCyclicCompressionQuarter () {}
 
 	   private:
-
 		 virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
 		 {
 			   std::vector<double> displ_incr (dim,0.0);
@@ -10419,6 +10497,11 @@ int main (int argc, char *argv[])
       else if (parameters.geom_type == "brain_rheometer_cyclic_tension_compression_quarter")
       {
     	BrainRheometerLTMCyclicTensionCompressionQuarter<3> solid_3d(parameters);
+    	solid_3d.run();
+      }
+      else if (parameters.geom_type == "brain_rheometer_cyclic_tension_compression_exp_quarter")
+      {
+    	BrainRheometerLTMCyclicTensionCompressionExpQuarter<3> solid_3d(parameters);
     	solid_3d.run();
       }
       else if (parameters.geom_type == "brain_rheometer_cyclic_compression_quarter")
