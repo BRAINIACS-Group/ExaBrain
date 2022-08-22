@@ -2198,7 +2198,10 @@ namespace NonLinearPoroViscoElasticity
 
           double get_current() const
           {
-            return this->time_points[this->timestep];
+        	  if (this->timestep == this->time_points.size())
+        		  return (this->time_points[this->timestep - 1] + 1);
+        	  else
+        		  return this->time_points[this->timestep];
           }
           double get_end() const
           {
@@ -2209,10 +2212,13 @@ namespace NonLinearPoroViscoElasticity
             // Assert ((this->timestep +1) < this->time_points.size(),
             //          ExcMessage("timestep greater then timesteps vector length -1"))
             double delta_t = 0.;
-            if ((this->timestep + 1) >= this->time_points.size())
-              delta_t = this->time_points[this->timestep] - this->time_points[this->timestep-1];
-            else
-              delta_t = this->time_points[this->timestep+1] - this->time_points[this->timestep];
+            //if ((this->timestep + 1) >= this->time_points.size()){
+            //  delta_t = this->time_points[this->timestep] - this->time_points[this->timestep-1];
+            //  }
+            //else {
+              //delta_t = this->time_points[this->timestep+1] - this->time_points[this->timestep];
+                delta_t = this->time_points[this->timestep] - this->time_points[this->timestep-1];
+            //}
             return delta_t;
           }
           unsigned int get_timestep() const
@@ -2236,7 +2242,6 @@ namespace NonLinearPoroViscoElasticity
 
               double time;
               while (in.read_row (time)) {
-            	  std::cout << time << std::endl;
                   if (this->time_points.empty() != true) {
                       //Assert (time >= this->time_points.back(),
                       //    ExcMessage("decreasing time value found"))
@@ -3789,6 +3794,8 @@ namespace NonLinearPoroViscoElasticity
               print_plot_file_header(tracked_vertices, pointfile);
           }
 
+          time->increment_time();
+
           //Print results to output file
           if (parameters.outfiles_requested == "all")
           {
@@ -3821,7 +3828,7 @@ namespace NonLinearPoroViscoElasticity
           //Increment time step (=load step)
           //NOTE: In solving the quasi-static problem, the time becomes a loading parameter,
           //i.e. we increase the loading linearly with time, making the two concepts interchangeable.
-          //time->increment_time();
+          //time->increment_time(); //moved up a bit
 
           //Print information on screen
           pcout << "\nSolver:";
@@ -3835,8 +3842,9 @@ namespace NonLinearPoroViscoElasticity
           outfile << "\n  ASM_SYS = assemble system";
           outfile << "\n  SLV     = linear solver \n";
 
-          while ( std::abs(time->get_end() - time->get_current()) > 1.0*parameters.tol_u )
+          while ( (time->get_end() - time->get_current()) > -1.0*parameters.tol_u )
             {
+
               //Initialize the current solution increment to zero
               solution_delta = 0.0;
 
@@ -3883,18 +3891,20 @@ namespace NonLinearPoroViscoElasticity
 
               //Increment the time step (=load step)
               time->increment_time();
+              std::cout << "end time: " << time->get_end() << " current time: " << time->get_current() << std::endl;
             }
 
           //Print the footers and close files
           if (this_mpi_process == 0)
           {
-              print_plot_file_footer(pointfile);
+              //print_plot_file_footer(pointfile)
               pointfile.close ();
-              print_console_file_footer(outfile);
+              //print_console_file_footer(outfile);
 
               //NOTE: ideally, we should close the outfile here [ >> outfile.close (); ]
               //But if we do, then the timer output will not be printed. That is why we leave it open.
           }
+
     }
 
 // @sect4{Private interface}
@@ -4628,7 +4638,7 @@ namespace NonLinearPoroViscoElasticity
 
         if (this_mpi_process == 0) {
         	std::ofstream assemble_system_time;
-        	assemble_system_time.open("assemble_system_time", std::ofstream::app);
+        	assemble_system_time.open(parameters.output_directory + "assemble_system_time", std::ofstream::app);
         	assemble_system_time << std::setprecision(6) << std::scientific;
         	assemble_system_time << std::setw(16) << this->time->get_current() << ","
         			<< std::setw(16) << end - start << std::endl;
@@ -4958,7 +4968,7 @@ namespace NonLinearPoroViscoElasticity
            SolverControl solver_control (tangent_matrix_nb.m(),					// (maximum number of iterations, tolerance)
                                          1.0e-6 * system_rhs_nb.l2_norm());
            TrilinosWrappers::SolverDirect::AdditionalData additional_data;		// select solver type
-           additional_data.solver_type = "Amesos_Klu";//"Amesos_Superludist";						// default: Amesos_Klu
+           additional_data.solver_type = "Amesos_Superludist";						// default: Amesos_Klu
            TrilinosWrappers::SolverDirect solver (solver_control, additional_data);
 
            double start = MPI_Wtime();
@@ -4979,7 +4989,7 @@ namespace NonLinearPoroViscoElasticity
 
            if (this_mpi_process == 0) {
         	   std::ofstream solve_linear_system_time;
-        	   solve_linear_system_time.open("solve_linear_system_time", std::ofstream::app);
+        	   solve_linear_system_time.open(parameters.output_directory + "solve_linear_system_time", std::ofstream::app);
         	   solve_linear_system_time << std::setprecision(6) << std::scientific;
         	   solve_linear_system_time << std::setw(16) << this->time->get_current() << ","
         			   << std::setw(16) << end - start << std::endl;
@@ -5624,7 +5634,7 @@ namespace NonLinearPoroViscoElasticity
 
         const std::string filename_vtu = Filename::get_filename_vtu(this_mpi_process,
                                                                     timestep);
-        std::ofstream output(filename_vtu.c_str());
+        std::ofstream output(parameters.output_directory + filename_vtu.c_str());
         data_out.write_vtu(output);
 
         // We have a collection of files written in parallel
@@ -5639,7 +5649,7 @@ namespace NonLinearPoroViscoElasticity
           }
 
           const std::string filename_pvtu(Filename::get_filename_pvtu(timestep));
-          std::ofstream pvtu_master(filename_pvtu.c_str());
+          std::ofstream pvtu_master(parameters.output_directory + filename_pvtu.c_str());
           data_out.write_pvtu_record(pvtu_master,
                                      parallel_filenames_vtu);
 
@@ -5648,7 +5658,7 @@ namespace NonLinearPoroViscoElasticity
           time_and_name_history.push_back(std::make_pair(current_time,
                                                           filename_pvtu));
           const std::string filename_pvd(Filename::get_filename_pvd());
-          std::ofstream pvd_output(filename_pvd.c_str());
+          std::ofstream pvd_output(parameters.output_directory + filename_pvd.c_str());
           DataOutBase::write_pvd_record(pvd_output, time_and_name_history);
         }
       }
@@ -5876,7 +5886,7 @@ namespace NonLinearPoroViscoElasticity
 
         const std::string filename_face_vtu =
             Filename_faces::get_filename_face_vtu(this_mpi_process, timestep);
-        std::ofstream output_face(filename_face_vtu.c_str());
+        std::ofstream output_face(parameters.output_directory + filename_face_vtu.c_str());
         data_out_face.write_vtu(output_face);
 
         // We have a collection of files written in parallel
@@ -5893,7 +5903,7 @@ namespace NonLinearPoroViscoElasticity
 
           const std::string filename_face_pvtu (
                               Filename_faces::get_filename_face_pvtu(timestep));
-          std::ofstream pvtu_master(filename_face_pvtu.c_str());
+          std::ofstream pvtu_master(parameters.output_directory + filename_face_pvtu.c_str());
           data_out_face.write_pvtu_record(pvtu_master,
                                           parallel_filenames_face_vtu);
 
@@ -5902,7 +5912,7 @@ namespace NonLinearPoroViscoElasticity
           time_and_name_history_face.push_back (std::make_pair (current_time,
                                                            filename_face_pvtu));
           const std::string filename_face_pvd (Filename_faces::get_filename_face_pvd());
-          std::ofstream pvd_output_face(filename_face_pvd.c_str());
+          std::ofstream pvd_output_face(parameters.output_directory + filename_face_pvd.c_str());
           DataOutBase::write_pvd_record(pvd_output_face, time_and_name_history_face);
         }
       }
@@ -6431,7 +6441,7 @@ namespace NonLinearPoroViscoElasticity
     void Solid<dim>::print_console_file_footer(std::ofstream &outputfile) const
     {
            //Copy "parameters" file at end of output file.
-           std::ifstream infile("parameters.prm");
+           std::ifstream infile(parameters.output_directory+"parameters.prm");
            std::string content = "";
            int i;
 
@@ -6456,7 +6466,8 @@ namespace NonLinearPoroViscoElasticity
     void Solid<dim>::print_plot_file_footer(std::ofstream &plotpointfile) const
     {
            //Copy "parameters" file at end of output file.
-           std::ifstream infile("parameters.prm");
+           std::ifstream infile(parameters.output_directory+"parameters.prm");
+           std::cout << "here11" << std::endl;
            std::string content = "";
            int i;
 
@@ -6466,10 +6477,12 @@ namespace NonLinearPoroViscoElasticity
                content += aux;
                if(aux=='\n') content += '#';
            }
-
+           std::cout << "here12" << std::endl;
            i--;
            content.erase(content.end()-1);
+           std::cout << "here13" << std::endl;
            infile.close();
+           std::cout << "here14" << std::endl;
 
            plotpointfile << "#"<< std::endl
                          << "#"<< std::endl
