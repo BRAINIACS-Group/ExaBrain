@@ -4,7 +4,7 @@ MESSAGE(
 #  Project  nonlinear-poro-viscoelasticity  set up with  deal.II-9.2.0  found at
 #      /Users/alexandergreiner/dealii_9_2_0/spack/opt/spack/darwin-monterey-skylake/apple-clang-12.0.0_alex/dealii-9.2.0-z7beaqnlqgfx75oyv3lvio7afpqyg5mp
 #
-#  CMAKE_BUILD_TYPE:          Debug
+#  CMAKE_BUILD_TYPE:          Release
 #
 #  You can now run
 #       $ make                - to compile and link the program

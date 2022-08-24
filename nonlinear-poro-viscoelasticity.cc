@@ -3794,7 +3794,7 @@ namespace NonLinearPoroViscoElasticity
               print_plot_file_header(tracked_vertices, pointfile);
           }
 
-          time->increment_time();
+          //time->increment_time();
 
           //Print results to output file
           if (parameters.outfiles_requested == "all")
@@ -3828,7 +3828,7 @@ namespace NonLinearPoroViscoElasticity
           //Increment time step (=load step)
           //NOTE: In solving the quasi-static problem, the time becomes a loading parameter,
           //i.e. we increase the loading linearly with time, making the two concepts interchangeable.
-          //time->increment_time(); //moved up a bit
+          time->increment_time(); //moved up a bit
 
           //Print information on screen
           pcout << "\nSolver:";
@@ -4638,7 +4638,7 @@ namespace NonLinearPoroViscoElasticity
 
         if (this_mpi_process == 0) {
         	std::ofstream assemble_system_time;
-        	assemble_system_time.open(parameters.output_directory + "assemble_system_time", std::ofstream::app);
+        	assemble_system_time.open(parameters.output_directory + "/assemble_system_time", std::ofstream::app);
         	assemble_system_time << std::setprecision(6) << std::scientific;
         	assemble_system_time << std::setw(16) << this->time->get_current() << ","
         			<< std::setw(16) << end - start << std::endl;
@@ -4989,7 +4989,7 @@ namespace NonLinearPoroViscoElasticity
 
            if (this_mpi_process == 0) {
         	   std::ofstream solve_linear_system_time;
-        	   solve_linear_system_time.open(parameters.output_directory + "solve_linear_system_time", std::ofstream::app);
+        	   solve_linear_system_time.open(parameters.output_directory + "/solve_linear_system_time", std::ofstream::app);
         	   solve_linear_system_time << std::setprecision(6) << std::scientific;
         	   solve_linear_system_time << std::setw(16) << this->time->get_current() << ","
         			   << std::setw(16) << end - start << std::endl;
@@ -5634,7 +5634,7 @@ namespace NonLinearPoroViscoElasticity
 
         const std::string filename_vtu = Filename::get_filename_vtu(this_mpi_process,
                                                                     timestep);
-        std::ofstream output(parameters.output_directory + filename_vtu.c_str());
+        std::ofstream output(parameters.output_directory + "/" + filename_vtu.c_str());
         data_out.write_vtu(output);
 
         // We have a collection of files written in parallel
@@ -5649,7 +5649,7 @@ namespace NonLinearPoroViscoElasticity
           }
 
           const std::string filename_pvtu(Filename::get_filename_pvtu(timestep));
-          std::ofstream pvtu_master(parameters.output_directory + filename_pvtu.c_str());
+          std::ofstream pvtu_master(parameters.output_directory + "/" + filename_pvtu.c_str());
           data_out.write_pvtu_record(pvtu_master,
                                      parallel_filenames_vtu);
 
@@ -5658,7 +5658,7 @@ namespace NonLinearPoroViscoElasticity
           time_and_name_history.push_back(std::make_pair(current_time,
                                                           filename_pvtu));
           const std::string filename_pvd(Filename::get_filename_pvd());
-          std::ofstream pvd_output(parameters.output_directory + filename_pvd.c_str());
+          std::ofstream pvd_output(parameters.output_directory + "/" + filename_pvd.c_str());
           DataOutBase::write_pvd_record(pvd_output, time_and_name_history);
         }
       }
@@ -5886,7 +5886,7 @@ namespace NonLinearPoroViscoElasticity
 
         const std::string filename_face_vtu =
             Filename_faces::get_filename_face_vtu(this_mpi_process, timestep);
-        std::ofstream output_face(parameters.output_directory + filename_face_vtu.c_str());
+        std::ofstream output_face(parameters.output_directory + "/" + filename_face_vtu.c_str());
         data_out_face.write_vtu(output_face);
 
         // We have a collection of files written in parallel
@@ -5903,7 +5903,7 @@ namespace NonLinearPoroViscoElasticity
 
           const std::string filename_face_pvtu (
                               Filename_faces::get_filename_face_pvtu(timestep));
-          std::ofstream pvtu_master(parameters.output_directory + filename_face_pvtu.c_str());
+          std::ofstream pvtu_master(parameters.output_directory + "/" + filename_face_pvtu.c_str());
           data_out_face.write_pvtu_record(pvtu_master,
                                           parallel_filenames_face_vtu);
 
@@ -5912,7 +5912,7 @@ namespace NonLinearPoroViscoElasticity
           time_and_name_history_face.push_back (std::make_pair (current_time,
                                                            filename_face_pvtu));
           const std::string filename_face_pvd (Filename_faces::get_filename_face_pvd());
-          std::ofstream pvd_output_face(parameters.output_directory + filename_face_pvd.c_str());
+          std::ofstream pvd_output_face(parameters.output_directory + "/" + filename_face_pvd.c_str());
           DataOutBase::write_pvd_record(pvd_output_face, time_and_name_history_face);
         }
       }
@@ -6287,8 +6287,12 @@ namespace NonLinearPoroViscoElasticity
             }
       // Write the results to the plotting file.
       // Add two blank lines between cycles in the cyclic loading examples so GNUPLOT can detect each cycle as a different block
-            const double delta_time = time->get_delta_t();
-            const double end_time   = time->get_end();
+            if ( (parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
+                 (parameters.geom_type == "Budday_cube_tension_compression")||
+                 (parameters.geom_type == "Budday_cube_shear_fully_fixed") ) {
+            		const double delta_time = time->get_delta_t();
+            		const double end_time   = time->get_end();
+
             // This was previously called from parameters.
             // Current time is passed into the function, maybe it can be called from time-> too?
             
@@ -6312,6 +6316,7 @@ namespace NonLinearPoroViscoElasticity
                   parameters.num_cycle_sets == 2 )
             {
                 plotpointfile << std::endl<< std::endl;
+            }
             }
 
             plotpointfile <<  std::setprecision(6) << std::scientific;
@@ -6341,8 +6346,13 @@ namespace NonLinearPoroViscoElasticity
                     for (unsigned int d=0; d<(dim+1); ++d)
                         plotpointfile << std::setw(15) << solution_vertices[p][d]<< ",";
 
-                for (unsigned int d=0; d<dim; ++d)
-                    plotpointfile << std::setw(15) << reaction_force[d] << ",";
+                if (parameters.geom_type == "brain_rheometer_cyclic_tension_compression_exp_quarter"){
+                	for (unsigned int d=0; d<dim; ++d)
+                		plotpointfile << std::setw(15) << std::abs(reaction_force[d]*(4e-6)) << ",";
+                } else {
+                	for (unsigned int d=0; d<dim; ++d)
+                		plotpointfile << std::setw(15) << reaction_force[d] << ",";
+                }
 
                 for (unsigned int d=0; d<dim; ++d)
                     plotpointfile << std::setw(15) << reaction_force_pressure[d] << ",";

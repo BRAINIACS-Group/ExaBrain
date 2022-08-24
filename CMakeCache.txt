@@ -21,7 +21,7 @@ CMAKE_ADDR2LINE:FILEPATH=CMAKE_ADDR2LINE-NOTFOUND
 CMAKE_AR:FILEPATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar
 
 //Choose the type of build, options are: Debug, Release
-CMAKE_BUILD_TYPE:STRING=Debug
+CMAKE_BUILD_TYPE:STRING=Release
 
 //Enable/Disable color output during build.
 CMAKE_COLOR_MAKEFILE:BOOL=ON
