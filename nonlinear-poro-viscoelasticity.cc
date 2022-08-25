@@ -4462,7 +4462,7 @@ namespace NonLinearPoroViscoElasticity
 
         if (this_mpi_process == 0) {
         	std::ofstream solve_nonlinear_timestep_time;
-        	solve_nonlinear_timestep_time.open("solve_nonlinear_timestep_time", std::ofstream::app);
+        	solve_nonlinear_timestep_time.open(parameters.output_directory + "/solve_nonlinear_timestep_time", std::ofstream::app);
         	solve_nonlinear_timestep_time << std::setprecision(6) << std::scientific;
         	solve_nonlinear_timestep_time << std::setw(16) << this->time->get_current() << ","
         			<< std::setw(16) << end - start << std::endl;
