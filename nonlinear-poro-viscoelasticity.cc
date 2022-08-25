@@ -2247,7 +2247,6 @@ namespace NonLinearPoroViscoElasticity
                       //    ExcMessage("decreasing time value found"))
                   }
                   this->time_points.push_back(time);
-                  std::cout << this->time_points.back() << std::endl;
               }
           }
 
@@ -3794,8 +3793,6 @@ namespace NonLinearPoroViscoElasticity
               print_plot_file_header(tracked_vertices, pointfile);
           }
 
-          //time->increment_time();
-
           //Print results to output file
           if (parameters.outfiles_requested == "all")
           {
@@ -3828,7 +3825,7 @@ namespace NonLinearPoroViscoElasticity
           //Increment time step (=load step)
           //NOTE: In solving the quasi-static problem, the time becomes a loading parameter,
           //i.e. we increase the loading linearly with time, making the two concepts interchangeable.
-          time->increment_time(); //moved up a bit
+          time->increment_time();
 
           //Print information on screen
           pcout << "\nSolver:";
@@ -3891,7 +3888,7 @@ namespace NonLinearPoroViscoElasticity
 
               //Increment the time step (=load step)
               time->increment_time();
-              std::cout << "end time: " << time->get_end() << " current time: " << time->get_current() << std::endl;
+              //std::cout << "end time: " << time->get_end() << " current time: " << time->get_current() << std::endl;
             }
 
           //Print the footers and close files
@@ -4460,14 +4457,14 @@ namespace NonLinearPoroViscoElasticity
 
         double end = MPI_Wtime();
 
-        if (this_mpi_process == 0) {
+        /*if (this_mpi_process == 0) {
         	std::ofstream solve_nonlinear_timestep_time;
         	solve_nonlinear_timestep_time.open(parameters.output_directory + "/solve_nonlinear_timestep_time", std::ofstream::app);
         	solve_nonlinear_timestep_time << std::setprecision(6) << std::scientific;
         	solve_nonlinear_timestep_time << std::setw(16) << this->time->get_current() << ","
         			<< std::setw(16) << end - start << std::endl;
         	solve_nonlinear_timestep_time.close();
-        }
+        }*/
     }
 
     //Prints the header for convergence info on console
@@ -4636,14 +4633,14 @@ namespace NonLinearPoroViscoElasticity
 
         double end = MPI_Wtime();
 
-        if (this_mpi_process == 0) {
+        /*if (this_mpi_process == 0) {
         	std::ofstream assemble_system_time;
         	assemble_system_time.open(parameters.output_directory + "/assemble_system_time", std::ofstream::app);
         	assemble_system_time << std::setprecision(6) << std::scientific;
         	assemble_system_time << std::setw(16) << this->time->get_current() << ","
         			<< std::setw(16) << end - start << std::endl;
         	assemble_system_time.close();
-        }
+        }*/
     }
 
     //Add the local elemental contribution to the global stiffness tensor
