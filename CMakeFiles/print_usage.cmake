@@ -2,15 +2,13 @@ MESSAGE(
 "###
 #
 #  Project  nonlinear-poro-viscoelasticity  set up with  deal.II-9.2.0  found at
-#      /Users/alexandergreiner/dealii_9_2_0/spack/opt/spack/darwin-monterey-skylake/apple-clang-12.0.0_alex/dealii-9.2.0-z7beaqnlqgfx75oyv3lvio7afpqyg5mp
+#      /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/dealii-9.2.0-tgnegz4rbkc6u5ehfhl3v3fbrukmx7ih
 #
 #  CMAKE_BUILD_TYPE:          Release
 #
 #  You can now run
 #       $ make                - to compile and link the program
 #       $ make run            - to (compile, link and) run the program
-#
-#       $ make sign           - to sign the executable with the supplied OSX developer key
 #
 #       $ make debug          - to switch the build type to 'Debug'
 #       $ make release        - to switch the build type to 'Release'

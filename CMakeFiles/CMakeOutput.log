@@ -305,3 +305,476 @@ Parsed CXX implicit link information from above output:
   implicit fwks: [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.15.sdk/System/Library/Frameworks]
 
 
+The system is: Linux - 4.15.0-184-generic - x86_64
+Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+Compiler: /usr/bin/cc 
+Build flags: 
+Id flags:  
+
+The output was:
+0
+
+
+Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+
+The C compiler identification is GNU, found in "/calculate/iwtm48/DACH/code_git/CMakeFiles/3.21.4/CompilerIdC/a.out"
+
+Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" succeeded.
+Compiler: /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/bin/mpic++ 
+Build flags: ;-march=native
+Id flags:  
+
+The output was:
+0
+
+
+Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "a.out"
+
+The CXX compiler identification is GNU, found in "/calculate/iwtm48/DACH/code_git/CMakeFiles/3.21.4/CompilerIdCXX/a.out"
+
+Detecting C compiler ABI info compiled with the following output:
+Change Dir: /calculate/iwtm48/DACH/code_git/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_66854/fast && /usr/bin/make  -f CMakeFiles/cmTC_66854.dir/build.make CMakeFiles/cmTC_66854.dir/build
+make[1]: Entering directory '/calculate/iwtm48/DACH/code_git/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o
+/usr/bin/cc   -v -o CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o -c /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/cmake-3.21.4-yw4evzvynwbb2e2szivuxgnl6cd4n7k7/share/cmake-3.21/Modules/CMakeCCompilerABI.c
+Using built-in specs.
+COLLECT_GCC=/usr/bin/cc
+OFFLOAD_TARGET_NAMES=nvptx-none
+OFFLOAD_TARGET_DEFAULT=1
+Target: x86_64-linux-gnu
+Configured with: ../src/configure -v --with-pkgversion='Ubuntu 7.5.0-3ubuntu1~18.04' --with-bugurl=file:///usr/share/doc/gcc-7/README.Bugs --enable-languages=c,ada,c++,go,brig,d,fortran,objc,obj-c++ --prefix=/usr --with-gcc-major-version-only --program-suffix=-7 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-libmpx --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu
+Thread model: posix
+gcc version 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04) 
+COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64'
+ /usr/lib/gcc/x86_64-linux-gnu/7/cc1 -quiet -v -imultiarch x86_64-linux-gnu /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/cmake-3.21.4-yw4evzvynwbb2e2szivuxgnl6cd4n7k7/share/cmake-3.21/Modules/CMakeCCompilerABI.c -quiet -dumpbase CMakeCCompilerABI.c -mtune=generic -march=x86-64 -auxbase-strip CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o -version -fstack-protector-strong -Wformat -Wformat-security -o /tmp/ccdmVYrl.s
+GNU C11 (Ubuntu 7.5.0-3ubuntu1~18.04) version 7.5.0 (x86_64-linux-gnu)
+	compiled by GNU C version 7.5.0, GMP version 6.1.2, MPFR version 4.0.1, MPC version 1.1.0, isl version isl-0.19-GMP
+
+warning: GMP header version 6.1.2 differs from library version 6.2.1.
+warning: MPFR header version 4.0.1 differs from library version 4.1.0.
+GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"
+ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/7/../../../../x86_64-linux-gnu/include"
+#include "..." search starts here:
+#include <...> search starts here:
+ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-skylake_avx512/gcc-9.3.0/python-3.8.12-yghzzoedviex6ekyiluwfxw5yuc6upjv/include/python3.8
+ /usr/lib/gcc/x86_64-linux-gnu/7/include
+ /usr/local/include
+ /usr/lib/gcc/x86_64-linux-gnu/7/include-fixed
+ /usr/include/x86_64-linux-gnu
+ /usr/include
+End of search list.
+GNU C11 (Ubuntu 7.5.0-3ubuntu1~18.04) version 7.5.0 (x86_64-linux-gnu)
+	compiled by GNU C version 7.5.0, GMP version 6.1.2, MPFR version 4.0.1, MPC version 1.1.0, isl version isl-0.19-GMP
+
+warning: GMP header version 6.1.2 differs from library version 6.2.1.
+warning: MPFR header version 4.0.1 differs from library version 4.1.0.
+GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+Compiler executable checksum: b62ed4a2880cd4159476ea8293b72fa8
+COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64'
+ as -v --64 -o CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o /tmp/ccdmVYrl.s
+GNU assembler version 2.30 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.30
+COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/
+LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64'
+Linking C executable cmTC_66854
+/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/cmake-3.21.4-yw4evzvynwbb2e2szivuxgnl6cd4n7k7/bin/cmake -E cmake_link_script CMakeFiles/cmTC_66854.dir/link.txt --verbose=1
+/usr/bin/cc  -v -rdynamic CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o -o cmTC_66854 
+Using built-in specs.
+COLLECT_GCC=/usr/bin/cc
+COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper
+OFFLOAD_TARGET_NAMES=nvptx-none
+OFFLOAD_TARGET_DEFAULT=1
+Target: x86_64-linux-gnu
+Configured with: ../src/configure -v --with-pkgversion='Ubuntu 7.5.0-3ubuntu1~18.04' --with-bugurl=file:///usr/share/doc/gcc-7/README.Bugs --enable-languages=c,ada,c++,go,brig,d,fortran,objc,obj-c++ --prefix=/usr --with-gcc-major-version-only --program-suffix=-7 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-libmpx --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu
+Thread model: posix
+gcc version 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04) 
+COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/
+LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-v' '-rdynamic' '-o' 'cmTC_66854' '-mtune=generic' '-march=x86-64'
+ /usr/lib/gcc/x86_64-linux-gnu/7/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/7/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper -plugin-opt=-fresolution=/tmp/cc5AtmVm.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -export-dynamic -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_66854 /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/7/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/7 -L/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/7/../../.. CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/7/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crtn.o
+COLLECT_GCC_OPTIONS='-v' '-rdynamic' '-o' 'cmTC_66854' '-mtune=generic' '-march=x86-64'
+make[1]: Leaving directory '/calculate/iwtm48/DACH/code_git/CMakeFiles/CMakeTmp'
+
+
+
+Parsed C implicit include dir info from above output: rv=done
+  found start of include info
+  found start of implicit include info
+    add: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-skylake_avx512/gcc-9.3.0/python-3.8.12-yghzzoedviex6ekyiluwfxw5yuc6upjv/include/python3.8]
+    add: [/usr/lib/gcc/x86_64-linux-gnu/7/include]
+    add: [/usr/local/include]
+    add: [/usr/lib/gcc/x86_64-linux-gnu/7/include-fixed]
+    add: [/usr/include/x86_64-linux-gnu]
+    add: [/usr/include]
+  end of search list found
+  collapse include dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-skylake_avx512/gcc-9.3.0/python-3.8.12-yghzzoedviex6ekyiluwfxw5yuc6upjv/include/python3.8] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-skylake_avx512/gcc-9.3.0/python-3.8.12-yghzzoedviex6ekyiluwfxw5yuc6upjv/include/python3.8]
+  collapse include dir [/usr/lib/gcc/x86_64-linux-gnu/7/include] ==> [/usr/lib/gcc/x86_64-linux-gnu/7/include]
+  collapse include dir [/usr/local/include] ==> [/usr/local/include]
+  collapse include dir [/usr/lib/gcc/x86_64-linux-gnu/7/include-fixed] ==> [/usr/lib/gcc/x86_64-linux-gnu/7/include-fixed]
+  collapse include dir [/usr/include/x86_64-linux-gnu] ==> [/usr/include/x86_64-linux-gnu]
+  collapse include dir [/usr/include] ==> [/usr/include]
+  implicit include dirs: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-skylake_avx512/gcc-9.3.0/python-3.8.12-yghzzoedviex6ekyiluwfxw5yuc6upjv/include/python3.8;/usr/lib/gcc/x86_64-linux-gnu/7/include;/usr/local/include;/usr/lib/gcc/x86_64-linux-gnu/7/include-fixed;/usr/include/x86_64-linux-gnu;/usr/include]
+
+
+Parsed C implicit link information from above output:
+  link line regex: [^( *|.*[/\])(ld|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\]+-)?ld|collect2)[^/\]*( |$)]
+  ignore line: [Change Dir: /calculate/iwtm48/DACH/code_git/CMakeFiles/CMakeTmp]
+  ignore line: []
+  ignore line: [Run Build Command(s):/usr/bin/make -f Makefile cmTC_66854/fast && /usr/bin/make  -f CMakeFiles/cmTC_66854.dir/build.make CMakeFiles/cmTC_66854.dir/build]
+  ignore line: [make[1]: Entering directory '/calculate/iwtm48/DACH/code_git/CMakeFiles/CMakeTmp']
+  ignore line: [Building C object CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o]
+  ignore line: [/usr/bin/cc   -v -o CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o -c /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/cmake-3.21.4-yw4evzvynwbb2e2szivuxgnl6cd4n7k7/share/cmake-3.21/Modules/CMakeCCompilerABI.c]
+  ignore line: [Using built-in specs.]
+  ignore line: [COLLECT_GCC=/usr/bin/cc]
+  ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none]
+  ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+  ignore line: [Target: x86_64-linux-gnu]
+  ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 7.5.0-3ubuntu1~18.04' --with-bugurl=file:///usr/share/doc/gcc-7/README.Bugs --enable-languages=c ada c++ go brig d fortran objc obj-c++ --prefix=/usr --with-gcc-major-version-only --program-suffix=-7 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-libmpx --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32 m64 mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu]
+  ignore line: [Thread model: posix]
+  ignore line: [gcc version 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04) ]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64']
+  ignore line: [ /usr/lib/gcc/x86_64-linux-gnu/7/cc1 -quiet -v -imultiarch x86_64-linux-gnu /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/cmake-3.21.4-yw4evzvynwbb2e2szivuxgnl6cd4n7k7/share/cmake-3.21/Modules/CMakeCCompilerABI.c -quiet -dumpbase CMakeCCompilerABI.c -mtune=generic -march=x86-64 -auxbase-strip CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o -version -fstack-protector-strong -Wformat -Wformat-security -o /tmp/ccdmVYrl.s]
+  ignore line: [GNU C11 (Ubuntu 7.5.0-3ubuntu1~18.04) version 7.5.0 (x86_64-linux-gnu)]
+  ignore line: [	compiled by GNU C version 7.5.0  GMP version 6.1.2  MPFR version 4.0.1  MPC version 1.1.0  isl version isl-0.19-GMP]
+  ignore line: []
+  ignore line: [warning: GMP header version 6.1.2 differs from library version 6.2.1.]
+  ignore line: [warning: MPFR header version 4.0.1 differs from library version 4.1.0.]
+  ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+  ignore line: [ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"]
+  ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/7/../../../../x86_64-linux-gnu/include"]
+  ignore line: [#include "..." search starts here:]
+  ignore line: [#include <...> search starts here:]
+  ignore line: [ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-skylake_avx512/gcc-9.3.0/python-3.8.12-yghzzoedviex6ekyiluwfxw5yuc6upjv/include/python3.8]
+  ignore line: [ /usr/lib/gcc/x86_64-linux-gnu/7/include]
+  ignore line: [ /usr/local/include]
+  ignore line: [ /usr/lib/gcc/x86_64-linux-gnu/7/include-fixed]
+  ignore line: [ /usr/include/x86_64-linux-gnu]
+  ignore line: [ /usr/include]
+  ignore line: [End of search list.]
+  ignore line: [GNU C11 (Ubuntu 7.5.0-3ubuntu1~18.04) version 7.5.0 (x86_64-linux-gnu)]
+  ignore line: [	compiled by GNU C version 7.5.0  GMP version 6.1.2  MPFR version 4.0.1  MPC version 1.1.0  isl version isl-0.19-GMP]
+  ignore line: []
+  ignore line: [warning: GMP header version 6.1.2 differs from library version 6.2.1.]
+  ignore line: [warning: MPFR header version 4.0.1 differs from library version 4.1.0.]
+  ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+  ignore line: [Compiler executable checksum: b62ed4a2880cd4159476ea8293b72fa8]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64']
+  ignore line: [ as -v --64 -o CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o /tmp/ccdmVYrl.s]
+  ignore line: [GNU assembler version 2.30 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.30]
+  ignore line: [COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/]
+  ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../:/lib/:/usr/lib/]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64']
+  ignore line: [Linking C executable cmTC_66854]
+  ignore line: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/cmake-3.21.4-yw4evzvynwbb2e2szivuxgnl6cd4n7k7/bin/cmake -E cmake_link_script CMakeFiles/cmTC_66854.dir/link.txt --verbose=1]
+  ignore line: [/usr/bin/cc  -v -rdynamic CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o -o cmTC_66854 ]
+  ignore line: [Using built-in specs.]
+  ignore line: [COLLECT_GCC=/usr/bin/cc]
+  ignore line: [COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper]
+  ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none]
+  ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+  ignore line: [Target: x86_64-linux-gnu]
+  ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 7.5.0-3ubuntu1~18.04' --with-bugurl=file:///usr/share/doc/gcc-7/README.Bugs --enable-languages=c ada c++ go brig d fortran objc obj-c++ --prefix=/usr --with-gcc-major-version-only --program-suffix=-7 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-libmpx --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32 m64 mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu]
+  ignore line: [Thread model: posix]
+  ignore line: [gcc version 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04) ]
+  ignore line: [COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/]
+  ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../:/lib/:/usr/lib/]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-rdynamic' '-o' 'cmTC_66854' '-mtune=generic' '-march=x86-64']
+  link line: [ /usr/lib/gcc/x86_64-linux-gnu/7/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/7/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper -plugin-opt=-fresolution=/tmp/cc5AtmVm.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -export-dynamic -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_66854 /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/7/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/7 -L/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/7/../../.. CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/7/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crtn.o]
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/collect2] ==> ignore
+    arg [-plugin] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/liblto_plugin.so] ==> ignore
+    arg [-plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper] ==> ignore
+    arg [-plugin-opt=-fresolution=/tmp/cc5AtmVm.res] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [-plugin-opt=-pass-through=-lc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [--build-id] ==> ignore
+    arg [--eh-frame-hdr] ==> ignore
+    arg [-m] ==> ignore
+    arg [elf_x86_64] ==> ignore
+    arg [--hash-style=gnu] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-export-dynamic] ==> ignore
+    arg [-dynamic-linker] ==> ignore
+    arg [/lib64/ld-linux-x86-64.so.2] ==> ignore
+    arg [-pie] ==> ignore
+    arg [-znow] ==> ignore
+    arg [-zrelro] ==> ignore
+    arg [-o] ==> ignore
+    arg [cmTC_66854] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o]
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crti.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crti.o]
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/crtbeginS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/7/crtbeginS.o]
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/7] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/7]
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu]
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib]
+    arg [-L/lib/x86_64-linux-gnu] ==> dir [/lib/x86_64-linux-gnu]
+    arg [-L/lib/../lib] ==> dir [/lib/../lib]
+    arg [-L/usr/lib/x86_64-linux-gnu] ==> dir [/usr/lib/x86_64-linux-gnu]
+    arg [-L/usr/lib/../lib] ==> dir [/usr/lib/../lib]
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/7/../../..] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../..]
+    arg [CMakeFiles/cmTC_66854.dir/CMakeCCompilerABI.c.o] ==> ignore
+    arg [-lgcc] ==> lib [gcc]
+    arg [--push-state] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [--pop-state] ==> ignore
+    arg [-lc] ==> lib [c]
+    arg [-lgcc] ==> lib [gcc]
+    arg [--push-state] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [--pop-state] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/crtendS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/7/crtendS.o]
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crtn.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crtn.o]
+  collapse obj [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o] ==> [/usr/lib/x86_64-linux-gnu/Scrt1.o]
+  collapse obj [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crti.o] ==> [/usr/lib/x86_64-linux-gnu/crti.o]
+  collapse obj [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crtn.o] ==> [/usr/lib/x86_64-linux-gnu/crtn.o]
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/7] ==> [/usr/lib/gcc/x86_64-linux-gnu/7]
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib] ==> [/usr/lib]
+  collapse library dir [/lib/x86_64-linux-gnu] ==> [/lib/x86_64-linux-gnu]
+  collapse library dir [/lib/../lib] ==> [/lib]
+  collapse library dir [/usr/lib/x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+  collapse library dir [/usr/lib/../lib] ==> [/usr/lib]
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../..] ==> [/usr/lib]
+  implicit libs: [gcc;gcc_s;c;gcc;gcc_s]
+  implicit objs: [/usr/lib/x86_64-linux-gnu/Scrt1.o;/usr/lib/x86_64-linux-gnu/crti.o;/usr/lib/gcc/x86_64-linux-gnu/7/crtbeginS.o;/usr/lib/gcc/x86_64-linux-gnu/7/crtendS.o;/usr/lib/x86_64-linux-gnu/crtn.o]
+  implicit dirs: [/usr/lib/gcc/x86_64-linux-gnu/7;/usr/lib/x86_64-linux-gnu;/usr/lib;/lib/x86_64-linux-gnu;/lib]
+  implicit fwks: []
+
+
+Detecting CXX compiler ABI info compiled with the following output:
+Change Dir: /calculate/iwtm48/DACH/code_git/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_b66cf/fast && /usr/bin/make  -f CMakeFiles/cmTC_b66cf.dir/build.make CMakeFiles/cmTC_b66cf.dir/build
+make[1]: Entering directory '/calculate/iwtm48/DACH/code_git/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o
+/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/bin/mpic++   -march=native    -v -o CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o -c /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/cmake-3.21.4-yw4evzvynwbb2e2szivuxgnl6cd4n7k7/share/cmake-3.21/Modules/CMakeCXXCompilerABI.cpp
+Reading specs from /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/specs
+COLLECT_GCC=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/bin/g++
+Target: x86_64-pc-linux-gnu
+Configured with: /calculate/temp/iwtm009/spack-stage-gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/spack-src/configure --prefix=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26 --with-pkgversion='Spack GCC' --with-bugurl=https://github.com/spack/spack/issues --disable-multilib --enable-languages=c,c++,fortran --disable-nls --with-system-zlib --enable-bootstrap --with-mpfr-include=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/include --with-mpfr-lib=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/lib --with-gmp-include=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/include --with-gmp-lib=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/lib --with-mpc-include=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/include --with-mpc-lib=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/lib --without-isl --with-stage1-ldflags='-Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64 -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/zlib-1.2.11-3rlgy7ycxtoho44una6o3itgfjltkmpd/lib' --with-boot-ldflags='-Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64 -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/zlib-1.2.11-3rlgy7ycxtoho44una6o3itgfjltkmpd/lib -static-libstdc++ -static-libgcc'
+Thread model: posix
+gcc version 9.3.0 (Spack GCC) 
+COLLECT_GCC_OPTIONS='-march=native' '-v' '-o' 'CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-I' '/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include' '-pthread' '-shared-libgcc'
+ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/cc1plus -quiet -v -I /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include -imultiarch x86_64-linux-gnu -D_GNU_SOURCE -D_REENTRANT /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/cmake-3.21.4-yw4evzvynwbb2e2szivuxgnl6cd4n7k7/share/cmake-3.21/Modules/CMakeCXXCompilerABI.cpp -march=skylake-avx512 -mmmx -mno-3dnow -msse -msse2 -msse3 -mssse3 -mno-sse4a -mcx16 -msahf -mmovbe -maes -mno-sha -mpclmul -mpopcnt -mabm -mno-lwp -mfma -mno-fma4 -mno-xop -mbmi -mno-sgx -mbmi2 -mno-pconfig -mno-wbnoinvd -mno-tbm -mavx -mavx2 -msse4.2 -msse4.1 -mlzcnt -mrtm -mhle -mrdrnd -mf16c -mfsgsbase -mrdseed -mprfchw -madx -mfxsr -mxsave -mxsaveopt -mavx512f -mno-avx512er -mavx512cd -mno-avx512pf -mno-prefetchwt1 -mclflushopt -mxsavec -mxsaves -mavx512dq -mavx512bw -mavx512vl -mno-avx512ifma -mno-avx512vbmi -mno-avx5124fmaps -mno-avx5124vnniw -mclwb -mno-mwaitx -mno-clzero -mpku -mno-rdpid -mno-gfni -mno-shstk -mno-avx512vbmi2 -mno-avx512vnni -mno-vaes -mno-vpclmulqdq -mno-avx512bitalg -mno-movdiri -mno-movdir64b -mno-waitpkg -mno-cldemote -mno-ptwrite --param l1-cache-size=32 --param l1-cache-line-size=64 --param l2-cache-size=30976 -mtune=skylake-avx512 -quiet -dumpbase CMakeCXXCompilerABI.cpp -auxbase-strip CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o -version -o /tmp/ccTo4Lus.s
+GNU C++14 (Spack GCC) version 9.3.0 (x86_64-pc-linux-gnu)
+	compiled by GNU C version 9.3.0, GMP version 6.2.1, MPFR version 3.1.6-p2, MPC version 1.1.0, isl version none
+GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"
+ignoring nonexistent directory "/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../x86_64-pc-linux-gnu/include"
+#include "..." search starts here:
+#include <...> search starts here:
+ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include
+ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-skylake_avx512/gcc-9.3.0/python-3.8.12-yghzzoedviex6ekyiluwfxw5yuc6upjv/include/python3.8
+ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../include/c++/9.3.0
+ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../include/c++/9.3.0/x86_64-pc-linux-gnu
+ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../include/c++/9.3.0/backward
+ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/include
+ /usr/local/include
+ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/include
+ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/include-fixed
+ /usr/include/x86_64-linux-gnu
+ /usr/include
+End of search list.
+GNU C++14 (Spack GCC) version 9.3.0 (x86_64-pc-linux-gnu)
+	compiled by GNU C version 9.3.0, GMP version 6.2.1, MPFR version 3.1.6-p2, MPC version 1.1.0, isl version none
+GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+Compiler executable checksum: bfff9618b00ee962357413c82eb8bf9d
+COLLECT_GCC_OPTIONS='-march=native' '-v' '-o' 'CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-I' '/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include' '-pthread' '-shared-libgcc'
+ as -v -I /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include --64 -o CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o /tmp/ccTo4Lus.s
+GNU assembler version 2.30 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.30
+COMPILER_PATH=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/
+LIBRARY_PATH=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../lib64/:/lib/x86_64-linux-gnu/:/lib/../lib64/:/usr/lib/x86_64-linux-gnu/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-march=native' '-v' '-o' 'CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-I' '/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include' '-pthread' '-shared-libgcc'
+Linking CXX executable cmTC_b66cf
+/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/cmake-3.21.4-yw4evzvynwbb2e2szivuxgnl6cd4n7k7/bin/cmake -E cmake_link_script CMakeFiles/cmTC_b66cf.dir/link.txt --verbose=1
+/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/bin/mpic++  -march=native   -v -rdynamic CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_b66cf 
+Reading specs from /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/specs
+COLLECT_GCC=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/bin/g++
+COLLECT_LTO_WRAPPER=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/lto-wrapper
+Target: x86_64-pc-linux-gnu
+Configured with: /calculate/temp/iwtm009/spack-stage-gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/spack-src/configure --prefix=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26 --with-pkgversion='Spack GCC' --with-bugurl=https://github.com/spack/spack/issues --disable-multilib --enable-languages=c,c++,fortran --disable-nls --with-system-zlib --enable-bootstrap --with-mpfr-include=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/include --with-mpfr-lib=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/lib --with-gmp-include=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/include --with-gmp-lib=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/lib --with-mpc-include=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/include --with-mpc-lib=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/lib --without-isl --with-stage1-ldflags='-Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64 -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/zlib-1.2.11-3rlgy7ycxtoho44una6o3itgfjltkmpd/lib' --with-boot-ldflags='-Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64 -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/lib -Wl,-rpath,/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/zlib-1.2.11-3rlgy7ycxtoho44una6o3itgfjltkmpd/lib -static-libstdc++ -static-libgcc'
+Thread model: posix
+gcc version 9.3.0 (Spack GCC) 
+COMPILER_PATH=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/
+LIBRARY_PATH=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../lib64/:/lib/x86_64-linux-gnu/:/lib/../lib64/:/usr/lib/x86_64-linux-gnu/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-march=native' '-v' '-rdynamic' '-o' 'cmTC_b66cf' '-I' '/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include' '-pthread' '-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/hwloc-2.6.0-irpyh2is6cvv7uamg4tlggua2pn7ubpi/lib' '-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/libevent-2.1.12-5ar65sdptz4a6yophdea7pr7yawj6eoo/lib' '-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/zlib-1.2.11-3w5aji7c4l5f6g7l2kazeznpkbiqm2hr/lib' '-L/opt/dealii-9.2.0_a/opt/spa' '-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/lib' '-shared-libgcc'
+ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/collect2 -plugin /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/liblto_plugin.so -plugin-opt=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/lto-wrapper -plugin-opt=-fresolution=/tmp/ccsUvZtu.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lpthread -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --eh-frame-hdr -m elf_x86_64 -export-dynamic -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o cmTC_b66cf /usr/lib/x86_64-linux-gnu/crt1.o /usr/lib/x86_64-linux-gnu/crti.o /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/crtbegin.o -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/hwloc-2.6.0-irpyh2is6cvv7uamg4tlggua2pn7ubpi/lib -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/libevent-2.1.12-5ar65sdptz4a6yophdea7pr7yawj6eoo/lib -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/zlib-1.2.11-3w5aji7c4l5f6g7l2kazeznpkbiqm2hr/lib -L/opt/dealii-9.2.0_a/opt/spa -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/lib -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64 -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0 -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../lib64 -L/lib/x86_64-linux-gnu -L/lib/../lib64 -L/usr/lib/x86_64-linux-gnu -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../.. CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0 -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64 -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/hwloc-2.6.0-irpyh2is6cvv7uamg4tlggua2pn7ubpi/lib -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/libevent-2.1.12-5ar65sdptz4a6yophdea7pr7yawj6eoo/lib -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/zlib-1.2.11-3w5aji7c4l5f6g7l2kazeznpkbiqm2hr/lib -rpath /opt/dealii-9.2.0_a/opt/spa -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/lib -lmpi -lstdc++ -lm -lgcc_s -lgcc -lpthread -lc -lgcc_s -lgcc /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/crtend.o /usr/lib/x86_64-linux-gnu/crtn.o
+COLLECT_GCC_OPTIONS='-march=native' '-v' '-rdynamic' '-o' 'cmTC_b66cf' '-I' '/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include' '-pthread' '-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/hwloc-2.6.0-irpyh2is6cvv7uamg4tlggua2pn7ubpi/lib' '-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/libevent-2.1.12-5ar65sdptz4a6yophdea7pr7yawj6eoo/lib' '-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/zlib-1.2.11-3w5aji7c4l5f6g7l2kazeznpkbiqm2hr/lib' '-L/opt/dealii-9.2.0_a/opt/spa' '-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/lib' '-shared-libgcc'
+make[1]: Leaving directory '/calculate/iwtm48/DACH/code_git/CMakeFiles/CMakeTmp'
+
+
+
+Parsed CXX implicit include dir info from above output: rv=done
+  found start of include info
+  found start of implicit include info
+    add: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include]
+    add: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-skylake_avx512/gcc-9.3.0/python-3.8.12-yghzzoedviex6ekyiluwfxw5yuc6upjv/include/python3.8]
+    add: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../include/c++/9.3.0]
+    add: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../include/c++/9.3.0/x86_64-pc-linux-gnu]
+    add: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../include/c++/9.3.0/backward]
+    add: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/include]
+    add: [/usr/local/include]
+    add: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/include]
+    add: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/include-fixed]
+    add: [/usr/include/x86_64-linux-gnu]
+    add: [/usr/include]
+  end of search list found
+  collapse include dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include]
+  collapse include dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-skylake_avx512/gcc-9.3.0/python-3.8.12-yghzzoedviex6ekyiluwfxw5yuc6upjv/include/python3.8] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-skylake_avx512/gcc-9.3.0/python-3.8.12-yghzzoedviex6ekyiluwfxw5yuc6upjv/include/python3.8]
+  collapse include dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../include/c++/9.3.0] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/include/c++/9.3.0]
+  collapse include dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../include/c++/9.3.0/x86_64-pc-linux-gnu] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/include/c++/9.3.0/x86_64-pc-linux-gnu]
+  collapse include dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../include/c++/9.3.0/backward] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/include/c++/9.3.0/backward]
+  collapse include dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/include] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/include]
+  collapse include dir [/usr/local/include] ==> [/usr/local/include]
+  collapse include dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/include] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/include]
+  collapse include dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/include-fixed] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/include-fixed]
+  collapse include dir [/usr/include/x86_64-linux-gnu] ==> [/usr/include/x86_64-linux-gnu]
+  collapse include dir [/usr/include] ==> [/usr/include]
+  implicit include dirs: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-skylake_avx512/gcc-9.3.0/python-3.8.12-yghzzoedviex6ekyiluwfxw5yuc6upjv/include/python3.8;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/include/c++/9.3.0;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/include/c++/9.3.0/x86_64-pc-linux-gnu;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/include/c++/9.3.0/backward;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/include;/usr/local/include;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/include;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/include-fixed;/usr/include/x86_64-linux-gnu;/usr/include]
+
+
+Parsed CXX implicit link information from above output:
+  link line regex: [^( *|.*[/\])(ld|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\]+-)?ld|collect2)[^/\]*( |$)]
+  ignore line: [Change Dir: /calculate/iwtm48/DACH/code_git/CMakeFiles/CMakeTmp]
+  ignore line: []
+  ignore line: [Run Build Command(s):/usr/bin/make -f Makefile cmTC_b66cf/fast && /usr/bin/make  -f CMakeFiles/cmTC_b66cf.dir/build.make CMakeFiles/cmTC_b66cf.dir/build]
+  ignore line: [make[1]: Entering directory '/calculate/iwtm48/DACH/code_git/CMakeFiles/CMakeTmp']
+  ignore line: [Building CXX object CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o]
+  ignore line: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/bin/mpic++   -march=native    -v -o CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o -c /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/cmake-3.21.4-yw4evzvynwbb2e2szivuxgnl6cd4n7k7/share/cmake-3.21/Modules/CMakeCXXCompilerABI.cpp]
+  ignore line: [Reading specs from /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/specs]
+  ignore line: [COLLECT_GCC=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/bin/g++]
+  ignore line: [Target: x86_64-pc-linux-gnu]
+  ignore line: [Configured with: /calculate/temp/iwtm009/spack-stage-gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/spack-src/configure --prefix=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26 --with-pkgversion='Spack GCC' --with-bugurl=https://github.com/spack/spack/issues --disable-multilib --enable-languages=c c++ fortran --disable-nls --with-system-zlib --enable-bootstrap --with-mpfr-include=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/include --with-mpfr-lib=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/lib --with-gmp-include=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/include --with-gmp-lib=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/lib --with-mpc-include=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/include --with-mpc-lib=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/lib --without-isl --with-stage1-ldflags='-Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64 -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/zlib-1.2.11-3rlgy7ycxtoho44una6o3itgfjltkmpd/lib' --with-boot-ldflags='-Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64 -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/zlib-1.2.11-3rlgy7ycxtoho44una6o3itgfjltkmpd/lib -static-libstdc++ -static-libgcc']
+  ignore line: [Thread model: posix]
+  ignore line: [gcc version 9.3.0 (Spack GCC) ]
+  ignore line: [COLLECT_GCC_OPTIONS='-march=native' '-v' '-o' 'CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-I' '/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include' '-pthread' '-shared-libgcc']
+  ignore line: [ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/cc1plus -quiet -v -I /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include -imultiarch x86_64-linux-gnu -D_GNU_SOURCE -D_REENTRANT /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/cmake-3.21.4-yw4evzvynwbb2e2szivuxgnl6cd4n7k7/share/cmake-3.21/Modules/CMakeCXXCompilerABI.cpp -march=skylake-avx512 -mmmx -mno-3dnow -msse -msse2 -msse3 -mssse3 -mno-sse4a -mcx16 -msahf -mmovbe -maes -mno-sha -mpclmul -mpopcnt -mabm -mno-lwp -mfma -mno-fma4 -mno-xop -mbmi -mno-sgx -mbmi2 -mno-pconfig -mno-wbnoinvd -mno-tbm -mavx -mavx2 -msse4.2 -msse4.1 -mlzcnt -mrtm -mhle -mrdrnd -mf16c -mfsgsbase -mrdseed -mprfchw -madx -mfxsr -mxsave -mxsaveopt -mavx512f -mno-avx512er -mavx512cd -mno-avx512pf -mno-prefetchwt1 -mclflushopt -mxsavec -mxsaves -mavx512dq -mavx512bw -mavx512vl -mno-avx512ifma -mno-avx512vbmi -mno-avx5124fmaps -mno-avx5124vnniw -mclwb -mno-mwaitx -mno-clzero -mpku -mno-rdpid -mno-gfni -mno-shstk -mno-avx512vbmi2 -mno-avx512vnni -mno-vaes -mno-vpclmulqdq -mno-avx512bitalg -mno-movdiri -mno-movdir64b -mno-waitpkg -mno-cldemote -mno-ptwrite --param l1-cache-size=32 --param l1-cache-line-size=64 --param l2-cache-size=30976 -mtune=skylake-avx512 -quiet -dumpbase CMakeCXXCompilerABI.cpp -auxbase-strip CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o -version -o /tmp/ccTo4Lus.s]
+  ignore line: [GNU C++14 (Spack GCC) version 9.3.0 (x86_64-pc-linux-gnu)]
+  ignore line: [	compiled by GNU C version 9.3.0  GMP version 6.2.1  MPFR version 3.1.6-p2  MPC version 1.1.0  isl version none]
+  ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+  ignore line: [ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"]
+  ignore line: [ignoring nonexistent directory "/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../x86_64-pc-linux-gnu/include"]
+  ignore line: [#include "..." search starts here:]
+  ignore line: [#include <...> search starts here:]
+  ignore line: [ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include]
+  ignore line: [ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-skylake_avx512/gcc-9.3.0/python-3.8.12-yghzzoedviex6ekyiluwfxw5yuc6upjv/include/python3.8]
+  ignore line: [ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../include/c++/9.3.0]
+  ignore line: [ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../include/c++/9.3.0/x86_64-pc-linux-gnu]
+  ignore line: [ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../include/c++/9.3.0/backward]
+  ignore line: [ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/include]
+  ignore line: [ /usr/local/include]
+  ignore line: [ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/include]
+  ignore line: [ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/include-fixed]
+  ignore line: [ /usr/include/x86_64-linux-gnu]
+  ignore line: [ /usr/include]
+  ignore line: [End of search list.]
+  ignore line: [GNU C++14 (Spack GCC) version 9.3.0 (x86_64-pc-linux-gnu)]
+  ignore line: [	compiled by GNU C version 9.3.0  GMP version 6.2.1  MPFR version 3.1.6-p2  MPC version 1.1.0  isl version none]
+  ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+  ignore line: [Compiler executable checksum: bfff9618b00ee962357413c82eb8bf9d]
+  ignore line: [COLLECT_GCC_OPTIONS='-march=native' '-v' '-o' 'CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-I' '/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include' '-pthread' '-shared-libgcc']
+  ignore line: [ as -v -I /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include --64 -o CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o /tmp/ccTo4Lus.s]
+  ignore line: [GNU assembler version 2.30 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.30]
+  ignore line: [COMPILER_PATH=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/]
+  ignore line: [LIBRARY_PATH=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../lib64/:/lib/x86_64-linux-gnu/:/lib/../lib64/:/usr/lib/x86_64-linux-gnu/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../:/lib/:/usr/lib/]
+  ignore line: [COLLECT_GCC_OPTIONS='-march=native' '-v' '-o' 'CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-I' '/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include' '-pthread' '-shared-libgcc']
+  ignore line: [Linking CXX executable cmTC_b66cf]
+  ignore line: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/cmake-3.21.4-yw4evzvynwbb2e2szivuxgnl6cd4n7k7/bin/cmake -E cmake_link_script CMakeFiles/cmTC_b66cf.dir/link.txt --verbose=1]
+  ignore line: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/bin/mpic++  -march=native   -v -rdynamic CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_b66cf ]
+  ignore line: [Reading specs from /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/specs]
+  ignore line: [COLLECT_GCC=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/bin/g++]
+  ignore line: [COLLECT_LTO_WRAPPER=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/lto-wrapper]
+  ignore line: [Target: x86_64-pc-linux-gnu]
+  ignore line: [Configured with: /calculate/temp/iwtm009/spack-stage-gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/spack-src/configure --prefix=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26 --with-pkgversion='Spack GCC' --with-bugurl=https://github.com/spack/spack/issues --disable-multilib --enable-languages=c c++ fortran --disable-nls --with-system-zlib --enable-bootstrap --with-mpfr-include=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/include --with-mpfr-lib=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/lib --with-gmp-include=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/include --with-gmp-lib=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/lib --with-mpc-include=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/include --with-mpc-lib=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/lib --without-isl --with-stage1-ldflags='-Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64 -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/zlib-1.2.11-3rlgy7ycxtoho44una6o3itgfjltkmpd/lib' --with-boot-ldflags='-Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64 -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gmp-6.2.1-7kpzyzgpa54nap7kap6cznbyerseariq/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpc-1.1.0-tjv2csrxbrewtrzd4zygkpho3c3juest/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/mpfr-3.1.6-z7hztfvtmv3shyltowevqvvz3iemx62g/lib -Wl -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/zlib-1.2.11-3rlgy7ycxtoho44una6o3itgfjltkmpd/lib -static-libstdc++ -static-libgcc']
+  ignore line: [Thread model: posix]
+  ignore line: [gcc version 9.3.0 (Spack GCC) ]
+  ignore line: [COMPILER_PATH=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/]
+  ignore line: [LIBRARY_PATH=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../lib64/:/lib/x86_64-linux-gnu/:/lib/../lib64/:/usr/lib/x86_64-linux-gnu/:/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../:/lib/:/usr/lib/]
+  ignore line: [COLLECT_GCC_OPTIONS='-march=native' '-v' '-rdynamic' '-o' 'cmTC_b66cf' '-I' '/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/include' '-pthread' '-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/hwloc-2.6.0-irpyh2is6cvv7uamg4tlggua2pn7ubpi/lib' '-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/libevent-2.1.12-5ar65sdptz4a6yophdea7pr7yawj6eoo/lib' '-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/zlib-1.2.11-3w5aji7c4l5f6g7l2kazeznpkbiqm2hr/lib' '-L/opt/dealii-9.2.0_a/opt/spa' '-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/lib' '-shared-libgcc']
+  link line: [ /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/collect2 -plugin /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/liblto_plugin.so -plugin-opt=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/lto-wrapper -plugin-opt=-fresolution=/tmp/ccsUvZtu.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lpthread -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --eh-frame-hdr -m elf_x86_64 -export-dynamic -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o cmTC_b66cf /usr/lib/x86_64-linux-gnu/crt1.o /usr/lib/x86_64-linux-gnu/crti.o /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/crtbegin.o -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/hwloc-2.6.0-irpyh2is6cvv7uamg4tlggua2pn7ubpi/lib -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/libevent-2.1.12-5ar65sdptz4a6yophdea7pr7yawj6eoo/lib -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/zlib-1.2.11-3w5aji7c4l5f6g7l2kazeznpkbiqm2hr/lib -L/opt/dealii-9.2.0_a/opt/spa -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/lib -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64 -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0 -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../lib64 -L/lib/x86_64-linux-gnu -L/lib/../lib64 -L/usr/lib/x86_64-linux-gnu -L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../.. CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0 -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64 -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/hwloc-2.6.0-irpyh2is6cvv7uamg4tlggua2pn7ubpi/lib -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/libevent-2.1.12-5ar65sdptz4a6yophdea7pr7yawj6eoo/lib -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/zlib-1.2.11-3w5aji7c4l5f6g7l2kazeznpkbiqm2hr/lib -rpath /opt/dealii-9.2.0_a/opt/spa -rpath /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/lib -lmpi -lstdc++ -lm -lgcc_s -lgcc -lpthread -lc -lgcc_s -lgcc /opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/crtend.o /usr/lib/x86_64-linux-gnu/crtn.o]
+    arg [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/collect2] ==> ignore
+    arg [-plugin] ==> ignore
+    arg [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/liblto_plugin.so] ==> ignore
+    arg [-plugin-opt=/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/libexec/gcc/x86_64-pc-linux-gnu/9.3.0/lto-wrapper] ==> ignore
+    arg [-plugin-opt=-fresolution=/tmp/ccsUvZtu.res] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lpthread] ==> ignore
+    arg [-plugin-opt=-pass-through=-lc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [--eh-frame-hdr] ==> ignore
+    arg [-m] ==> ignore
+    arg [elf_x86_64] ==> ignore
+    arg [-export-dynamic] ==> ignore
+    arg [-dynamic-linker] ==> ignore
+    arg [/lib64/ld-linux-x86-64.so.2] ==> ignore
+    arg [-o] ==> ignore
+    arg [cmTC_b66cf] ==> ignore
+    arg [/usr/lib/x86_64-linux-gnu/crt1.o] ==> obj [/usr/lib/x86_64-linux-gnu/crt1.o]
+    arg [/usr/lib/x86_64-linux-gnu/crti.o] ==> obj [/usr/lib/x86_64-linux-gnu/crti.o]
+    arg [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/crtbegin.o] ==> obj [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/crtbegin.o]
+    arg [-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/hwloc-2.6.0-irpyh2is6cvv7uamg4tlggua2pn7ubpi/lib] ==> dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/hwloc-2.6.0-irpyh2is6cvv7uamg4tlggua2pn7ubpi/lib]
+    arg [-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/libevent-2.1.12-5ar65sdptz4a6yophdea7pr7yawj6eoo/lib] ==> dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/libevent-2.1.12-5ar65sdptz4a6yophdea7pr7yawj6eoo/lib]
+    arg [-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/zlib-1.2.11-3w5aji7c4l5f6g7l2kazeznpkbiqm2hr/lib] ==> dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/zlib-1.2.11-3w5aji7c4l5f6g7l2kazeznpkbiqm2hr/lib]
+    arg [-L/opt/dealii-9.2.0_a/opt/spa] ==> dir [/opt/dealii-9.2.0_a/opt/spa]
+    arg [-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/lib] ==> dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/lib]
+    arg [-rpath] ==> ignore
+    arg [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64] ==> ignore
+    arg [-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0] ==> dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0]
+    arg [-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../lib64] ==> dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../lib64]
+    arg [-L/lib/x86_64-linux-gnu] ==> dir [/lib/x86_64-linux-gnu]
+    arg [-L/lib/../lib64] ==> dir [/lib/../lib64]
+    arg [-L/usr/lib/x86_64-linux-gnu] ==> dir [/usr/lib/x86_64-linux-gnu]
+    arg [-L/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../..] ==> dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../..]
+    arg [CMakeFiles/cmTC_b66cf.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
+    arg [-rpath] ==> ignore
+    arg [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0] ==> ignore
+    arg [-rpath] ==> ignore
+    arg [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64] ==> ignore
+    arg [-rpath] ==> ignore
+    arg [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/hwloc-2.6.0-irpyh2is6cvv7uamg4tlggua2pn7ubpi/lib] ==> ignore
+    arg [-rpath] ==> ignore
+    arg [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/libevent-2.1.12-5ar65sdptz4a6yophdea7pr7yawj6eoo/lib] ==> ignore
+    arg [-rpath] ==> ignore
+    arg [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/zlib-1.2.11-3w5aji7c4l5f6g7l2kazeznpkbiqm2hr/lib] ==> ignore
+    arg [-rpath] ==> ignore
+    arg [/opt/dealii-9.2.0_a/opt/spa] ==> ignore
+    arg [-rpath] ==> ignore
+    arg [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/lib] ==> ignore
+    arg [-lmpi] ==> lib [mpi]
+    arg [-lstdc++] ==> lib [stdc++]
+    arg [-lm] ==> lib [m]
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [-lgcc] ==> lib [gcc]
+    arg [-lpthread] ==> lib [pthread]
+    arg [-lc] ==> lib [c]
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [-lgcc] ==> lib [gcc]
+    arg [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/crtend.o] ==> obj [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/crtend.o]
+    arg [/usr/lib/x86_64-linux-gnu/crtn.o] ==> obj [/usr/lib/x86_64-linux-gnu/crtn.o]
+  collapse library dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/hwloc-2.6.0-irpyh2is6cvv7uamg4tlggua2pn7ubpi/lib] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/hwloc-2.6.0-irpyh2is6cvv7uamg4tlggua2pn7ubpi/lib]
+  collapse library dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/libevent-2.1.12-5ar65sdptz4a6yophdea7pr7yawj6eoo/lib] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/libevent-2.1.12-5ar65sdptz4a6yophdea7pr7yawj6eoo/lib]
+  collapse library dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/zlib-1.2.11-3w5aji7c4l5f6g7l2kazeznpkbiqm2hr/lib] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/zlib-1.2.11-3w5aji7c4l5f6g7l2kazeznpkbiqm2hr/lib]
+  collapse library dir [/opt/dealii-9.2.0_a/opt/spa] ==> [/opt/dealii-9.2.0_a/opt/spa]
+  collapse library dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/lib] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/lib]
+  collapse library dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0]
+  collapse library dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../../../lib64] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64]
+  collapse library dir [/lib/x86_64-linux-gnu] ==> [/lib/x86_64-linux-gnu]
+  collapse library dir [/lib/../lib64] ==> [/lib64]
+  collapse library dir [/usr/lib/x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+  collapse library dir [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/../../..] ==> [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib]
+  implicit libs: [mpi;stdc++;m;gcc_s;gcc;pthread;c;gcc_s;gcc]
+  implicit objs: [/usr/lib/x86_64-linux-gnu/crt1.o;/usr/lib/x86_64-linux-gnu/crti.o;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/crtbegin.o;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0/crtend.o;/usr/lib/x86_64-linux-gnu/crtn.o]
+  implicit dirs: [/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/hwloc-2.6.0-irpyh2is6cvv7uamg4tlggua2pn7ubpi/lib;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/libevent-2.1.12-5ar65sdptz4a6yophdea7pr7yawj6eoo/lib;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/zlib-1.2.11-3w5aji7c4l5f6g7l2kazeznpkbiqm2hr/lib;/opt/dealii-9.2.0_a/opt/spa;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-9.3.0/openmpi-4.1.1-wl5kvqmlgjsbhqtn4ypp474qsmddt7kj/lib;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib/gcc/x86_64-pc-linux-gnu/9.3.0;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib64;/lib/x86_64-linux-gnu;/lib64;/usr/lib/x86_64-linux-gnu;/opt/dealii-9.2.0_a/opt/spack/linux-ubuntu18.04-x86_64/gcc-7.5.0/gcc-9.3.0-icavgu55hzg6pekvkfq3dw3pg7amod26/lib]
+  implicit fwks: []
+
+

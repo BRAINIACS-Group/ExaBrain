@@ -6287,9 +6287,9 @@ namespace NonLinearPoroViscoElasticity
             }
       // Write the results to the plotting file.
       // Add two blank lines between cycles in the cyclic loading examples so GNUPLOT can detect each cycle as a different block
-            if ( (parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
-                 (parameters.geom_type == "Budday_cube_tension_compression")||
-                 (parameters.geom_type == "Budday_cube_shear_fully_fixed") ) {
+            if ((parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
+                (parameters.geom_type == "Budday_cube_tension_compression")||
+                (parameters.geom_type == "Budday_cube_shear_fully_fixed")){
             		const double delta_time = time->get_delta_t();
             		const double end_time   = time->get_end();
 
