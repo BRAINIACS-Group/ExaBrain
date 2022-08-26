@@ -4633,6 +4633,8 @@ namespace NonLinearPoroViscoElasticity
 
         double end = MPI_Wtime();
 
+        std::cout << "Here!" << std::endl;
+
         /*if (this_mpi_process == 0) {
         	std::ofstream assemble_system_time;
         	assemble_system_time.open(parameters.output_directory + "/assemble_system_time", std::ofstream::app);
