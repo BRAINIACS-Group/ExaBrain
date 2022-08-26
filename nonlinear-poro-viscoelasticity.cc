@@ -4587,7 +4587,7 @@ namespace NonLinearPoroViscoElasticity
         timerfile.enter_subsection("Assemble system");
         pcout     << " ASM_SYS " << std::flush;
         outfile   << " ASM_SYS " << std::flush;
-
+	
         const TrilinosWrappers::MPI::BlockVector solution_total(get_total_solution(solution_delta));
 
         //Info given to FEValues and FEFaceValues constructors, to indicate which data will be needed at each element.
@@ -4599,20 +4599,20 @@ namespace NonLinearPoroViscoElasticity
                                   update_normal_vectors |
                                   update_quadrature_points |
                                   update_JxW_values );
-
+	
         //Setup a copy of the data structures required for the process and pass them, along with the
         //memory addresses of the assembly functions to the WorkStream object for processing
         PerTaskData_ASM per_task_data(dofs_per_cell);
         ScratchData_ASM<ADNumberType> scratch_data(fe, qf_cell, uf_cell,
                                                    qf_face, uf_face,
                                                    solution_total);
-
+	
         FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
         cell (IteratorFilters::LocallyOwnedCell(),
               dof_handler_ref.begin_active()),
         endc (IteratorFilters::LocallyOwnedCell(),
               dof_handler_ref.end());
-
+	
         for (; cell != endc; ++cell)
           {
             Assert(cell->is_locally_owned(), ExcInternalError());
@@ -4621,19 +4621,17 @@ namespace NonLinearPoroViscoElasticity
             assemble_system_one_cell(cell, scratch_data, per_task_data);
             copy_local_to_global_system(per_task_data);
           }
-
+	
         tangent_matrix.compress(VectorOperation::add);
         system_rhs.compress(VectorOperation::add);
 
         tangent_matrix_nb.compress(VectorOperation::add);
         system_rhs_nb.compress(VectorOperation::add);
-
+	
         timerconsole.leave_subsection();
         timerfile.leave_subsection();
 
         double end = MPI_Wtime();
-
-        std::cout << "Here!" << std::endl;
 
         /*if (this_mpi_process == 0) {
         	std::ofstream assemble_system_time;
