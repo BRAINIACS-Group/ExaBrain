@@ -4589,12 +4589,13 @@ namespace NonLinearPoroViscoElasticity
         outfile   << " ASM_SYS " << std::flush;
 	
         const TrilinosWrappers::MPI::BlockVector solution_total(get_total_solution(solution_delta));
-
+	
         //Info given to FEValues and FEFaceValues constructors, to indicate which data will be needed at each element.
         const UpdateFlags uf_cell(update_values |
                                   update_gradients |
                                   update_JxW_values);
-        const UpdateFlags uf_face(update_values |
+        
+	const UpdateFlags uf_face(update_values |
                                   update_gradients |
                                   update_normal_vectors |
                                   update_quadrature_points |
@@ -4603,7 +4604,8 @@ namespace NonLinearPoroViscoElasticity
         //Setup a copy of the data structures required for the process and pass them, along with the
         //memory addresses of the assembly functions to the WorkStream object for processing
         PerTaskData_ASM per_task_data(dofs_per_cell);
-        ScratchData_ASM<ADNumberType> scratch_data(fe, qf_cell, uf_cell,
+        
+	ScratchData_ASM<ADNumberType> scratch_data(fe, qf_cell, uf_cell,
                                                    qf_face, uf_face,
                                                    solution_total);
 	
@@ -4612,7 +4614,7 @@ namespace NonLinearPoroViscoElasticity
               dof_handler_ref.begin_active()),
         endc (IteratorFilters::LocallyOwnedCell(),
               dof_handler_ref.end());
-	
+
         for (; cell != endc; ++cell)
           {
             Assert(cell->is_locally_owned(), ExcInternalError());
@@ -4624,23 +4626,22 @@ namespace NonLinearPoroViscoElasticity
 	
         tangent_matrix.compress(VectorOperation::add);
         system_rhs.compress(VectorOperation::add);
-
+	
         tangent_matrix_nb.compress(VectorOperation::add);
         system_rhs_nb.compress(VectorOperation::add);
 	
         timerconsole.leave_subsection();
         timerfile.leave_subsection();
-
         double end = MPI_Wtime();
 
-        /*if (this_mpi_process == 0) {
+        if (this_mpi_process == 0) {
         	std::ofstream assemble_system_time;
         	assemble_system_time.open(parameters.output_directory + "/assemble_system_time", std::ofstream::app);
         	assemble_system_time << std::setprecision(6) << std::scientific;
         	assemble_system_time << std::setw(16) << this->time->get_current() << ","
         			<< std::setw(16) << end - start << std::endl;
         	assemble_system_time.close();
-        }*/
+        }
     }
 
     //Add the local elemental contribution to the global stiffness tensor
@@ -6345,7 +6346,7 @@ namespace NonLinearPoroViscoElasticity
 
                 if (parameters.geom_type == "brain_rheometer_cyclic_tension_compression_exp_quarter"){
                 	for (unsigned int d=0; d<dim; ++d)
-                		plotpointfile << std::setw(15) << std::abs(reaction_force[d]*(4e-6)) << ",";
+                		plotpointfile << std::setw(15) << reaction_force[d]*(4e-6) << ",";
                 } else {
                 	for (unsigned int d=0; d<dim; ++d)
                 		plotpointfile << std::setw(15) << reaction_force[d] << ",";
@@ -8417,8 +8418,8 @@ namespace NonLinearPoroViscoElasticity
             {
             	const Point<dim-1> mesh_center(0.0, 0.0);
             	//const Point<dim> mesh_center2(0.0, 0.0, 0.0);
-            	const double radius = 4.0;
-            	const double height = 4.0;
+            	const double radius = 3.5;
+            	const double height = 7.2;
 
             	// Create a quarter_hyper_ball in 2d, i.e. a quarter-circle and extrude it to obtain a quarter cylinder
             	Triangulation<dim-1> triangulation_in;
@@ -8471,9 +8472,9 @@ namespace NonLinearPoroViscoElasticity
 
             virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
             {
-            	tracked_vertices[0][0] = 4.0*this->parameters.scale;
+            	tracked_vertices[0][0] = 3.5*this->parameters.scale;
             	tracked_vertices[0][1] = 0.0*this->parameters.scale;
-            	tracked_vertices[0][2] = 4.0*this->parameters.scale;
+            	tracked_vertices[0][2] = 7.2*this->parameters.scale;
 
             	tracked_vertices[1][0] = 0.0*this->parameters.scale;
             	tracked_vertices[1][1] = 0.0*this->parameters.scale;
@@ -8718,7 +8719,7 @@ namespace NonLinearPoroViscoElasticity
     		std::vector<double> displ_incr (dim,0.0);
 
     		if ((boundary_id == 2) && (direction == 2)) {
-    			displ_incr[2] = -this->get_displacement(this->time->get_timestep());
+    			displ_incr[2] = this->get_displacement(this->time->get_timestep());
     		}
     		return displ_incr;
         }
