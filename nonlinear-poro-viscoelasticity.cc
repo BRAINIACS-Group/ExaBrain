@@ -1711,6 +1711,8 @@ namespace NonLinearPoroViscoElasticity
           geom_type = prm.get("Geometry type");
           global_refinement = prm.get_integer("Global refinement");
           scale = prm.get_double("Grid scale");
+          height = prm.get_double("Specimen height");
+          radius = prm.get_double("Specimen radius");
         }
         prm.leave_subsection();
         prm.enter_subsection("testing_device@[type=porous_tension_compression_testing_device,instance=1]");
@@ -1724,8 +1726,6 @@ namespace NonLinearPoroViscoElasticity
           lateral_drained = prm.get("Lateral drained");
           bottom_drained = prm.get("Bottom drained");
           lateral_confined = prm.get("Lateral confined");
-          height = prm.get_double("Specimen height");
-          radius = prm.get_double("Specimen radius");
         }
         prm.leave_subsection();
       }
