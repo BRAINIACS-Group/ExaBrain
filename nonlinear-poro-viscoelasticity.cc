@@ -1600,6 +1600,8 @@ namespace NonLinearPoroViscoElasticity
         std::string  lateral_drained;
         std::string  bottom_drained;
         std::string  lateral_confined;
+        double       height;
+        double       radius;
 
         static void
         declare_parameters(ParameterHandler &prm);
@@ -1650,9 +1652,9 @@ namespace NonLinearPoroViscoElasticity
           prm.declare_entry("Grid scale", "1.0",
                             Patterns::Double(0.0),
                             "Global grid scaling factor");
-          prm.declare_entry("height", "8.0",
+          prm.declare_entry("Specimen height", "8.0",
                             Patterns::Double(0.0));
-          prm.declare_entry("radius", "4.0",
+          prm.declare_entry("Specimen radius", "4.0",
                             Patterns::Double(0.0));
         }
         prm.leave_subsection();
@@ -1722,6 +1724,8 @@ namespace NonLinearPoroViscoElasticity
           lateral_drained = prm.get("Lateral drained");
           bottom_drained = prm.get("Bottom drained");
           lateral_confined = prm.get("Lateral confined");
+          height = prm.get_double("Specimen height");
+          radius = prm.get_double("Specimen radius");
         }
         prm.leave_subsection();
       }
@@ -7689,8 +7693,8 @@ namespace NonLinearPoroViscoElasticity
           virtual void
           make_grid()
           {  const Point<dim-1> mesh_center(0.0, 0.0);
-            const double radius = 4.0;
-            const double height = 8.0;
+            const double radius = this->parameters.radius;
+            const double height = this->parameters.height;
             Triangulation<dim-1> triangulation_in;
             GridGenerator::hyper_ball( triangulation_in,
                                        mesh_center,
