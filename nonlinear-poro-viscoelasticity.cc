@@ -1639,6 +1639,7 @@ namespace NonLinearPoroViscoElasticity
                             		 	 	 	 "|brain_rheometer_relaxation_tension_compression_quarter"
           	  	  	  	  	  	  	  	  	  	 "|brain_rheometer_shear_relaxation_lateral_drained"
           	  	  	  	  	  	  	  	  	  	 "|hydro_nano_graz_compression_relax"
+                            		 	 	 	 "|hydro_nano_graz_compression_exp_relax"
                             		 	 	 	 "|hydro_nano_graz_compression_relax_sphere"),
                                 "Type of geometry used. "
                                 "For Ehlers verification examples see Ehlers and Eipper (1999). "
@@ -9628,8 +9629,8 @@ namespace NonLinearPoroViscoElasticity
             virtual void make_grid()
             {
             	const Point<dim-1> mesh_center(0.0, 0.0);
-            	const double radius = 20; //20.0;
-            	const double height = 20; //20.0;
+            	const double radius = this->parameters.radius; //20.0;
+            	const double height = this->parameters.height; //20.0;
 
             	// Define the indenter radius and the center of the applied displacement
             	const double indenter_radius = 2;
@@ -9744,7 +9745,7 @@ namespace NonLinearPoroViscoElasticity
             {
             	tracked_vertices[0][0] = 0.0*this->parameters.scale;
             	tracked_vertices[0][1] = 0.0*this->parameters.scale;
-            	tracked_vertices[0][2] = 20.0*this->parameters.scale; //height
+            	tracked_vertices[0][2] = this->parameters.height*this->parameters.scale; //height
 
             	tracked_vertices[1][0] = 0.0*this->parameters.scale;
             	tracked_vertices[1][1] = 0.0*this->parameters.scale;
@@ -9975,6 +9976,49 @@ namespace NonLinearPoroViscoElasticity
 			}
     };
 
+    template <int dim>
+    class HydroNanoGrazRelaxationCompressionExpQuarter : public HydroNanoGrazBaseQuarter<dim>
+    {
+    public:
+    	HydroNanoGrazRelaxationCompressionExpQuarter (const Parameters::AllParameters &parameters) : HydroNanoGrazBaseQuarter<dim> (parameters)
+		{
+    		this->read_input_file(parameters.input_directory + '/' + parameters.input_file);
+		}
+    	virtual ~HydroNanoGrazRelaxationCompressionExpQuarter () {}
+
+    	std::vector<double> displacement_data;
+
+    	void read_input_file (const std::string &filename)
+    	{
+    		using namespace dealii;
+
+    		efi::io::CSVReader<1> in (filename);
+
+    		in.read_header(efi::io::ignore_extra_column,"displacement");
+
+    		double displacement;
+    		while (in.read_row (displacement)) {
+    			this->displacement_data.push_back(displacement);
+    		}
+    	}
+
+    private:
+    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+		{
+    		std::vector<double> displ_incr (dim,0.0);
+
+    		if ((boundary_id == 100 || boundary_id == 101) && (direction == 2)) {
+    			displ_incr[2] = this->get_displacement(this->time->get_timestep());
+    		}
+
+    		return displ_incr;
+		}
+
+    	double get_displacement(int timestep) const
+    	{
+    		return this->displacement_data[timestep]-displacement_data[timestep-1];
+    	}
+    };
 
 
     //@sect4{Function to define Dirichlet boundary conditions for nanoindentation using spherical indenter}
@@ -10585,6 +10629,11 @@ int main (int argc, char *argv[])
       {
     	HydroNanoGrazRelaxationCompressionQuarter<3> solid_3d(parameters);
         solid_3d.run();
+      }
+      else if (parameters.geom_type == "hydro_nano_graz_compression_exp_relax")
+      {
+    	  HydroNanoGrazRelaxationCompressionExpQuarter<3> solid_3d(parameters);
+    	  solid_3d.run();
       }
       else if (parameters.geom_type == "hydro_nano_graz_compression_relax_sphere")
       {
