@@ -1652,9 +1652,9 @@ namespace NonLinearPoroViscoElasticity
           prm.declare_entry("Grid scale", "1.0",
                             Patterns::Double(0.0),
                             "Global grid scaling factor");
-          prm.declare_entry("Specimen height", "8.0",
+          prm.declare_entry("height", "8.0",
                             Patterns::Double(0.0));
-          prm.declare_entry("Specimen radius", "4.0",
+          prm.declare_entry("radius", "4.0",
                             Patterns::Double(0.0));
         }
         prm.leave_subsection();
@@ -1711,8 +1711,8 @@ namespace NonLinearPoroViscoElasticity
           geom_type = prm.get("Geometry type");
           global_refinement = prm.get_integer("Global refinement");
           scale = prm.get_double("Grid scale");
-          height = prm.get_double("Specimen height");
-          radius = prm.get_double("Specimen radius");
+          height = prm.get_double("height");
+          radius = prm.get_double("radius");
         }
         prm.leave_subsection();
         prm.enter_subsection("testing_device@[type=porous_tension_compression_testing_device,instance=1]");
@@ -8422,8 +8422,8 @@ namespace NonLinearPoroViscoElasticity
             {
             	const Point<dim-1> mesh_center(0.0, 0.0);
             	//const Point<dim> mesh_center2(0.0, 0.0, 0.0);
-            	const double radius = 3.5;
-            	const double height = 7.2;
+            	const double radius = this->parameters.radius;
+            	const double height = this->parameters.height;
 
             	// Create a quarter_hyper_ball in 2d, i.e. a quarter-circle and extrude it to obtain a quarter cylinder
             	Triangulation<dim-1> triangulation_in;
@@ -8476,9 +8476,9 @@ namespace NonLinearPoroViscoElasticity
 
             virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
             {
-            	tracked_vertices[0][0] = 3.5*this->parameters.scale;
+            	tracked_vertices[0][0] = this->parameters.radius*this->parameters.scale;
             	tracked_vertices[0][1] = 0.0*this->parameters.scale;
-            	tracked_vertices[0][2] = 7.2*this->parameters.scale;
+            	tracked_vertices[0][2] = this->parameters.height*this->parameters.scale;
 
             	tracked_vertices[1][0] = 0.0*this->parameters.scale;
             	tracked_vertices[1][1] = 0.0*this->parameters.scale;
