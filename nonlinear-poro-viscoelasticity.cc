@@ -9674,10 +9674,10 @@ namespace NonLinearPoroViscoElasticity
             	this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
 
 
-            	for (const auto &cell : this->triangulation.active_cell_iterators()) {
+            	/*for (const auto &cell : this->triangulation.active_cell_iterators()) {
             		if (displ_center.distance(cell->center()) < 9)
             			cell->set_refine_flag();
-            	}
+            	}*/
 
             	this->triangulation.execute_coarsening_and_refinement();
 
@@ -9702,7 +9702,7 @@ namespace NonLinearPoroViscoElasticity
 
             	this->triangulation.execute_coarsening_and_refinement();
 
-            	for (const auto &cell : this->triangulation.active_cell_iterators()) {
+            	/*for (const auto &cell : this->triangulation.active_cell_iterators()) {
             		if (displ_center.distance(cell->center()) < 2.4 && displ_center.distance(cell->center()) > 1.6 && cell->center()[2] > (height - 0.7))
             			cell->set_refine_flag();
             	}
@@ -9714,7 +9714,7 @@ namespace NonLinearPoroViscoElasticity
             			cell->set_refine_flag();
             	}
 
-            	this->triangulation.execute_coarsening_and_refinement();
+            	this->triangulation.execute_coarsening_and_refinement();*/
 
             	// Assign proper boundary ids
             	for (auto cell : this->triangulation.active_cell_iterators()) {
