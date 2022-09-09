@@ -6349,7 +6349,7 @@ namespace NonLinearPoroViscoElasticity
                     for (unsigned int d=0; d<(dim+1); ++d)
                         plotpointfile << std::setw(15) << solution_vertices[p][d]<< ",";
 
-                if (parameters.geom_type == "brain_rheometer_cyclic_tension_compression_exp_quarter"){
+                if (parameters.geom_type == "brain_rheometer_cyclic_tension_compression_exp_quarter" || parameters.geom_type == "hydro_nano_graz_compression_exp_relax"){
                 	for (unsigned int d=0; d<dim; ++d)
                 		plotpointfile << std::setw(15) << reaction_force[d]*(4e-6) << ",";
                 } else {
@@ -9697,6 +9697,13 @@ namespace NonLinearPoroViscoElasticity
 
             	for (const auto &cell : this->triangulation.active_cell_iterators()) {
             		if (displ_center.distance(cell->center()) < 2.8 && cell->center()[2] > (height - 2))
+            			cell->set_refine_flag();
+            	}
+
+            	this->triangulation.execute_coarsening_and_refinement();
+
+            	for (const auto &cell : this->triangulation.active_cell_iterators()) {
+            		if (displ_center.distance(cell->center()) < 2.5 && cell->center()[2] > (height - 1))
             			cell->set_refine_flag();
             	}
 
