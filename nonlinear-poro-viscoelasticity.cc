@@ -9729,8 +9729,8 @@ namespace NonLinearPoroViscoElasticity
             			if (cell->face(face)->at_boundary() == true) {
             				if (cell->face(face)->center()[2] == 0.0)
             					cell->face(face)->set_boundary_id(1); //bottom
-            					else if (cell->face(face)->center()[2] == height && displ_center.distance(cell->face(face)->center()) < indenter_radius*0.95)
-            						cell->face(face)->set_boundary_id(100); //loaded top
+            					//else if (cell->face(face)->center()[2] == height && displ_center.distance(cell->face(face)->center()) < indenter_radius*0.95)
+            					//	cell->face(face)->set_boundary_id(100); //loaded top
             					else if (cell->face(face)->center()[2] == height && displ_center.distance(cell->face(face)->center()) < indenter_radius)
             						cell->face(face)->set_boundary_id(101); //loaded top boundary
             					else if (cell->face(face)->center()[2] == height)
@@ -9828,7 +9828,7 @@ namespace NonLinearPoroViscoElasticity
 
     			// Apply vertical displacement on cylinder top surface and fix in x- and y-direction to account for glue
     			if (this->parameters.load_type == "displacement") {
-    				const std::vector<double> value = get_dirichlet_load(100,2);
+    				/*const std::vector<double> value = get_dirichlet_load(100,2);
 
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
@@ -9841,7 +9841,7 @@ namespace NonLinearPoroViscoElasticity
 							100,
 							ZeroFunction<dim>(this->n_components),
 							constraints,
-							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
+							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));*/
 
     				const std::vector<double> value2 = get_dirichlet_load(101,2);
 
@@ -9897,7 +9897,7 @@ namespace NonLinearPoroViscoElasticity
 
             virtual types::boundary_id get_reaction_boundary_id_for_output() const
             {
-            	return 100;
+            	return 101;
             }
 
             virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const
