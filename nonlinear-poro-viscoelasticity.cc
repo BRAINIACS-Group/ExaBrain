@@ -1755,6 +1755,13 @@ namespace NonLinearPoroViscoElasticity
         double alpha2_mode_1;
         double alpha3_mode_1;
         double viscosity_mode_1;
+        double mu1_mode_2;
+        double mu2_mode_2;
+        double mu3_mode_2;
+        double alpha1_mode_2;
+        double alpha2_mode_2;
+        double alpha3_mode_2;
+        double viscosity_mode_2;
         std::string  fluid_type;
         double solid_vol_frac;
         double kappa_darcy;
@@ -1781,7 +1788,7 @@ namespace NonLinearPoroViscoElasticity
         prm.enter_subsection("Material properties");
         {
           prm.declare_entry("material", "Neo-Hooke",
-                            Patterns::Selection("Neo-Hooke|Ogden|visco-Ogden"),
+                            Patterns::Selection("Neo-Hooke|Ogden|visco-Ogden|visco2-Ogden"),
                             "Type of material used in the problem");
 
           prm.declare_entry("lambda", "8.375e6",
@@ -1847,6 +1854,34 @@ namespace NonLinearPoroViscoElasticity
           prm.declare_entry("viscosity_1", "1e-10",
                             Patterns::Double(1e-10,1e100),
                             "Deformation-independent viscosity parameter 'eta_1' for first viscous mode in Ogden material [-].");
+
+          prm.declare_entry("mu1_2", "0.0",
+        		  	  	  	Patterns::Double(),
+							"Shear material parameter 'mu1' for second viscous mode in Ogden material [Pa].");
+
+          prm.declare_entry("mu2_2", "0.0",
+        		  	  	    Patterns::Double(),
+							"Shear material parameter 'mu2' for second viscous mode in Ogden material [Pa].");
+
+          prm.declare_entry("mu3_2", "0.0",
+        		  	  	    Patterns::Double(),
+							"Shear material parameter 'mu1' for second viscous mode in Ogden material [Pa].");
+
+          prm.declare_entry("alpha1_2", "1.0",
+        		  	  	    Patterns::Double(),
+							"Stiffness material parameter 'alpha1' for second viscous mode in Ogden material [-].");
+
+          prm.declare_entry("alpha2_2", "1.0",
+        		  	  	    Patterns::Double(),
+							"Stiffness material parameter 'alpha2' for second viscous mode in Ogden material [-].");
+
+          prm.declare_entry("alpha3_2", "1.0",
+        		  	  	    Patterns::Double(),
+							"Stiffness material parameter 'alpha3' for second viscous mode in Ogden material [-].");
+
+          prm.declare_entry("viscosity_2", "1e-10",
+        		  	  	    Patterns::Double(1e-10,1e100),
+							"Deformation-independent viscosity parameter 'eta_2' for second viscous mode in Ogden material [-].");
 
           prm.declare_entry("seepage definition", "Ehlers",
                             Patterns::Selection("Markert|Ehlers"),
@@ -1922,6 +1957,13 @@ namespace NonLinearPoroViscoElasticity
           alpha2_mode_1 = prm.get_double("alpha2_1");
           alpha3_mode_1 = prm.get_double("alpha3_1");
           viscosity_mode_1 = prm.get_double("viscosity_1");
+          mu1_mode_2 = prm.get_double("mu1_2");
+          mu2_mode_2 = prm.get_double("mu2_2");
+          mu3_mode_2 = prm.get_double("mu3_2");
+          alpha1_mode_2 = prm.get_double("alpha1_2");
+          alpha2_mode_2 = prm.get_double("alpha2_2");
+          alpha3_mode_2 = prm.get_double("alpha3_2");
+          viscosity_mode_2 = prm.get_double("viscosity_2");
           //Fluid
           fluid_type = prm.get("seepage definition");
           solid_vol_frac = prm.get_double("initial solid volume fraction");
@@ -2289,16 +2331,16 @@ namespace NonLinearPoroViscoElasticity
           {
               double dt = delta_t;
               if (time_end_load > 0) {
-            	  if (time_current < 1.5*time_end_load)
+            	  if (time_current <= time_end_load)
             		  dt = 0.25*delta_t;
             	  else if (time_current <= delta_t)
             		  dt = delta_t - time_current;
-            	  else if (time_current >= 20*time_end_load)
-            	      dt = 20*delta_t;
-            	  else if (time_current >= 10*time_end_load)
-            	      dt = 5*delta_t;
-            	  else if (time_current >= 4*time_end_load)
-            		  dt = 2*delta_t;
+            	  //else if (time_current >= 20*time_end_load)
+            	  //    dt = 20*delta_t;
+            	  //else if (time_current >= 10*time_end_load)
+            	  //    dt = 5*delta_t;
+            	  else if (time_current > time_end_load)
+            		  dt = delta_t;
               }
               return dt;
           }
@@ -2310,16 +2352,16 @@ namespace NonLinearPoroViscoElasticity
           {
               double dt = delta_t;
               if (time_end_load > 0) {
-            	  if (time_current < 1.5*time_end_load)
+            	  if (time_current <= time_end_load)
             		  dt = 0.25*delta_t;
-            	  else if (time_current < delta_t)
+            	  else if (time_current <= delta_t)
             		  dt = delta_t - time_current;
-            	  else if (time_current >= 20*time_end_load)
-            	      dt = 20*delta_t;
-            	  else if (time_current >= 10*time_end_load)
-            		  dt = 5*delta_t;
-            	  else if (time_current >= 4*time_end_load)
-            		  dt = 2*delta_t;
+            	  //else if (time_current >= 20*time_end_load)
+            	  //    dt = 20*delta_t;
+            	  //else if (time_current >= 10*time_end_load)
+            	  //	  dt = 5*delta_t;
+            	  else if (time_current > time_end_load)
+            		  dt = delta_t;
               }
               time_current += dt;
               ++timestep;
@@ -3213,6 +3255,397 @@ namespace NonLinearPoroViscoElasticity
     };
 
 
+//@sect4{Derived class: Double-mode Ogden viscoelastic material}
+// We use the finite viscoelastic model described in
+// Reese & Govindjee (1998) doi:10.1016/S0020-7683(97)00217-5
+// The algorithm for the implicit exponential time integration is given in
+// Budday et al. (2017) doi: 10.1016/j.actbio.2017.06.024
+    template <int dim, typename NumberType = Sacado::Fad::DFad<double> >
+    class visco2_Ogden : public Material_Hyperelastic < dim, NumberType >
+    {
+    public:
+    	visco2_Ogden(const Parameters::AllParameters &parameters, const std::shared_ptr<Time> time)
+    :
+    	Material_Hyperelastic< dim, NumberType > (parameters,time),
+		mu_infty({parameters.mu1_infty, parameters.mu2_infty, parameters.mu3_infty}),
+		alpha_infty({parameters.alpha1_infty, parameters.alpha2_infty, parameters.alpha3_infty}),
+		// first viscous mode
+		mu_mode_1({parameters.mu1_mode_1, parameters.mu2_mode_1, parameters.mu3_mode_1}),
+		alpha_mode_1({parameters.alpha1_mode_1, parameters.alpha2_mode_1, parameters.alpha3_mode_1}),
+		viscosity_mode_1(parameters.viscosity_mode_1),
+		Cinv_v_1(Physics::Elasticity::StandardTensors<dim>::I),
+		Cinv_v_1_converged(Physics::Elasticity::StandardTensors<dim>::I),
+		// second viscous mode
+		mu_mode_2({parameters.mu1_mode_2, parameters.mu2_mode_2, parameters.mu3_mode_2}),
+		alpha_mode_2({parameters.alpha1_mode_2, parameters.alpha2_mode_2, parameters.alpha3_mode_2}),
+		viscosity_mode_2(parameters.viscosity_mode_2),
+		Cinv_v_2(Physics::Elasticity::StandardTensors<dim>::I),
+		Cinv_v_2_converged(Physics::Elasticity::StandardTensors<dim>::I)
+		{}
+    	virtual ~visco2_Ogden()
+    	{}
+
+    	void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F )
+    	{
+    		Material_Hyperelastic < dim, NumberType >::update_internal_equilibrium(F);
+
+    		// update right Cauchy-Green strain and compute the elastic left Cauchy-Green trial strain
+    		this->Cinv_v_1 = this->Cinv_v_1_converged;
+    		SymmetricTensor<2, dim, NumberType> B_e_1_tr = symmetrize(F * this->Cinv_v_1 * transpose(F));
+    		this->Cinv_v_2 = this->Cinv_v_2_converged;
+    		SymmetricTensor<2, dim, NumberType> B_e_2_tr = symmetrize(F * this->Cinv_v_2 * transpose(F));
+
+    		// Compute eigenvalues and eigenvectors of the trail strain tensors and store them in an array of pairs
+    		const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B_e_1_tr = eigenvectors(B_e_1_tr, this->eigen_solver);
+    		const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B_e_2_tr = eigenvectors(B_e_2_tr, this->eigen_solver);
+
+    		// Compute elastic trial eigenvalues lambda and logarithmic principal stretches epsilon and store them as vectors
+    		Tensor< 1, dim, NumberType > lambdas_e_1_tr, lambdas_e_2_tr;
+    		Tensor< 1, dim, NumberType > epsilon_e_1_tr, epsilon_e_2_tr;
+
+    		for (int a = 0; a < dim; ++a) {
+    			lambdas_e_1_tr[a] = std::sqrt(eigen_B_e_1_tr[a].first);
+    			epsilon_e_1_tr[a] = std::log(lambdas_e_1_tr[a]);
+    			lambdas_e_2_tr[a] = std::sqrt(eigen_B_e_2_tr[a].first);
+    			epsilon_e_2_tr[a] = std::log(lambdas_e_2_tr[a]);
+    		}
+
+    		// Define tolerace and check values for the local Newton method.
+    		// Declare a vector for the residual and a 2nd order tensor for the tangent.
+    		// Compute the elastic Jacobian based on the elastic left Cauchy-Green trial strain.
+    		const double tolerance = 1e-8;
+    		double residual_check = tolerance*10.0;
+    		Tensor< 1, dim, NumberType > residual_1, residual_2;
+    		Tensor< 2, dim, NumberType > tangent_1, tangent_2;
+    		static const SymmetricTensor< 2, dim, double> I(Physics::Elasticity::StandardTensors<dim>::I);
+    		NumberType J_e_1 = std::sqrt(determinant(B_e_1_tr));
+    		NumberType J_e_2 = std::sqrt(determinant(B_e_2_tr));
+
+    		// Declare a vector to store the isochoric elastic principal stretches, a 2nd order tensor for the
+    		// actual left Cauchy-Green strain, an iteration counter, vectors for the actual principal stretches
+    		// and logarithmic principal stretches (set to its trial values).
+    		std::vector<NumberType> lambdas_e_1_iso(dim), lambdas_e_2_iso(dim);
+    		SymmetricTensor<2, dim, NumberType> B_e_1, B_e_2;
+    		int iteration = 0;
+
+    		Tensor< 1, dim, NumberType > lambdas_e_1, lambdas_e_2;
+    		Tensor< 1, dim, NumberType > epsilon_e_1, epsilon_e_2;
+    		epsilon_e_1 = epsilon_e_1_tr;
+    		epsilon_e_2 = epsilon_e_2_tr;
+
+    		while(residual_check > tolerance) {
+    			// Compute the updated elastic Jacobians with the help of auxiliary variables
+    			NumberType aux_J_e_1 = 1.0;
+
+    			for (unsigned int a = 0; a < dim; ++a) {
+    				lambdas_e_1[a] = std::exp(epsilon_e_1[a]);
+    				aux_J_e_1 *= lambdas_e_1[a];
+    			}
+    			J_e_1 = aux_J_e_1;
+
+    			// Compute the isochoric elastic principal stretches
+    			for (unsigned int a = 0; a < dim; ++a)
+    				lambdas_e_1_iso[a] = lambdas_e_1[a]*std::pow(J_e_1,-1.0/dim);
+
+    			for (unsigned int a = 0; a < dim; ++a) {
+    				residual_1[a] = get_beta_mode_1(lambdas_e_1_iso, a);
+    				residual_1[a] *= this->time->get_delta_t()/(2.0*viscosity_mode_1);
+    				residual_1[a] += epsilon_e_1[a];
+    				residual_1[a] -= epsilon_e_1_tr[a];
+
+    				for (unsigned int b = 0; b < dim; ++b) {
+    					tangent_1[a][b]  = get_gamma_mode_1(lambdas_e_1_iso, a, b);
+    					tangent_1[a][b] *= this->time->get_delta_t()/(2.0*viscosity_mode_1);
+    					tangent_1[a][b] += I[a][b];
+    				}
+
+    			}
+    			epsilon_e_1 -= invert(tangent_1)*residual_1;
+
+    			residual_check = 0.0;
+    			for (unsigned int a = 0; a < dim; ++a) {
+    				if ( std::abs(residual_1[a]) > residual_check)
+    					residual_check = std::abs(Tensor<0,dim,double>(residual_1[a]));
+    			}
+    			iteration += 1;
+    			if (iteration > 15 )
+    				AssertThrow(false, ExcMessage("No convergence in local Newton iteration for the "
+    						"first viscoelastic exponential time integration algorithm."));
+    		}
+
+    		residual_check = tolerance*10.0;
+    		while(residual_check > tolerance) {
+    			// Compute the updated elastic Jacobians with the help of auxiliary variables
+    			NumberType aux_J_e_2 = 1.0;
+
+    			for (unsigned int a = 0; a < dim; ++a) {
+    				lambdas_e_2[a] = std::exp(epsilon_e_2[a]);
+    				aux_J_e_2 *= lambdas_e_2[a];
+    			}
+    			J_e_2 = aux_J_e_2;
+
+    			// Compute the isochoric elastic principal stretches
+    			for (unsigned int a = 0; a < dim; ++a)
+    				lambdas_e_2_iso[a] = lambdas_e_2[a]*std::pow(J_e_2,-1.0/dim);
+
+    			for (unsigned int a = 0; a < dim; ++a) {
+    				residual_2[a] = get_beta_mode_2(lambdas_e_2_iso, a);
+    				residual_2[a] *= this->time->get_delta_t()/(2.0*viscosity_mode_2);
+    				residual_2[a] += epsilon_e_2[a];
+    				residual_2[a] -= epsilon_e_2_tr[a];
+
+    				for (unsigned int b = 0; b < dim; ++b) {
+    					tangent_2[a][b]  = get_gamma_mode_2(lambdas_e_2_iso, a, b);
+    					tangent_2[a][b] *= this->time->get_delta_t()/(2.0*viscosity_mode_2);
+    					tangent_2[a][b] += I[a][b];
+    				}
+
+    			}
+    			epsilon_e_2 -= invert(tangent_2)*residual_2;
+
+    			residual_check = 0.0;
+    			for (unsigned int a = 0; a < dim; ++a) {
+    				if ( std::abs(residual_2[a]) > residual_check)
+    					residual_check = std::abs(Tensor<0,dim,double>(residual_2[a]));
+    			}
+    			iteration += 1;
+    			if (iteration > 15 )
+    				AssertThrow(false, ExcMessage("No convergence in local Newton iteration for the "
+    						"second viscoelastic exponential time integration algorithm."));
+    		}
+
+    		NumberType aux_J_e_1 = 1.0, aux_J_e_2 = 1.0;
+    		for (unsigned int a = 0; a < dim; ++a) {
+    			lambdas_e_1[a] = std::exp(epsilon_e_1[a]);
+    			aux_J_e_1 *= lambdas_e_1[a];
+    			lambdas_e_2[a] = std::exp(epsilon_e_2[a]);
+    			aux_J_e_2 *= lambdas_e_2[a];
+    		}
+    		J_e_1 = aux_J_e_1;
+    		J_e_2 = aux_J_e_2;
+
+    		for (unsigned int a = 0; a < dim; ++a) {
+    			lambdas_e_1_iso[a] = lambdas_e_1[a]*std::pow(J_e_1,-1.0/dim);
+    			lambdas_e_2_iso[a] = lambdas_e_2[a]*std::pow(J_e_2,-1.0/dim);
+    		}
+
+    		for (unsigned int a = 0; a < dim; ++a) {
+    			SymmetricTensor<2, dim, NumberType> B_e_1_aux = symmetrize(outer_product(eigen_B_e_1_tr[a].second,eigen_B_e_1_tr[a].second));
+    			B_e_1_aux *= lambdas_e_1[a] * lambdas_e_1[a];
+    			B_e_1 += B_e_1_aux;
+    			SymmetricTensor<2, dim, NumberType> B_e_2_aux = symmetrize(outer_product(eigen_B_e_2_tr[a].second,eigen_B_e_2_tr[a].second));
+    			B_e_2_aux *= lambdas_e_2[a] * lambdas_e_2[a];
+    			B_e_2 += B_e_2_aux;
+    		}
+
+    		Tensor<2, dim, NumberType> Cinv_v_1_AD = symmetrize(invert(F) * B_e_1 * invert(transpose(F)));
+    		Tensor<2, dim, NumberType> Cinv_v_2_AD = symmetrize(invert(F) * B_e_2 * invert(transpose(F)));
+
+    		this->tau_neq_1 = 0;
+    		this->tau_neq_2 = 0;
+    		for (unsigned int a = 0; a < dim; ++a) {
+    			SymmetricTensor<2, dim, NumberType> tau_neq_1_aux = symmetrize(outer_product(eigen_B_e_1_tr[a].second,eigen_B_e_1_tr[a].second));
+    			tau_neq_1_aux *=  get_beta_mode_1(lambdas_e_1_iso, a);
+    			this->tau_neq_1 += tau_neq_1_aux;
+    			SymmetricTensor<2, dim, NumberType> tau_neq_2_aux = symmetrize(outer_product(eigen_B_e_2_tr[a].second,eigen_B_e_2_tr[a].second));
+    			tau_neq_2_aux *=  get_beta_mode_2(lambdas_e_2_iso, a);
+    			this->tau_neq_2 += tau_neq_2_aux;
+    		}
+
+    		// Print eigenvalues to file
+    		/*std::ofstream tau_neq;
+    		tau_neq.open("tau_neq", std::ofstream::app);
+    		tau_neq << std::setprecision(6) << std::scientific;
+    		tau_neq << std::setw(16) << this->time->get_current() << ","
+    				<< std::setw(16) << tau_neq_1 << ","
+					<< std::setw(16) << tau_neq_2 << std::endl;
+    		tau_neq.close();*/
+
+    		// Store history
+    		for (unsigned int a = 0; a < dim; ++a)
+    			for (unsigned int b = 0; b < dim; ++b) {
+    				this->Cinv_v_1[a][b]= Tensor<0,dim,double>(Cinv_v_1_AD[a][b]);
+    				this->Cinv_v_2[a][b]= Tensor<0,dim,double>(Cinv_v_2_AD[a][b]);
+    			}
+    	}
+
+    	void update_end_timestep()
+    	{
+    		Material_Hyperelastic < dim, NumberType >::update_end_timestep();
+    		this->Cinv_v_1_converged = this->Cinv_v_1;
+    		this->Cinv_v_2_converged = this->Cinv_v_2;
+    	}
+
+    	double get_viscous_dissipation() const
+    	{
+    		NumberType dissipation_term_1 = this->tau_neq_1 * this->tau_neq_1; //Double contract the two SymmetricTensor
+    		dissipation_term_1 /= (2*viscosity_mode_1);
+    		NumberType dissipation_term_2 = this->tau_neq_2 * this->tau_neq_2; //Double contract the two SymmetricTensor
+    		dissipation_term_2 /= (2*viscosity_mode_2);
+
+    		return dissipation_term_1.val() + dissipation_term_2.val();
+    	}
+
+    protected:
+    	std::vector<double> mu_infty;
+    	std::vector<double> alpha_infty;
+    	std::vector<double> mu_mode_1;
+    	std::vector<double> alpha_mode_1;
+    	double viscosity_mode_1;
+    	SymmetricTensor<2, dim, double> Cinv_v_1;
+    	SymmetricTensor<2, dim, double> Cinv_v_1_converged;
+    	SymmetricTensor<2, dim, NumberType> tau_neq_1;
+    	std::vector<double> mu_mode_2;
+    	std::vector<double> alpha_mode_2;
+    	double viscosity_mode_2;
+    	SymmetricTensor<2, dim, double> Cinv_v_2;
+    	SymmetricTensor<2, dim, double> Cinv_v_2_converged;
+    	SymmetricTensor<2, dim, NumberType> tau_neq_2;
+
+    	SymmetricTensor<2, dim, NumberType>
+    	get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+		{
+    		return ( get_tau_E_neq() + get_tau_E_eq(F) );
+		}
+
+    	SymmetricTensor<2, dim, NumberType>
+    	get_tau_E_eq(const Tensor<2,dim, NumberType> &F) const
+		{
+    		const SymmetricTensor<2, dim, NumberType> B = symmetrize(F * transpose(F));
+
+    		std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B;
+    		eigen_B = eigenvectors(B, this->eigen_solver);
+
+    		SymmetricTensor<2, dim, NumberType>  tau;
+    		static const SymmetricTensor< 2, dim, double>
+    		I (Physics::Elasticity::StandardTensors<dim>::I);
+
+    		for (unsigned int i = 0; i < 3; ++i)
+    		{
+    			for (unsigned int A = 0; A < dim; ++A)
+    			{
+    				SymmetricTensor<2, dim, NumberType>  tau_aux1 = symmetrize(
+    						outer_product(eigen_B[A].second,eigen_B[A].second));
+    				tau_aux1 *= mu_infty[i]*std::pow(eigen_B[A].first, (alpha_infty[i]/2.) );
+    				tau += tau_aux1;
+    			}
+    			SymmetricTensor<2, dim, NumberType>  tau_aux2 (I);
+    			tau_aux2 *= mu_infty[i];
+    			tau -= tau_aux2;
+    		}
+    		return tau;
+		}
+
+    	SymmetricTensor<2, dim, NumberType>
+    	get_tau_E_neq() const
+		{
+    		return tau_neq_1 + tau_neq_2;
+		}
+
+    	NumberType get_beta_mode_1(std::vector< NumberType > &lambda, const int &A) const
+    	{
+    		NumberType beta = 0.0;
+    		//3rd-order Ogden model
+    		for (unsigned int i = 0; i < 3; ++i) {
+    			NumberType aux = 0.0;
+    			for (int p = 0; p < dim; ++p)
+    				aux += std::pow(lambda[p],alpha_mode_1[i]);
+
+    			aux *= -1.0/dim;
+    			aux += std::pow(lambda[A], alpha_mode_1[i]);
+    			aux *= mu_mode_1[i];
+
+    			beta  += aux;
+    		}
+    		return beta;
+    	}
+
+    	NumberType get_beta_mode_2(std::vector< NumberType > &lambda, const int &A) const
+    	{
+    		NumberType beta = 0.0;
+    		//3rd-order Ogden model
+    		for (unsigned int i = 0; i < 3; ++i) {
+    			NumberType aux = 0.0;
+    			for (int p = 0; p < dim; ++p)
+    				aux += std::pow(lambda[p],alpha_mode_2[i]);
+
+    			aux *= -1.0/dim;
+    			aux += std::pow(lambda[A], alpha_mode_2[i]);
+    			aux *= mu_mode_2[i];
+
+    			beta  += aux;
+    		}
+    		return beta;
+    	}
+
+    	NumberType get_gamma_mode_1(std::vector< NumberType > &lambda, const int &A, const int &B) const
+    	{
+    		NumberType gamma = 0.0;
+
+    		if (A==B) {
+    			for (unsigned int i = 0; i < 3; ++i) {
+    				NumberType aux = 0.0;
+    				for (int p = 0; p < dim; ++p)
+    					aux += std::pow(lambda[p],alpha_mode_1[i]);
+
+    				aux *= 1.0/(dim*dim);
+    				aux += 1.0/dim * std::pow(lambda[A], alpha_mode_1[i]);
+    				aux *= mu_mode_1[i]*alpha_mode_1[i];
+
+    				gamma += aux;
+    			}
+    		} else {
+    			for (unsigned int i = 0; i < 3; ++i) {
+    				NumberType aux = 0.0;
+    				for (int p = 0; p < dim; ++p)
+    					aux += std::pow(lambda[p],alpha_mode_1[i]);
+
+    				aux *= 1.0/(dim*dim);
+    				aux -= 1.0/dim * std::pow(lambda[A], alpha_mode_1[i]);
+    				aux -= 1.0/dim * std::pow(lambda[B], alpha_mode_1[i]);
+    				aux *= mu_mode_1[i]*alpha_mode_1[i];
+
+    				gamma += aux;
+    			}
+    		}
+    		return gamma;
+    	}
+
+    	NumberType get_gamma_mode_2(std::vector< NumberType > &lambda, const int &A, const int &B) const
+    	{
+    		NumberType gamma = 0.0;
+
+    		if (A==B) {
+    			for (unsigned int i = 0; i < 3; ++i) {
+    				NumberType aux = 0.0;
+    				for (int p = 0; p < dim; ++p)
+    					aux += std::pow(lambda[p],alpha_mode_2[i]);
+
+    				aux *= 1.0/(dim*dim);
+    				aux += 1.0/dim * std::pow(lambda[A], alpha_mode_2[i]);
+    				aux *= mu_mode_2[i]*alpha_mode_2[i];
+
+    				gamma += aux;
+    			}
+    		} else {
+    			for (unsigned int i = 0; i < 3; ++i) {
+    				NumberType aux = 0.0;
+    				for (int p = 0; p < dim; ++p)
+    					aux += std::pow(lambda[p],alpha_mode_2[i]);
+
+    				aux *= 1.0/(dim*dim);
+    				aux -= 1.0/dim * std::pow(lambda[A], alpha_mode_2[i]);
+    				aux -= 1.0/dim * std::pow(lambda[B], alpha_mode_2[i]);
+    				aux *= mu_mode_2[i]*alpha_mode_2[i];
+
+    				gamma += aux;
+    			}
+    		}
+    		return gamma;
+    	}
+    };
+
+
 // @sect3{Constitutive equation for the fluid component of the biphasic material}
 // We consider two slightly different definitions to define the seepage velocity with a Darcy-like law.
 // Ehlers & Eipper 1999, doi:10.1023/A:1006565509095
@@ -3383,6 +3816,8 @@ namespace NonLinearPoroViscoElasticity
                     solid_material.reset(new Ogden<dim,NumberType>(parameters,time));
                 else if (parameters.mat_type == "visco-Ogden")
                     solid_material.reset(new visco_Ogden<dim,NumberType>(parameters,time));
+                else if (parameters.mat_type == "visco2-Ogden")
+                    solid_material.reset(new visco2_Ogden<dim,NumberType>(parameters,time));
                 else
                     Assert (false, ExcMessage("Material type not implemented"));
 
@@ -5210,6 +5645,8 @@ namespace NonLinearPoroViscoElasticity
             Ogden<dim,ADNumberType> material(parameters,time);
         else if (parameters.mat_type == "visco-Ogden")
             visco_Ogden <dim,ADNumberType>material(parameters,time);
+        else if (parameters.mat_type == "visco2-Ogden")
+            visco2_Ogden <dim,ADNumberType>material(parameters,time);
         else
             Assert (false, ExcMessage("Material type not implemented"));
 
@@ -5714,8 +6151,10 @@ namespace NonLinearPoroViscoElasticity
            Ogden<dim, ADNumberType> material(parameters, time);
        else if (parameters.mat_type == "visco-Ogden")
            visco_Ogden <dim, ADNumberType>material(parameters,time);
-        else
-            Assert (false, ExcMessage("Material type not implemented"));
+       else if (parameters.mat_type == "visco2-Ogden")
+           visco2_Ogden <dim, ADNumberType>material(parameters,time);
+       else
+           Assert (false, ExcMessage("Material type not implemented"));
 
         //Iterate through elements (cells) and Gauss Points
         FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
@@ -5972,8 +6411,10 @@ namespace NonLinearPoroViscoElasticity
             Ogden<dim,ADNumberType> material(parameters, time);
         else if (parameters.mat_type == "visco-Ogden")
             visco_Ogden <dim,ADNumberType>material(parameters,time);
+        else if (parameters.mat_type == "visco2-Ogden")
+            visco2_Ogden <dim,ADNumberType>material(parameters,time);
         else
-        Assert (false, ExcMessage("Material type not implemented"));
+        	Assert (false, ExcMessage("Material type not implemented"));
 
         //Define a local instance of FEValues to compute updated values required
         //to calculate stresses
