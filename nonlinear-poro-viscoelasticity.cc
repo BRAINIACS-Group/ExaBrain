@@ -8923,19 +8923,39 @@ namespace NonLinearPoroViscoElasticity
             		}
             	}
 
+
+
             	GridTools::scale(this->parameters.scale, this->triangulation);
             	this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
+
+            	if (this->parameters.radius == 16) {
+            		for (const auto &cell : this->triangulation.active_cell_iterators()) {
+            			if (std::sqrt((cell->center()[0])*(cell->center()[0]) + (cell->center()[1])*(cell->center()[1])) > 0.94*this->parameters.radius)
+            				cell->set_refine_flag();
+            			else if (std::sqrt((cell->center()[0])*(cell->center()[0]) + (cell->center()[1])*(cell->center()[1])) < 0.79*this->parameters.radius)
+            				cell->set_coarsen_flag();
+            		}
+            		this->triangulation.execute_coarsening_and_refinement();
+
+            		for (const auto &cell : this->triangulation.active_cell_iterators()) {
+            			if ((cell->center()[2] < 0.125*this->parameters.height || cell->center()[2] > 0.875*this->parameters.height) && std::sqrt((cell->center()[0])*(cell->center()[0]) + (cell->center()[1])*(cell->center()[1])) > 0.975*this->parameters.radius)
+            				cell->set_refine_flag();
+            		}
+            		this->triangulation.execute_coarsening_and_refinement();
+            	}
+
+
             }
 
             virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
             {
-            	tracked_vertices[0][0] = this->parameters.radius*this->parameters.scale;
+            	tracked_vertices[0][0] = 0.0*this->parameters.scale;
             	tracked_vertices[0][1] = 0.0*this->parameters.scale;
             	tracked_vertices[0][2] = this->parameters.height*this->parameters.scale;
 
-            	tracked_vertices[1][0] = 0.0*this->parameters.scale;
+            	tracked_vertices[1][0] = this->parameters.radius*this->parameters.scale;
             	tracked_vertices[1][1] = 0.0*this->parameters.scale;
-            	tracked_vertices[1][2] = 0.0*this->parameters.scale;
+            	tracked_vertices[1][2] = this->parameters.height/2*this->parameters.scale;
             }
 
     		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
