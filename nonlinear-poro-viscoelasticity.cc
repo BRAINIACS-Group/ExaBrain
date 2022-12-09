@@ -2332,7 +2332,7 @@ namespace NonLinearPoroViscoElasticity
               double dt = delta_t;
               if (time_end_load > 0) {
             	  if (time_current <= time_end_load)
-            		  dt = 0.25*delta_t;
+            		  dt = 1*delta_t;
             	  else if (time_current <= delta_t)
             		  dt = delta_t - time_current;
             	  //else if (time_current >= 20*time_end_load)
@@ -2353,7 +2353,7 @@ namespace NonLinearPoroViscoElasticity
               double dt = delta_t;
               if (time_end_load > 0) {
             	  if (time_current <= time_end_load)
-            		  dt = 0.25*delta_t;
+            		  dt = 1*delta_t;
             	  else if (time_current <= delta_t)
             		  dt = delta_t - time_current;
             	  //else if (time_current >= 20*time_end_load)
@@ -8879,7 +8879,7 @@ namespace NonLinearPoroViscoElasticity
 
             	Triangulation<dim-1> final_tria;
             	GridGenerator::merge_triangulations(triangulation_in, square, final_tria, 0.5, true);*/
-
+		triangulation_in.refine_global(2);
             	GridGenerator::extrude_triangulation(triangulation_in, 3, height, this->triangulation);
             	//GridGenerator::extrude_triangulation(final_tria, 3, height, this->triangulation);
 
