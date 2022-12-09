@@ -4085,6 +4085,9 @@ namespace NonLinearPoroViscoElasticity
             AffineConstraints<double>        hanging_node_constraints;
             enum AffineConstraints<double>::MergeConflictBehavior dirichlet_wins;
 
+            //An index set to deal with the contact problem
+            IndexSet active_set;
+
             //Declare an instance of dealii classes necessary for FE system set-up and assembly
             //Store elements of tangent matrix (indicated by SparsityPattern class) as sparse matrix (more efficient)
             TrilinosWrappers::BlockSparseMatrix tangent_matrix;
@@ -4093,6 +4096,7 @@ namespace NonLinearPoroViscoElasticity
             TrilinosWrappers::MPI::BlockVector  system_rhs;
             //Total displacement values + pressure (accumulated solution to FE system)
             TrilinosWrappers::MPI::BlockVector  solution_n;
+            TrilinosWrappers::MPI::BlockVector  distributed_solution;
 
             // Non-block system for the direct solver. We will copy the block system into these to solve the linearized system of equations.
             TrilinosWrappers::SparseMatrix tangent_matrix_nb;
@@ -4672,6 +4676,11 @@ namespace NonLinearPoroViscoElasticity
         system_rhs.reinit(locally_owned_partitioning, mpi_communicator);
         solution_n.reinit(locally_owned_partitioning, mpi_communicator);
         solution_delta_OUT.reinit(locally_owned_partitioning, mpi_communicator);
+        distributed_solution.reinit(locally_owned_partitioning, mpi_communicator);
+
+        //Initialize the active set
+        active_set.clear();
+        active_set.set_size(dof_handler_ref.n_dofs());
 
         // Non-block system
         TrilinosWrappers::SparsityPattern sp (locally_owned_dofs,
@@ -8879,7 +8888,6 @@ namespace NonLinearPoroViscoElasticity
 
             	Triangulation<dim-1> final_tria;
             	GridGenerator::merge_triangulations(triangulation_in, square, final_tria, 0.5, true);*/
-
             	GridGenerator::extrude_triangulation(triangulation_in, 3, height, this->triangulation);
             	//GridGenerator::extrude_triangulation(final_tria, 3, height, this->triangulation);
 
@@ -10552,8 +10560,8 @@ namespace NonLinearPoroViscoElasticity
 			virtual void make_grid()
 			{
 				const Point<dim-1> mesh_center(0.0, 0.0);
-				const double radius = 20; 	// specimen radius
-				const double height = 20; 	// specimen height
+				const double radius = this->parameters.radius; 	// specimen radius
+				const double height = this->parameters.height; 	// specimen height
 				const double r_i = 2;		// indenter radius
 
 
@@ -10576,42 +10584,68 @@ namespace NonLinearPoroViscoElasticity
 				const types::manifold_id cylinder_id = 0;
 				this->triangulation.set_manifold(cylinder_id, cylinder_3d);
 
-				// Assign boundary IDs
-				for (auto cell : this->triangulation.active_cell_iterators()) {
-					for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
-						if (cell->face(face)->at_boundary() == true) {
-							if (cell->face(face)->center()[2] == 0.0) 	// bottom
-								cell->face(face)->set_boundary_id(1);
 
-							else if (cell->face(face)->center()[2] == height) {
-								//if ((cell->face(face)->center()[0]*cell->face(face)->center()[0] + cell->face(face)->center()[1]*cell->face(face)->center()[1]) <= 0.1*r_max )
-								//	cell->face(face)->set_boundary_id(100);
-								//else
-									cell->face(face)->set_boundary_id(2);	// remainder of top surface
-							}
-							else if (cell->face(face)->center()[0] == 0.0)
-								cell->face(face)->set_boundary_id(3); 	// left
-							else if (cell->face(face)->center()[1] == 0.0)
-								cell->face(face)->set_boundary_id(4); 	// front
-							else {
-								cell->face(face)->set_boundary_id(0);	// remaining lateral faces
-								cell->face(face)->set_all_manifold_ids(cylinder_id);
-							}
-						}
-					}
-				}
+				int bottom = 0, top = 0, left = 0, front = 0, lateral = 0;
+								for (auto cell : this->triangulation.active_cell_iterators()) {
+									for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
+										if (cell->face(face)->at_boundary() == true) {
+											if (cell->face(face)->center()[2] == 0.0){
+												cell->face(face)->set_boundary_id(1);   // bottom
+												++bottom;
+											}
+											else if (cell->face(face)->center()[2] == height){
+												cell->face(face)->set_boundary_id(2);	// top surface
+												++top;
+											}
+											else if (cell->face(face)->center()[0] == 0.0){
+												cell->face(face)->set_boundary_id(3); 	// left
+												++left;
+											}
+											else if (cell->face(face)->center()[1] == 0.0){
+												cell->face(face)->set_boundary_id(4); 	// front
+												++front;
+											}
+											else {
+												cell->face(face)->set_boundary_id(0);	// remaining lateral faces
+												cell->face(face)->set_all_manifold_ids(cylinder_id);
+												++lateral;
+											}
+											this->pcout << "id = " << cell->face(face)->boundary_id() << ", x = " << cell->face(face)->center()[0] << ", y = " << cell->face(face)->center()[1] << ", z = " << cell->face(face)->center()[2] << std::endl;
+										}
+									}
+								}
+								this->pcout << "bottom = " << bottom << ", top = " << top << ", left = " << left << ", front = " << front << ", lateral = " << lateral << std::endl;
+//				// Assign boundary IDs
+//				for (auto cell : this->triangulation.active_cell_iterators()) {
+//					for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
+//						if (cell->face(face)->at_boundary() == true) {
+//							if (cell->face(face)->center()[2] == 0.0) 	// bottom
+//								cell->face(face)->set_boundary_id(1);
+//							else if (cell->face(face)->center()[2] == height)
+//								cell->face(face)->set_boundary_id(2);	// top surface
+//							else if (cell->face(face)->center()[0] == 0.0)
+//								cell->face(face)->set_boundary_id(3); 	// left
+//							else if (cell->face(face)->center()[1] == 0.0)
+//								cell->face(face)->set_boundary_id(4); 	// front
+//							else {
+//								cell->face(face)->set_boundary_id(0);	// remaining lateral faces
+//								cell->face(face)->set_all_manifold_ids(cylinder_id);
+//							}
+//						}
+//					}
+//				}
 
 				// Refine globally and locally
 				GridTools::scale(this->parameters.scale, this->triangulation);
 				this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
 
 
-				for (const auto &cell : this->triangulation.active_cell_iterators()) {
+				/*for (const auto &cell : this->triangulation.active_cell_iterators()) {
 					if (displ_center.distance(cell->center()) < 9)
 						cell->set_refine_flag();
 				}
 
-				this->triangulation.execute_coarsening_and_refinement();
+				this->triangulation.execute_coarsening_and_refinement();*/
 
 				for (const auto &cell : this->triangulation.active_cell_iterators()) {
 					if (displ_center.distance(cell->center()) < 7 && cell->center()[2] > (height - 4.5))
@@ -10634,7 +10668,7 @@ namespace NonLinearPoroViscoElasticity
 
 				this->triangulation.execute_coarsening_and_refinement();
 
-				for (const auto &cell : this->triangulation.active_cell_iterators()) {
+				/*for (const auto &cell : this->triangulation.active_cell_iterators()) {
 					if (displ_center.distance(cell->center()) < 2 && cell->center()[2] > (height - 0.3))
 						cell->set_refine_flag();
 				}
@@ -10650,42 +10684,43 @@ namespace NonLinearPoroViscoElasticity
 
 
 				// Assign boundary IDs
-				// loaded surface cell counter
-				double cell_counter = 0;
+				bottom = 0, top = 0, left = 0, front = 0, lateral = 0;
 				for (auto cell : this->triangulation.active_cell_iterators()) {
 					for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
 						if (cell->face(face)->at_boundary() == true) {
-							if (cell->face(face)->center()[2] == 0.0) 	// bottom
-								cell->face(face)->set_boundary_id(1);
-
-							else if (cell->face(face)->center()[2] == height) {
-								//if ((cell->face(face)->center()[0]*cell->face(face)->center()[0] + cell->face(face)->center()[1]*cell->face(face)->center()[1]) <= 0.1*r_max )
-								//	{
-								//	cell->face(face)->set_boundary_id(100);
-								//	cell_counter++;// final loaded surface
-								//	}
-								//else
-									cell->face(face)->set_boundary_id(2);	// remainder of top surface
+							if (cell->face(face)->center()[2] == 0.0){
+								cell->face(face)->set_boundary_id(1);   // bottom
+								++bottom;
 							}
-							else if (cell->face(face)->center()[0] == 0.0)
+							else if (cell->face(face)->center()[2] == height){
+								cell->face(face)->set_boundary_id(2);	// top surface
+								++top;
+							}
+							else if (cell->face(face)->center()[0] < 1e-12){
 								cell->face(face)->set_boundary_id(3); 	// left
-							else if (cell->face(face)->center()[1] == 0.0)
+								++left;
+							}
+							else if (cell->face(face)->center()[1] < 1e-12){
 								cell->face(face)->set_boundary_id(4); 	// front
+								++front;
+							}
 							else {
 								cell->face(face)->set_boundary_id(0);	// remaining lateral faces
 								cell->face(face)->set_all_manifold_ids(cylinder_id);
+								++lateral;
 							}
+							this->pcout << "id = " << cell->face(face)->boundary_id() << ", x = " << cell->face(face)->center()[0] << ", y = " << cell->face(face)->center()[1] << ", z = " << cell->face(face)->center()[2] << std::endl;
 						}
 					}
 				}
-				std::cout << "number of cells with boundary ID 100 = " << cell_counter << std::endl;
+				this->pcout << "bottom = " << bottom << ", top = " << top << ", left = " << left << ", front = " << front << ", lateral = " << lateral << std::endl;
 			}
 
 			virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
 			{
 				tracked_vertices[0][0] = 0.0*this->parameters.scale;
 				tracked_vertices[0][1] = 0.0*this->parameters.scale;
-				tracked_vertices[0][2] = 20*this->parameters.scale; 	// height
+				tracked_vertices[0][2] = this->parameters.height*this->parameters.scale;
 
 				tracked_vertices[1][0] = 0.0*this->parameters.scale;
 				tracked_vertices[1][1] = 0.0*this->parameters.scale;
@@ -10694,9 +10729,10 @@ namespace NonLinearPoroViscoElasticity
 
 			virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
 			{
-				// Update boundary conditions
+				if (true) {// Update boundary conditions
 				// loaded surface cell counter
-				const std::vector<double> r_c = get_dirichlet_load(100,2);
+				/*const std::vector<double> r_c = get_dirichlet_load(100,2);
+
 				std::cout << "current indenter radius = " << r_c[3] << std::endl;
 
 				const double height = 20;	// specimen heigth
@@ -10730,7 +10766,7 @@ namespace NonLinearPoroViscoElasticity
 				std::cout << "number of cells with boundary ID 100 removed = " << cell_counter_remove << std::endl;
 
 
-				/*double cell_counter = 0;
+				double cell_counter = 0;
 				for (auto cell : this->triangulation.active_cell_iterators()) {
 					for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
 						if (cell->face(face)->at_boundary() == true) {
@@ -10745,6 +10781,177 @@ namespace NonLinearPoroViscoElasticity
 					}
 				}
 				std::cout << "number of cells with boundary ID 100 = " << cell_counter << std::endl;*/
+
+				// Follow tutorial on plastic contact problem
+				// A vector that stores the DoFs that are in touch
+				std::vector<bool> dof_touched(this->dof_handler_ref.n_dofs(), false);
+				// Create an instance of the solution vector
+				this->distributed_solution = this->solution_n;
+				// Clear the active set
+				this->active_set.clear();
+
+				// Loop over all DoFs to check whether they are in active contact or not.
+				// Requires FEFaceValues and proper quadrature object. We create this face quadrature
+				// object by choosing the "support points" of the shape functions defined on the faces
+				// of cells. As a consequence, we have as many quadrature points as there are shape
+				// functions per face and looping over quadrature points is equivalent to looping over
+				// shape functions defined on a face.
+				Quadrature<dim - 1> face_quadrature(this->fe.get_unit_face_support_points());
+				FEFaceValues<dim> fe_values_face(this->fe, face_quadrature, update_quadrature_points);
+
+				const unsigned int dofs_per_face = this->fe.dofs_per_face;
+				const unsigned int n_face_q_points = face_quadrature.size();
+				/*this->pcout << "Dofs per face: "<< dofs_per_face << " Quadrature points per face: " << n_face_q_points << std::endl;
+				const unsigned int vertices_per_face = GeometryInfo<dim>::vertices_per_face;
+				const unsigned int dofs_per_vertex = this->fe.dofs_per_vertex;
+				const unsigned int lines_per_face = GeometryInfo<dim>::lines_per_face;
+				const unsigned int dofs_per_line = this->fe.dofs_per_line;
+				this->pcout << "Vertices per face: "<< vertices_per_face << " Dofs per vertex: " << dofs_per_vertex << std::endl;
+				this->pcout << "Lines per face: "<< lines_per_face << " Dofs per line: " << dofs_per_line << std::endl;*/
+
+				std::vector<types::global_dof_index> dof_indices(dofs_per_face);
+
+				for (const auto &cell : this->dof_handler_ref.active_cell_iterators()) {
+					if (!cell->is_artificial()) {
+						for (const auto &face : cell->face_iterators()) {
+							if (face->at_boundary() && face->boundary_id() == 2) {
+								fe_values_face.reinit(cell, face);
+								face->get_dof_indices(dof_indices);
+
+								// At each quadrature point (i.e., at each support point of a degree of freedom located on the contact boundary),
+								// we then ask whether it is part of the z-displacement degrees of freedom and if we haven't encountered this degree
+								// of freedom yet (which can happen for those on the edges between faces), we need to evaluate the gap between the
+								// deformed object and the obstacle. If the active set condition is true, then we add a constraint to the AffineConstraints
+								// object that the next Newton update needs to satisfy, set the solution vector's corresponding element to the correct
+								// value, and add the index to the IndexSet object that stores which degree of freedom is part of the contact:
+								for (unsigned int q_point = 0; q_point < n_face_q_points; ++q_point) {
+									const unsigned int component = this->fe.face_system_to_component_index(q_point).first;
+									const unsigned int index_z = dof_indices[q_point];
+									//this->pcout << "Index: "<< index_z << " Component: " << component << std::endl;
+
+									if (component == 2 && dof_touched[index_z] == false) {
+										dof_touched[index_z] = true;
+										Point<dim> this_support_point = fe_values_face.quadrature_point(q_point);
+
+										// displacement vector of this support point
+										Tensor<1,dim> solution_here;
+										unsigned int index_x = 0;
+										unsigned int index_y = 0;
+
+										for (unsigned int q_point = 0; q_point < n_face_q_points; ++q_point) {
+											const Point<dim> this_support_point_2 = fe_values_face.quadrature_point(q_point);
+											if (this_support_point == this_support_point_2) {
+												const unsigned int component = this->fe.face_system_to_component_index(q_point).first;
+												const unsigned int index = dof_indices[q_point];
+												if (component == 0 && dof_touched[index] == false) {
+													dof_touched[index] = true;
+													solution_here[0] = this->solution_n(index);
+													index_x = index;
+												} else if (component == 1 && dof_touched[index] == false) {
+													dof_touched[index] = true;
+													solution_here[1] = this->solution_n(index);
+													index_y = index;
+												}
+											}
+										}
+
+										//const double obstacle_value = obstacle->value(this_support_point, 2);  // TODO
+										std::vector<double> obstacle_value = get_dirichlet_load(100,2);
+										solution_here[2] = this->solution_n(index_z);  // TODO Block vector???
+										this_support_point = this_support_point + solution_here;
+										//this->pcout << "x = " << this_support_point[0] << ", y = " << this_support_point[1] << ", z = " << this_support_point[2] << std::endl;
+										//this->pcout << "idx = " << index_x << ", idy = " << index_y << ", idz = " << index_z << std::endl;
+
+										const double z_0 = this->parameters.height + obstacle_value[2] + obstacle_value[0]; 	// current z-position of center of spherical indenter (d_c is negative)
+										const Point<dim> indent_center(0,0,z_0);
+										const double pt_z_c = z_0 - std::sqrt((obstacle_value[2]*obstacle_value[2]) - (this_support_point[0]*this_support_point[0]) - (this_support_point[1]*this_support_point[1])); 	// current z-position of a point on the indenter surface
+
+										if (indent_center.distance(this_support_point) <= obstacle_value[2] && this_support_point[2] >= pt_z_c) {
+											const double undeformed_gap = pt_z_c-this_support_point[2];
+											constraints.add_line(index_z);
+											constraints.set_inhomogeneity(index_z, undeformed_gap);
+											constraints.add_line(index_x);
+											constraints.set_inhomogeneity(index_x, 0);
+											constraints.add_line(index_y);
+											constraints.set_inhomogeneity(index_y, 0);
+											std::ofstream z_displ;
+											z_displ.open(this->parameters.output_directory + "/z_displ", std::ofstream::app);
+											z_displ << std::setprecision(6) << std::scientific;
+											z_displ << std::setw(16) << this->time->get_current() << ","
+													<< std::setw(16) << index_z << ","
+													<< std::setw(16) << undeformed_gap << std::endl;
+											z_displ.close();
+											this->distributed_solution(index_z) = undeformed_gap;
+											this->active_set.add_index(index_z);
+										}
+
+										/*// flat-punch
+										const double flat_punch_height = this->parameters.height + obstacle_value[0];
+										const Point<dim> flat_punch_center(0,0,flat_punch_height);
+										if (flat_punch_center.distance(this_support_point) <= obstacle_value[2]) {
+											const double undeformed_gap = flat_punch_height-this_support_point[2];
+											constraints.add_line(index_z);
+											constraints.set_inhomogeneity(index_z, undeformed_gap);
+											//constraints.add_line(index_x);
+											//constraints.set_inhomogeneity(index_x, 0);
+											//constraints.add_line(index_y);
+											//constraints.set_inhomogeneity(index_y, 0);
+											std::ofstream z_displ;
+											z_displ.open(this->parameters.output_directory + "/z_displ", std::ofstream::app);
+											z_displ << std::setprecision(6) << std::scientific;
+											z_displ << std::setw(16) << this->time->get_current() << ","
+													<< std::setw(16) << index_z << ","
+													<< std::setw(16) << undeformed_gap << std::endl;
+											z_displ.close();
+											this->distributed_solution(index_z) = undeformed_gap;
+											this->active_set.add_index(index_z);
+										}*/
+
+										/*// whole surface
+										const double undeformed_gap = this->parameters.height + obstacle_value[0] - this_support_point[2];
+										constraints.add_line(index_z);
+										constraints.set_inhomogeneity(index_z, undeformed_gap);
+										//constraints.add_line(index_x);
+										//constraints.set_inhomogeneity(index_x, 0);
+										//constraints.add_line(index_y);
+										//constraints.set_inhomogeneity(index_y, 0);
+										std::ofstream z_displ;
+										z_displ.open(this->parameters.output_directory + "/z_displ", std::ofstream::app);
+										z_displ << std::setprecision(6) << std::scientific;
+										z_displ << std::setw(16) << this->time->get_current() << ","
+												<< std::setw(16) << index_z << ","
+												<< std::setw(16) << undeformed_gap << std::endl;
+										z_displ.close();
+										this->distributed_solution(index_z) = undeformed_gap;
+										this->active_set.add_index(index_z);*/
+
+
+
+										//point radius from center axis
+										/*const double this_support_point_radius = std::sqrt((this_support_point[0]*this_support_point[0]) + (this_support_point[1]*this_support_point[1]));										//check if point is under indenter
+										if (this_support_point_radius <= obstacle_value[2]) {
+											//const double undeformed_gap = obstacle_value - this_support_point(2);
+											const double undeformed_gap = obstacle_value[0]-obstacle_value[1];
+											//this->pcout << this_support_point(2) << std::endl;
+
+											constraints.add_line(index_z);
+											constraints.set_inhomogeneity(index_z, undeformed_gap);
+											this->distributed_solution(index_z) = undeformed_gap;
+											this->active_set.add_index(index_z);
+										}*/
+									}
+								}
+							}
+						}
+					}
+				}
+				this->distributed_solution.compress(VectorOperation::insert);
+				//this->solution_n = this->distributed_solution;
+
+				this->pcout << "Size of active set: "
+					  << Utilities::MPI::sum((this->active_set & this->locally_owned_dofs).n_elements(), this->mpi_communicator)
+					  << std::endl;
+				}
 
 				// Cylinder hull is drained
 				if (this->parameters.lateral_drained == "drained") {
@@ -10835,29 +11042,27 @@ namespace NonLinearPoroViscoElasticity
 					    constraints,
 					    (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
-			    // indenter tip
+			    /*// indenter tip
 				if (this->parameters.load_type == "displacement") {
-					if (this->time->get_current()<=this->parameters.end_load_time) {
+					//if (this->time->get_current()<=this->parameters.end_load_time) {
 						const std::vector<double> value = get_dirichlet_load(100,2);
-						std::cout << "current indenter depth    = " << r_c[0] << std::endl;
-						std::cout << "previous indenter depth   = " << r_c[1] << std::endl;
-						std::cout << "current indenter radius 2 = " << r_c[3] << std::endl;
+						const double displ = value[0] - value[1];
 
 						VectorTools::interpolate_boundary_values(
 								 this->dof_handler_ref,
-								 100,
-								 get_dirichlet_bc_HydroNanoGrazSpherIndent<dim>(value[0],value[1],value[2]),
+								 2,
+								 ConstantFunction<dim>(displ,this->n_components),
 								 constraints,
 								 this->fe.component_mask(this->z_displacement));
-					} else {
+
 						VectorTools::interpolate_boundary_values(
 								 this->dof_handler_ref,
-								 100,
+								 2,
 								 ZeroFunction<dim>(this->n_components),
 								 constraints,
-								 this->fe.component_mask(this->z_displacement));
-					}
-				}
+								 (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
+					//}
+				}*/
 			}
 
 			virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const
@@ -10874,7 +11079,7 @@ namespace NonLinearPoroViscoElasticity
 
 			virtual types::boundary_id get_reaction_boundary_id_for_output() const
 			{
-				return 100;
+				return 2;
 			}
 
 			virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const
@@ -10923,6 +11128,9 @@ namespace NonLinearPoroViscoElasticity
 
                         if (current_time > delta_time)
                             d_p = ((current_time-delta_time)/final_load_time) * d_max;
+                    } else {
+                    	d_c = d_max;
+                    	d_p = d_max;
                     }
 
                     const double r_c = std::sqrt(2*r_i*std::abs(d_c)-std::abs(d_c)*std::abs(d_c));		// current indentation radius
