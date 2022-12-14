@@ -8889,7 +8889,10 @@ namespace NonLinearPoroViscoElasticity
             	Triangulation<dim-1> final_tria;
             	GridGenerator::merge_triangulations(triangulation_in, square, final_tria, 0.5, true);*/
 
-            	triangulation_in.refine_global(2);
+            	if (this->parameters.radius == 8)
+            		triangulation_in.refine_global(1);
+            	if (this->parameters.radius == 16)
+            	    triangulation_in.refine_global(1);
 
             	GridGenerator::extrude_triangulation(triangulation_in, 3, height, this->triangulation);
             	//GridGenerator::extrude_triangulation(final_tria, 3, height, this->triangulation);
@@ -9048,13 +9051,14 @@ namespace NonLinearPoroViscoElasticity
 							ConstantFunction<dim>(value[2],this->n_components),
 							constraints,
 							this->fe.component_mask(this->z_displacement));
+    			}
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							2,
 							ZeroFunction<dim>(this->n_components),
 							constraints,
 							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
-    			}
+    			//}
 
     			// Define symmetry boundary conditions for lateral surfaces
 			    VectorTools::interpolate_boundary_values(
@@ -9084,7 +9088,7 @@ namespace NonLinearPoroViscoElasticity
             virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const
         	{
             	if (this->parameters.load_type == "pressure")
-            		AssertThrow(false, ExcMessage("Pressure loading not implemented for rheometer examples."));
+            		//AssertThrow(false, ExcMessage("Pressure loading not implemented for rheometer examples."));
 
             	(void)boundary_id;
             	(void)pt;
