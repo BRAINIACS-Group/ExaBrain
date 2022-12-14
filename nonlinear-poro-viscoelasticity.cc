@@ -10115,13 +10115,14 @@ namespace NonLinearPoroViscoElasticity
             	// Create a quarter_hyper_ball in 2d, i.e. a quarter-circle and extrude it to obtain a quarter cylinder
             	Triangulation<dim-1> triangulation_in;
             	GridGenerator::quarter_hyper_ball(triangulation_in, mesh_center, radius);
-
+            	triangulation_in.refine_global(1);
             	GridGenerator::extrude_triangulation(triangulation_in, 3, height, this->triangulation);
 
             	// Assign a cylindrical manifold to the geometry
             	const CylindricalManifold<dim> cylinder_3d(2); //cylinder along axis=2 -> z-axis
             	const types::manifold_id cylinder_id = 0;
             	this->triangulation.set_manifold(cylinder_id, cylinder_3d);
+
 
             	// Assign proper boundary ids
             	for (auto cell : this->triangulation.active_cell_iterators()) {
