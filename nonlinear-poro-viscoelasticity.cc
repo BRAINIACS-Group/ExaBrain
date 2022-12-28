@@ -9393,8 +9393,16 @@ namespace NonLinearPoroViscoElasticity
     					const double current_time = this->time->get_current();
     					double load;
 
-    					if (current_time <= final_time) {
+    					// linear increasing load
+    					/*if (current_time <= final_time) {
     						load = final_load * (current_time/final_time);
+    					} else {
+    						load = final_load;
+    					}*/
+
+    					// quadratic increasing load
+    					if (current_time <= final_time) {
+    						load = (final_load/(final_time*final_time)) * (current_time*current_time);
     					} else {
     						load = final_load;
     					}
