@@ -2422,6 +2422,22 @@ namespace NonLinearPoroViscoElasticity
               return get_tau_E(F)*NumberType(1/det_F);
           }
 
+          SymmetricTensor<2, dim, NumberType>
+          get_Cauchy_E_base(const Tensor<2, dim, NumberType> &F) const
+		  {
+        	  const NumberType det_F = determinant(F);
+        	  Assert(det_F > 0, ExcInternalError());
+        	  return get_tau_E_base(F)*NumberType(1/det_F);
+		  }
+
+          SymmetricTensor<2, dim, NumberType>
+          get_Cauchy_E_ext_func(const Tensor<2, dim, NumberType> &F) const
+		  {
+        	  const NumberType det_F = determinant(F);
+        	  Assert(det_F > 0, ExcInternalError());
+        	  return get_tau_E_ext_func(F)*NumberType(1/det_F);
+		  }
+
           double
           get_converged_det_F() const
           {
@@ -3835,6 +3851,18 @@ namespace NonLinearPoroViscoElasticity
             {
                 return solid_material->get_Cauchy_E(F);
             }
+
+            SymmetricTensor<2, dim, NumberType>
+            get_Cauchy_E_base(const Tensor<2, dim, NumberType> &F) const
+			{
+            	return solid_material->get_Cauchy_E_base(F);
+			}
+
+            SymmetricTensor<2, dim, NumberType>
+            get_Cauchy_E_ext_func(const Tensor<2, dim, NumberType> &F) const
+			{
+            	return solid_material->get_Cauchy_E_ext_func(F);
+			}
 
             double
             get_converged_det_F() const
@@ -6389,6 +6417,8 @@ namespace NonLinearPoroViscoElasticity
         Point<dim> reaction_force;
         Point<dim> reaction_force_pressure;
         Point<dim> reaction_force_extra;
+        Point<dim> reaction_force_extra_base;
+        Point<dim> reaction_force_extra_ext_func;
         double total_fluid_flow = 0.0;
         double total_porous_dissipation = 0.0;
         double total_viscous_dissipation = 0.0;
@@ -6402,9 +6432,13 @@ namespace NonLinearPoroViscoElasticity
         Tensor<1,dim> sum_reaction_mpi;
         Tensor<1,dim> sum_reaction_pressure_mpi;
         Tensor<1,dim> sum_reaction_extra_mpi;
+        Tensor<1,dim> sum_reaction_extra_base_mpi;
+        Tensor<1,dim> sum_reaction_extra_ext_func_mpi;
         sum_reaction_mpi = 0.0;
         sum_reaction_pressure_mpi = 0.0;
         sum_reaction_extra_mpi = 0.0;
+        sum_reaction_extra_base_mpi = 0.0;
+        sum_reaction_extra_ext_func_mpi = 0.0;
         double sum_total_flow_mpi = 0.0;
         double sum_porous_dissipation_mpi = 0.0;
         double sum_viscous_dissipation_mpi = 0.0;
@@ -6542,15 +6576,20 @@ namespace NonLinearPoroViscoElasticity
                         const double p_fluid = solution_values_p_fluid_total[f_q_point];
 
                         //Cauchy stress
-                        static const SymmetricTensor<2,dim,double>
-                          I (Physics::Elasticity::StandardTensors<dim>::I);
+                        static const SymmetricTensor<2,dim,double> I (Physics::Elasticity::StandardTensors<dim>::I);
                         SymmetricTensor<2,dim> sigma_E;
-                        const SymmetricTensor<2,dim,ADNumberType> sigma_E_AD =
-                          lqph[f_q_point]->get_Cauchy_E(F_AD);
+                        SymmetricTensor<2,dim> sigma_E_base;
+                        SymmetricTensor<2,dim> sigma_E_ext_func;
+                        const SymmetricTensor<2,dim,ADNumberType> sigma_E_AD = lqph[f_q_point]->get_Cauchy_E(F_AD);
+                        const SymmetricTensor<2,dim,ADNumberType> sigma_E_base_AD = lqph[f_q_point]->get_Cauchy_E_base(F_AD);
+                        const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[f_q_point]->get_Cauchy_E_ext_func(F_AD);
 
                         for (unsigned int i=0; i<dim; ++i)
-                            for (unsigned int j=0; j<dim; ++j)
+                            for (unsigned int j=0; j<dim; ++j) {
                                sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
+                               sigma_E_base[i][j] = Tensor<0,dim,double>(sigma_E_base_AD[i][j]);
+                               sigma_E_ext_func[i][j] = Tensor<0,dim,double>(sigma_E_ext_func_AD[i][j]);
+                            }
 
                         SymmetricTensor<2,dim> sigma_fluid_vol(I);
                         sigma_fluid_vol *= -1.0*p_fluid;
@@ -6558,6 +6597,8 @@ namespace NonLinearPoroViscoElasticity
                         sum_reaction_mpi += sigma * N * JxW_f;
                         sum_reaction_pressure_mpi += sigma_fluid_vol * N * JxW_f;
                         sum_reaction_extra_mpi += sigma_E * N * JxW_f;
+                        sum_reaction_extra_base_mpi += sigma_E_base * N * JxW_f;
+                        sum_reaction_extra_ext_func_mpi += sigma_E_ext_func * N * JxW_f;
 
                         //Transform components of Cauchy stresses into cylindrical coordinates for torque
                         //evaluation under torsional shear loading
@@ -6670,27 +6711,20 @@ namespace NonLinearPoroViscoElasticity
         //so, we add all MPI process, one will have the solution and the others will be zero
         for (unsigned int d=0; d<dim; ++d)
         {
-            reaction_force[d] = Utilities::MPI::sum(sum_reaction_mpi[d],
-                                                    mpi_communicator);
-            reaction_force_pressure[d] = Utilities::MPI::sum(sum_reaction_pressure_mpi[d],
-                                                             mpi_communicator);
-            reaction_force_extra[d] = Utilities::MPI::sum(sum_reaction_extra_mpi[d],
-                                                          mpi_communicator);
+            reaction_force[d] = Utilities::MPI::sum(sum_reaction_mpi[d], mpi_communicator);
+            reaction_force_pressure[d] = Utilities::MPI::sum(sum_reaction_pressure_mpi[d], mpi_communicator);
+            reaction_force_extra[d] = Utilities::MPI::sum(sum_reaction_extra_mpi[d], mpi_communicator);
+            reaction_force_extra_base[d] = Utilities::MPI::sum(sum_reaction_extra_base_mpi[d], mpi_communicator);
+            reaction_force_extra_ext_func[d] = Utilities::MPI::sum(sum_reaction_extra_ext_func_mpi[d], mpi_communicator);
         }
 
         //Same for total fluid flow, and for porous and viscous dissipations
-        total_fluid_flow = Utilities::MPI::sum(sum_total_flow_mpi,
-                                               mpi_communicator);
-        total_porous_dissipation = Utilities::MPI::sum(sum_porous_dissipation_mpi,
-                                                       mpi_communicator);
-        total_viscous_dissipation = Utilities::MPI::sum(sum_viscous_dissipation_mpi,
-                                                        mpi_communicator);
-        total_solid_vol = Utilities::MPI::sum(sum_solid_vol_mpi,
-                                              mpi_communicator);
-        total_vol_current = Utilities::MPI::sum(sum_vol_current_mpi,
-                                                mpi_communicator);
-        total_vol_reference = Utilities::MPI::sum(sum_vol_reference_mpi,
-                                                  mpi_communicator);
+        total_fluid_flow = Utilities::MPI::sum(sum_total_flow_mpi, mpi_communicator);
+        total_porous_dissipation = Utilities::MPI::sum(sum_porous_dissipation_mpi, mpi_communicator);
+        total_viscous_dissipation = Utilities::MPI::sum(sum_viscous_dissipation_mpi, mpi_communicator);
+        total_solid_vol = Utilities::MPI::sum(sum_solid_vol_mpi, mpi_communicator);
+        total_vol_current = Utilities::MPI::sum(sum_vol_current_mpi, mpi_communicator);
+        total_vol_reference = Utilities::MPI::sum(sum_vol_reference_mpi, mpi_communicator);
         reaction_torque = Utilities::MPI::sum(sum_torque_mpi, mpi_communicator);
 
       //  Extract solution for tracked vectors
@@ -6791,7 +6825,10 @@ namespace NonLinearPoroViscoElasticity
                     plotpointfile << std::setw(15) << 0.0 << ",";
 
                 plotpointfile << std::setw(15) << 0.0 << ","
-                			  << std::setw(15) << 0.0;
+                			  << std::setw(15) << 0.0 << ",";
+
+                for (unsigned int d=0; d<(2*dim); ++d)
+                	plotpointfile << std::setw(15) << 0.0 << ",";
             }
             else
             {
@@ -6814,9 +6851,14 @@ namespace NonLinearPoroViscoElasticity
                     plotpointfile << std::setw(15) << reaction_force_extra[d] << ",";
 
                 plotpointfile << std::setw(15) << total_fluid_flow << ","
-                              << std::setw(15) << total_porous_dissipation<< ","
-                              << std::setw(15) << total_viscous_dissipation<< ","
-							  << std::setw(15) << reaction_torque;
+                              << std::setw(15) << total_porous_dissipation << ","
+                              << std::setw(15) << total_viscous_dissipation << ","
+							  << std::setw(15) << reaction_torque << ",";
+
+                for (unsigned int d=0; d<dim; ++d)
+                	plotpointfile << std::setw(15) << reaction_force_extra_base[d] << ",";
+                for (unsigned int d=0; d<dim; ++d)
+                	plotpointfile << std::setw(15) << reaction_force_extra_ext_func[d] << ",";
             }
             plotpointfile << std::endl;
         }
@@ -6838,65 +6880,67 @@ namespace NonLinearPoroViscoElasticity
     void Solid<dim>::print_plot_file_header(std::vector<Point<dim> > &tracked_vertices,
                                             std::ofstream &plotpointfile) const
     {
-            plotpointfile << "#\n# *** Solution history for tracked vertices -- DOF: 0 = Ux,  1 = Uy,  2 = Uz,  3 = P ***"
-                          << std::endl;
+		plotpointfile << "#\n# *** Solution history for tracked vertices -- DOF: 0 = Ux,  1 = Uy,  2 = Uz,  3 = P ***"
+					  << std::endl;
 
-            for  (unsigned int p=0; p<tracked_vertices.size(); ++p)
-            {
-                plotpointfile << "#        Point " << p << " coordinates:  ";
-                for (unsigned int d=0; d<dim; ++d)
-                  {
-                    plotpointfile << tracked_vertices[p][d];
-                    if (!( (p == tracked_vertices.size()-1) && (d == dim-1) ))
-                        plotpointfile << ",        ";
-                  }
-                plotpointfile << std::endl;
-            }
-            plotpointfile << "#    The reaction force is the integral over the loaded surfaces in the "
-                          << "undeformed configuration of the Cauchy stress times the normal surface unit vector.\n"
-                          << "#    reac(p) corresponds to the volumetric part of the Cauchy stress due to the pore fluid pressure"
-                          << " and reac(E) corresponds to the extra part of the Cauchy stress due to the solid contribution."
-                          << std::endl
-                          << "#    The fluid flow is the integral over the drained surfaces in the "
-                          << "undeformed configuration of the seepage velocity times the normal surface unit vector."
-                          << std::endl
-                          << "# Column number:"
-                          << std::endl
-                          << "#";
+		for  (unsigned int p=0; p<tracked_vertices.size(); ++p) {
+			plotpointfile << "#        Point " << p << " coordinates:  ";
+			for (unsigned int d=0; d<dim; ++d) {
+				plotpointfile << tracked_vertices[p][d];
+				if (!( (p == tracked_vertices.size()-1) && (d == dim-1) ))
+					plotpointfile << ",        ";
+			    }
+			plotpointfile << std::endl;
+		}
+		plotpointfile << "#    The reaction force is the integral over the loaded surfaces in the "
+					  << "undeformed configuration of the Cauchy stress times the normal surface unit vector.\n"
+					  << "#    reac(p) corresponds to the volumetric part of the Cauchy stress due to the pore fluid pressure"
+					  << " and reac(E) corresponds to the extra part of the Cauchy stress due to the solid contribution."
+					  << std::endl
+					  << "#    The fluid flow is the integral over the drained surfaces in the "
+					  << "undeformed configuration of the seepage velocity times the normal surface unit vector."
+					  << std::endl
+					  << "# Column number:"
+					  << std::endl
+					  << "#";
 
-          unsigned int columns = 25;
-          for (unsigned int d=1; d<columns; ++d)
-              plotpointfile << std::setw(15)<< d <<",";
+		unsigned int columns = 31;
+		for (unsigned int d=1; d<columns; ++d)
+			plotpointfile << std::setw(15)<< d <<",";
 
-            plotpointfile << std::setw(15)<< columns
-                          << std::endl
-                          << "#"
-                          << std::right << std::setw(16) << "Time,"
-                          << std::right << std::setw(16) << "ref vol,"
-                          << std::right << std::setw(16) << "def vol,"
-                          << std::right << std::setw(16) << "solid vol,";
-            for (unsigned int p=0; p<tracked_vertices.size(); ++p)
-                for (unsigned int d=0; d<(dim+1); ++d)
-                    plotpointfile << std::right<< std::setw(11)
-                                  <<"P" << p << "[" << d << "],";
+		plotpointfile << std::setw(15) << columns
+					  << std::endl
+					  << "#"
+					  << std::right << std::setw(16) << "Time,"
+					  << std::right << std::setw(16) << "ref vol,"
+					  << std::right << std::setw(16) << "def vol,"
+					  << std::right << std::setw(16) << "solid vol,";
 
-            for (unsigned int d=0; d<dim; ++d)
-                plotpointfile << std::right<< std::setw(13)
-                              << "reaction [" << d << "],";
+		for (unsigned int p=0; p<tracked_vertices.size(); ++p)
+			for (unsigned int d=0; d<(dim+1); ++d)
+				plotpointfile << std::right << std::setw(11) << "P" << p << "[" << d << "],";
 
-            for (unsigned int d=0; d<dim; ++d)
-                plotpointfile << std::right<< std::setw(13)
-                              << "reac(p) [" << d << "],";
+		for (unsigned int d=0; d<dim; ++d)
+			plotpointfile << std::right << std::setw(13) << "reaction [" << d << "],";
 
-            for (unsigned int d=0; d<dim; ++d)
-                plotpointfile << std::right<< std::setw(13)
-                              << "reac(E) [" << d << "],";
+		for (unsigned int d=0; d<dim; ++d)
+			plotpointfile << std::right << std::setw(13) << "reac(p) [" << d << "],";
 
-            plotpointfile << std::right<< std::setw(16)<< "fluid flow,"
-                          << std::right<< std::setw(16)<< "porous dissip,"
-                          << std::right<< std::setw(16)<< "viscous dissip,"
-						  << std::right<< std::setw(15)<< "torque"
-                          << std::endl;
+		for (unsigned int d=0; d<dim; ++d)
+			plotpointfile << std::right << std::setw(13) << "reac(E) [" << d << "],";
+
+		plotpointfile << std::right<< std::setw(16)<< "fluid flow,"
+					  << std::right<< std::setw(16)<< "porous dissip,"
+					  << std::right<< std::setw(16)<< "viscous dissip,"
+					  << std::right<< std::setw(16)<< "torque,";
+
+		for (unsigned int d=0; d<dim; ++d)
+			plotpointfile << std::right << std::setw(13) << "base(E) [" << d << "],";
+
+		for (unsigned int d=0; d<dim; ++d)
+			plotpointfile << std::right << std::setw(13) << "ext_func(E) [" << d << "],";
+
+		plotpointfile << std::endl;
     }
 
     //Footer for console output file
@@ -9394,18 +9438,18 @@ namespace NonLinearPoroViscoElasticity
     					double load;
 
     					// linear increasing load
-    					/*if (current_time <= final_time) {
+    					if (current_time <= final_time) {
     						load = final_load * (current_time/final_time);
     					} else {
     						load = final_load;
-    					}*/
+    					}
 
     					// quadratic increasing load
-    					if (current_time <= final_time) {
+    					/*if (current_time <= final_time) {
     						load = (final_load/(final_time*final_time)) * (current_time*current_time);
     					} else {
     						load = final_load;
-    					}
+    					}*/
 
     					return load * N;
     				}
