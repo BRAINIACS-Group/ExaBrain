@@ -8975,7 +8975,7 @@ namespace NonLinearPoroViscoElasticity
             	GridTools::scale(this->parameters.scale, this->triangulation);
             	this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
 
-            	if (this->parameters.radius == 16) {
+            	/*if (this->parameters.radius == 16) {
             		for (const auto &cell : this->triangulation.active_cell_iterators()) {
             			if (std::sqrt((cell->center()[0])*(cell->center()[0]) + (cell->center()[1])*(cell->center()[1])) > 0.94*this->parameters.radius)
             				cell->set_refine_flag();
@@ -8989,7 +8989,7 @@ namespace NonLinearPoroViscoElasticity
             				cell->set_refine_flag();
             		}
             		this->triangulation.execute_coarsening_and_refinement();
-            	}
+            	}*/
 
 
             }
