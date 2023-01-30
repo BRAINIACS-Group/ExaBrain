@@ -2218,11 +2218,11 @@ namespace NonLinearPoroViscoElasticity
         
           virtual double get_end() const = 0;
           
-          virtual double get_delta_t() const = 0;
+          virtual double get_delta_t(double det_F_min=1) const = 0;
          
           virtual unsigned int get_timestep() const = 0;
           
-          virtual void increment_time () = 0;
+          virtual void increment_time (double det_F_min=1) = 0;
 
           virtual ~Time() = default;
         
@@ -2254,7 +2254,7 @@ namespace NonLinearPoroViscoElasticity
           {
             return this->time_points.back();
           }
-          double get_delta_t() const
+          double get_delta_t(double det_F_min) const
           {
             // Assert ((this->timestep +1) < this->time_points.size(),
             //          ExcMessage("timestep greater then timesteps vector length -1"))
@@ -2272,7 +2272,7 @@ namespace NonLinearPoroViscoElasticity
           {
             return this->timestep;
           }
-          void increment_time ()
+          void increment_time (double det_F_min)
           {
               Assert (this->timestep < this->time_points.size(),
                     ExcMessage("timestep exceeds vector length"))
@@ -2302,7 +2302,7 @@ namespace NonLinearPoroViscoElasticity
           std::vector<double> time_points;
     };
 
-    class TimeFixed: public Time
+    class TimeFixed : public Time
     {
         public:
           TimeFixed (const double time_end,
@@ -2327,12 +2327,18 @@ namespace NonLinearPoroViscoElasticity
           {
             return time_end;
           }
-          double get_delta_t() const
+          double get_delta_t(double det_F_min) const
           {
-              double dt = delta_t;
+              double dt    = delta_t;
+              double n_0S  = 0.8;
+              double n     = 4;
+              double range = 0.1;
+              double a     = 1/(std::pow(range,n))*delta_t;
               if (time_end_load > 0) {
-            	  if (time_current <= time_end_load)
+            	  if (time_current <= time_end_load && det_F_min > 0.9)
             		  dt = 1*delta_t;
+            	  else if (time_current <= time_end_load && det_F_min <= 0.9)
+            		  dt = a*std::pow((det_F_min-n_0S),n);
             	  else if (time_current <= delta_t)
             		  dt = delta_t - time_current;
             	  //else if (time_current >= 20*time_end_load)
@@ -2348,12 +2354,18 @@ namespace NonLinearPoroViscoElasticity
           {
             return timestep;
           }
-          void increment_time ()
+          void increment_time (double det_F_min)
           {
-              double dt = delta_t;
+              double dt    = delta_t;
+              double n_0S  = 0.8;
+              double n     = 4;
+              double range = 0.1;
+              double a     = 1/(std::pow(range,n))*delta_t;
               if (time_end_load > 0) {
-            	  if (time_current <= time_end_load)
+            	  if (time_current <= time_end_load && det_F_min > 0.9)
             		  dt = 1*delta_t;
+            	  else if (time_current <= time_end_load && det_F_min <= 0.9)
+            	      dt = a*std::pow((det_F_min-n_0S),n);
             	  else if (time_current <= delta_t)
             		  dt = delta_t - time_current;
             	  //else if (time_current >= 20*time_end_load)
@@ -2472,6 +2484,7 @@ namespace NonLinearPoroViscoElasticity
           {
               const NumberType det_F = determinant(F);
               Assert(det_F > 0, ExcInternalError());
+              Assert(det_F > n_OS, ExcInternalError());
 
               static const SymmetricTensor< 2, dim, double>
                     I (Physics::Elasticity::StandardTensors<dim>::I);
@@ -3972,8 +3985,8 @@ namespace NonLinearPoroViscoElasticity
             void copy_local_to_global_system(const PerTaskData_ASM &data);
 
             // Define boundary conditions
-            virtual void make_constraints(const int &it_nr);
-            virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) = 0;
+            virtual void make_constraints(const int &it_nr, double det_F_min);
+            virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min) = 0;
             virtual Tensor<1,dim> get_neumann_traction
                    (const types::boundary_id &boundary_id,
                     const Point<dim>         &pt,
@@ -3987,13 +4000,14 @@ namespace NonLinearPoroViscoElasticity
                      get_drained_boundary_id_for_output () const = 0;
             virtual std::vector<double> get_dirichlet_load
                     (const types::boundary_id   &boundary_id,
-                     const int                  &direction) const = 0;
+                     const int                  &direction,
+					 double                     det_F_min) const = 0;
 
             // Create and update the quadrature points.
             void setup_qph();
 
             //Solve non-linear system using a Newton-Raphson scheme
-            void solve_nonlinear_timestep(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT);
+            void solve_nonlinear_timestep(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT, double det_F_min);
 
             //Solve the linearized equations using a direct solver
             void solve_linear_system ( TrilinosWrappers::MPI::BlockVector &newton_update_OUT);
@@ -4003,7 +4017,8 @@ namespace NonLinearPoroViscoElasticity
             get_total_solution(const TrilinosWrappers::MPI::BlockVector &solution_delta_IN) const;
 
             // Store the converged values of the internal variables at the end of each timestep
-            void update_end_timestep();
+            //void update_end_timestep();
+            double update_end_timestep();
 
             //Post-processing and writing data to files
             void output_results_to_vtu(const unsigned int timestep,
@@ -4297,7 +4312,7 @@ namespace NonLinearPoroViscoElasticity
           //Increment time step (=load step)
           //NOTE: In solving the quasi-static problem, the time becomes a loading parameter,
           //i.e. we increase the loading linearly with time, making the two concepts interchangeable.
-          time->increment_time();
+          time->increment_time(1);
 
           //Print information on screen
           pcout << "\nSolver:";
@@ -4313,18 +4328,18 @@ namespace NonLinearPoroViscoElasticity
 
           while ( (time->get_end() - time->get_current()) > -1.0*parameters.tol_u )
             {
-
+        	  double det_F_min;
               //Initialize the current solution increment to zero
               solution_delta = 0.0;
 
-              //Solve the non-linear system using a Newton-Rapshon scheme
-              solve_nonlinear_timestep(solution_delta);
+              //Solve the non-linear system using a Newton-Raphson scheme
+              solve_nonlinear_timestep(solution_delta, det_F_min);
 
               //Add the computed solution increment to total solution
               solution_n += solution_delta;
 
               //Store the converged values of the internal variables
-              update_end_timestep();
+              det_F_min = update_end_timestep();
 
               //Output results
               if ( (time->get_timestep()%parameters.timestep_output) == 0 )
@@ -4359,8 +4374,7 @@ namespace NonLinearPoroViscoElasticity
                                      pointfile);
 
               //Increment the time step (=load step)
-              time->increment_time();
-              //std::cout << "end time: " << time->get_end() << " current time: " << time->get_current() << std::endl;
+              time->increment_time(det_F_min);
             }
 
           //Print the footers and close files
@@ -4518,7 +4532,7 @@ namespace NonLinearPoroViscoElasticity
 
     //Define the boundary conditions on the mesh
     template <int dim>
-    void Solid<dim>::make_constraints(const int &it_nr_IN)
+    void Solid<dim>::make_constraints(const int &it_nr_IN, double det_F_min)
     {
         pcout     << " CST " << std::flush;
         outfile   << " CST " << std::flush;
@@ -4547,7 +4561,7 @@ namespace NonLinearPoroViscoElasticity
                 }
             }
           constraints.clear();
-          make_dirichlet_constraints(constraints);
+          make_dirichlet_constraints(constraints, det_F_min);
         }
         else
         {
@@ -4781,7 +4795,7 @@ namespace NonLinearPoroViscoElasticity
 
     //Solve the non-linear system using a Newton-Raphson scheme
     template <int dim>
-    void Solid<dim>::solve_nonlinear_timestep(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT)
+    void Solid<dim>::solve_nonlinear_timestep(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT, double det_F_min)
     {
         double start = MPI_Wtime();
 
@@ -4833,7 +4847,7 @@ namespace NonLinearPoroViscoElasticity
             system_rhs_nb = 0.0;
 
             //Apply boundary conditions
-            make_constraints(newton_iteration);
+            make_constraints(newton_iteration, det_F_min);
             assemble_system(solution_delta_OUT);
 
             //Compute the rhs residual (error between external and internal forces in FE system)
@@ -5213,8 +5227,10 @@ namespace NonLinearPoroViscoElasticity
             Tensor<2, dim, ADNumberType> F_AD = scratch.solution_grads_u_total[q_point];
             F_AD += Tensor<2, dim, double>(Physics::Elasticity::StandardTensors<dim>::I);
 
-            /*double det_F_AG = Tensor<0,dim,double>(determinant(F_AD));
-            Tensor<2,dim> F_AG = Tensor<2,dim,double>(F_AD);
+            double det_F_AG = Tensor<0,dim,double>(determinant(F_AD));
+            double n_0S = this->parameters.solid_vol_frac;
+            Assert(det_F_AG > n_0S, ExcInternalError());
+            /*Tensor<2,dim> F_AG = Tensor<2,dim,double>(F_AD);
 
             // Print F_ij to file
             std::ofstream F;
@@ -5405,14 +5421,18 @@ namespace NonLinearPoroViscoElasticity
     }
 
     //Store the converged values of the internal variables
-    template <int dim>
-    void Solid<dim>::update_end_timestep()
+    //template <int dim> void Solid<dim>::update_end_timestep()
+	template <int dim> double Solid<dim>::update_end_timestep()
     {
           FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
           cell (IteratorFilters::LocallyOwnedCell(),
                 dof_handler_ref.begin_active()),
           endc (IteratorFilters::LocallyOwnedCell(),
                 dof_handler_ref.end());
+
+          std::vector<double> det_F;
+          double  min_det_F;
+
           for (; cell!=endc; ++cell)
           {
             Assert(cell->is_locally_owned(), ExcInternalError());
@@ -5421,9 +5441,12 @@ namespace NonLinearPoroViscoElasticity
             const std::vector<std::shared_ptr<PointHistory<dim, ADNumberType> > >
                 lqph = quadrature_point_history.get_data(cell);
             Assert(lqph.size() == n_q_points, ExcInternalError());
-            for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
+            for (unsigned int q_point = 0; q_point < n_q_points; ++q_point){
               lqph[q_point]->update_end_timestep();
+              det_F.push_back (lqph[q_point]->get_converged_det_F());
+            }
           }
+          return min_det_F = *std::min_element(det_F.begin(),det_F.end());
     }
 
 
@@ -7044,7 +7067,7 @@ namespace NonLinearPoroViscoElasticity
             tracked_vertices[1][2] = -0.5*this->parameters.scale;
           }
 
-          virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
           {
             if (this->time->get_timestep() < 2)
             {
@@ -7102,7 +7125,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction, double det_F_min) const
           {
               std::vector<double> displ_incr(dim, 0.0);
               (void)boundary_id;
@@ -7237,7 +7260,7 @@ namespace NonLinearPoroViscoElasticity
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
           {
             if (this->time->get_timestep() < 2)
             {
@@ -7330,7 +7353,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction, double det_F_min) const
           {
               std::vector<double> displ_incr(dim, 0.0);
               (void)boundary_id;
@@ -7413,7 +7436,7 @@ namespace NonLinearPoroViscoElasticity
             tracked_vertices[1][2] = 0.0*this->parameters.scale;
           }
 
-          virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
           {
             if (this->time->get_timestep() < 2)
             {
@@ -7490,7 +7513,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction, double det_F_min) const
           {
               std::vector<double> displ_incr(dim, 0.0);
               (void)boundary_id;
@@ -7618,7 +7641,7 @@ namespace NonLinearPoroViscoElasticity
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
           {
               if (this->time->get_timestep() < 2)
               {
@@ -7659,7 +7682,7 @@ namespace NonLinearPoroViscoElasticity
 
             if (this->parameters.load_type == "displacement")
             {
-                const std::vector<double> value = get_dirichlet_load(5,2);
+                const std::vector<double> value = get_dirichlet_load(5,2,det_F_min);
                 FEValuesExtractors::Scalar direction;
                 direction = this->z_displacement;
 
@@ -7702,7 +7725,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction, double det_F_min) const
           {
                 std::vector<double> displ_incr(dim,0.0);
 
@@ -7774,7 +7797,7 @@ namespace NonLinearPoroViscoElasticity
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
           {
               if (this->time->get_timestep() < 2)
               {
@@ -7804,7 +7827,7 @@ namespace NonLinearPoroViscoElasticity
 
             if (this->parameters.load_type == "displacement")
             {
-                const std::vector<double> value = get_dirichlet_load(5,2);
+                const std::vector<double> value = get_dirichlet_load(5,2,det_F_min);
                 FEValuesExtractors::Scalar direction;
                 direction = this->z_displacement;
 
@@ -7854,7 +7877,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction, double det_F_min) const
           {
                 std::vector<double> displ_incr(dim,0.0);
 
@@ -7924,7 +7947,7 @@ namespace NonLinearPoroViscoElasticity
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
           {
               if (this->time->get_timestep() < 2)
               {
@@ -7954,7 +7977,7 @@ namespace NonLinearPoroViscoElasticity
 
             if (this->parameters.load_type == "displacement")
             {
-                const std::vector<double> value = get_dirichlet_load(4,0);
+                const std::vector<double> value = get_dirichlet_load(4,0,det_F_min);
                 FEValuesExtractors::Scalar direction;
                 direction = this->x_displacement;
 
@@ -8007,7 +8030,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction, double det_F_min) const
           {
                 std::vector<double> displ_incr (dim, 0.0);
 
@@ -8062,7 +8085,7 @@ namespace NonLinearPoroViscoElasticity
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
           {
               if (this->time->get_timestep() < 2)
               {
@@ -8109,7 +8132,7 @@ namespace NonLinearPoroViscoElasticity
                                                          this->fe.component_mask(this->z_displacement) ));
             if (this->parameters.load_type == "displacement")
             {
-                const std::vector<double> value = get_dirichlet_load(5,2);
+                const std::vector<double> value = get_dirichlet_load(5,2,det_F_min);
                 FEValuesExtractors::Scalar direction;
                 direction = this->z_displacement;
 
@@ -8153,7 +8176,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction, double det_F_min) const
           {
                 std::vector<double> displ_incr(dim,0.0);
                 const double current_time = this->time->get_current();
@@ -8349,7 +8372,7 @@ namespace NonLinearPoroViscoElasticity
 
         private:
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
           {
             if (this->time->get_timestep() < 2)
             {
@@ -8378,7 +8401,7 @@ namespace NonLinearPoroViscoElasticity
 
              if (this->parameters.load_type == "displacement")
              {
-                const std::vector<double> value = get_dirichlet_load(2,-1);
+                const std::vector<double> value = get_dirichlet_load(2,-1,det_F_min);
                 VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                           2,
                                                           get_dirichlet_bc_LTMShear<dim>(value[0],value[1],value[2]),
@@ -8392,7 +8415,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction, double det_F_min) const
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -8436,7 +8459,7 @@ namespace NonLinearPoroViscoElasticity
           	virtual ~BrainRheometerLTMShearRelaxationLateralDrained () {}
 
         private:
-          	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
           	{
           		if (this->time->get_timestep() < 2) {
           			VectorTools::interpolate_boundary_values(
@@ -8462,7 +8485,7 @@ namespace NonLinearPoroViscoElasticity
                         (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
           		if (this->parameters.load_type == "displacement") {
-          			const std::vector<double> value = get_dirichlet_load(2,-1);
+          			const std::vector<double> value = get_dirichlet_load(2,-1,det_F_min);
           			VectorTools::interpolate_boundary_values(
           					this->dof_handler_ref,
                             2,
@@ -8473,7 +8496,7 @@ namespace NonLinearPoroViscoElasticity
           	}
 
 
-          	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+          	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
         	{
           		std::vector<double> displ_incr (dim,0.0);
 
@@ -8519,7 +8542,7 @@ namespace NonLinearPoroViscoElasticity
     		virtual ~BrainRheometerLTMCyclicTensionCompression () {}
 
         private:
-    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
     		{
     			// Cylinder hull is drained
     			if (this->time->get_timestep() < 2) {
@@ -8547,7 +8570,7 @@ namespace NonLinearPoroViscoElasticity
 
     			// Apply vertical displacement on cylinder top surface and fix in x- and y-direction to account for glue
     			if (this->parameters.load_type == "displacement") {
-    				const std::vector<double> value = get_dirichlet_load(2,2);
+    				const std::vector<double> value = get_dirichlet_load(2,2,det_F_min);
 
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
@@ -8564,7 +8587,7 @@ namespace NonLinearPoroViscoElasticity
     			}
     		}
 
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
         	{
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -8626,7 +8649,7 @@ namespace NonLinearPoroViscoElasticity
     	}
 
     private:
-    	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+    	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
     	{
     		// Cylinder hull is drained
     		if (this->time->get_timestep() < 2) {
@@ -8654,7 +8677,7 @@ namespace NonLinearPoroViscoElasticity
 
     		// Apply vertical displacement on cylinder top surface and fix in x- and y-direction to account for glue
     		if (this->parameters.load_type == "displacement") {
-    			const std::vector<double> value = get_dirichlet_load(2,2);
+    			const std::vector<double> value = get_dirichlet_load(2,2,det_F_min);
 
     			VectorTools::interpolate_boundary_values(
     					this->dof_handler_ref,
@@ -8671,7 +8694,7 @@ namespace NonLinearPoroViscoElasticity
     		}
     	}
 
-    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
         {
     		std::vector<double> displ_incr (dim,0.0);
 
@@ -8699,7 +8722,7 @@ namespace NonLinearPoroViscoElasticity
         		virtual ~BrainRheometerLTMCyclicTrapezoidalTensionCompression () {}
 
             private:
-        		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+        		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
         		{
         			// Cylinder hull is drained
         			if (this->time->get_timestep() < 2) {
@@ -8727,7 +8750,7 @@ namespace NonLinearPoroViscoElasticity
 
         			// Apply vertical displacement on cylinder top surface and fix in x- and y-direction to account for glue
         			if (this->parameters.load_type == "displacement") {
-        				const std::vector<double> value = get_dirichlet_load(2,2);
+        				const std::vector<double> value = get_dirichlet_load(2,2,det_F_min);
 
         				VectorTools::interpolate_boundary_values(
         						this->dof_handler_ref,
@@ -8744,7 +8767,7 @@ namespace NonLinearPoroViscoElasticity
         			}
         		}
 
-                virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+                virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
                 {
                       std::vector<double> displ_incr (dim,0.0);
 
@@ -8799,7 +8822,7 @@ namespace NonLinearPoroViscoElasticity
             virtual ~BrainRheometerLTMRelaxationTensionCompression () {}
 
         private:
-            virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+            virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
             {
             	// Cylinder hull is drained
             	if (this->parameters.lateral_drained == "drained") {
@@ -8849,7 +8872,7 @@ namespace NonLinearPoroViscoElasticity
 
             	// Apply vertical displacement on cylinder top surface and fix in x- and y-direction to account for glue
             	if (this->parameters.load_type == "displacement") {
-            		const std::vector<double> value = get_dirichlet_load(2,2);
+            		const std::vector<double> value = get_dirichlet_load(2,2,det_F_min);
 
             		VectorTools::interpolate_boundary_values(
             				this->dof_handler_ref,
@@ -8876,7 +8899,7 @@ namespace NonLinearPoroViscoElasticity
     			}
             }
 
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
 			{
     			std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
 
@@ -9005,7 +9028,7 @@ namespace NonLinearPoroViscoElasticity
             	tracked_vertices[1][2] = this->parameters.height/2*this->parameters.scale;
             }
 
-    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
     		{
     			// Cylinder hull is drained
     			if (this->parameters.lateral_drained == "drained") {
@@ -9087,7 +9110,7 @@ namespace NonLinearPoroViscoElasticity
 
     			// Apply vertical displacement on cylinder top surface and fix in x- and y-direction to account for glue
     			if (this->parameters.load_type == "displacement") {
-    				const std::vector<double> value = get_dirichlet_load(2,2);
+    				const std::vector<double> value = get_dirichlet_load(2,2,det_F_min);
 
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
@@ -9164,7 +9187,7 @@ namespace NonLinearPoroViscoElasticity
 		    }
 
     		// Define Dirichlet load, definition in derived classes
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const = 0;
     	};
 
 
@@ -9178,7 +9201,7 @@ namespace NonLinearPoroViscoElasticity
 
         private:
 
-          virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+          virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -9239,7 +9262,7 @@ namespace NonLinearPoroViscoElasticity
     	}
 
     private:
-    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
         {
     		std::vector<double> displ_incr (dim,0.0);
 
@@ -9265,7 +9288,7 @@ namespace NonLinearPoroViscoElasticity
 		virtual ~BrainRheometerLTMCyclicCompressionQuarter () {}
 
 	   private:
-		 virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+		 virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
 		 {
 			   std::vector<double> displ_incr (dim,0.0);
 
@@ -9306,7 +9329,7 @@ namespace NonLinearPoroViscoElasticity
 
   	   private:
 
-  		 virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+  		 virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
   		 {
   			   std::vector<double> displ_incr (dim,0.0);
 
@@ -9345,7 +9368,7 @@ namespace NonLinearPoroViscoElasticity
 
         private:
 
-          virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+          virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -9400,8 +9423,32 @@ namespace NonLinearPoroViscoElasticity
     		virtual ~BrainRheometerLTMRelaxationTensionCompressionQuarter () {}
 
         private:
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
 			{
+    			/*FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+    			cell (IteratorFilters::LocallyOwnedCell(),
+    					this->dof_handler_ref.begin_active()),
+						endc (IteratorFilters::LocallyOwnedCell(),
+								this->dof_handler_ref.end());
+
+    			std::vector<double> det_F;
+    			double  min_det_F;
+
+    			for (; cell!=endc; ++cell)
+    			{
+    				Assert(cell->is_locally_owned(), ExcInternalError());
+    				Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
+
+    				const std::vector<std::shared_ptr<PointHistory<dim, Sacado::Fad::DFad<double>> > >
+    				lqph = this->quadrature_point_history.get_data(cell);
+    				Assert(lqph.size() == n_q_points, ExcInternalError());
+    				for (unsigned int q_point = 0; q_point < this->n_q_points; ++q_point){
+    					det_F.push_back (lqph[q_point]->get_converged_det_F());
+    				}
+    			}
+    			min_det_F = *std::min_element(det_F.begin(),det_F.end());*/
+
+
     			if (this->parameters.load_type == "displacement") {
     				std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
 
@@ -9409,7 +9456,7 @@ namespace NonLinearPoroViscoElasticity
     					const double final_displ = this->parameters.load;
     					const double final_load_time = this->parameters.end_load_time;
     					const double current_time = this->time->get_current();
-    					const double delta_time = this->time->get_delta_t();
+    					const double delta_time = this->time->get_delta_t(det_F_min);
 
     					double current_displ = 0.0;
     					double previous_displ = 0.0;
@@ -9619,7 +9666,7 @@ namespace NonLinearPoroViscoElasticity
           }
         
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
           {
             // Top (unloaded) surface is drained
             if (this->time->get_timestep() < 2)
@@ -9663,7 +9710,7 @@ namespace NonLinearPoroViscoElasticity
              {
                 if (this->time->get_current()<=this->parameters.end_load_time)
                 {
-                    const std::vector<double> value = get_dirichlet_load(5,-1);
+                    const std::vector<double> value = get_dirichlet_load(5,-1,det_F_min);
                     VectorTools::interpolate_boundary_values(
                              this->dof_handler_ref,
                              5,
@@ -9722,7 +9769,7 @@ namespace NonLinearPoroViscoElasticity
         
         virtual std::vector<double>
         get_dirichlet_load(const types::boundary_id   &boundary_id,
-                           const int                  &direction) const = 0;
+                           const int                  &direction, double det_F_min) const = 0;
     };
 
     //@sect4{Derived class: One cycle of load and unload}
@@ -9740,7 +9787,7 @@ namespace NonLinearPoroViscoElasticity
         private:
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction, double det_F_min) const
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -9786,7 +9833,7 @@ namespace NonLinearPoroViscoElasticity
         private:
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction, double det_F_min) const
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -9999,7 +10046,7 @@ namespace NonLinearPoroViscoElasticity
     		}
 
     		// Apply Dirichlet constraints
-    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
     		{
     			// Top (unloaded) surface is drained
     			if (this->time->get_timestep() < 2) {
@@ -10054,7 +10101,7 @@ namespace NonLinearPoroViscoElasticity
 
     			// Apply displacement to loaded top surface
     			if (this->parameters.load_type == "displacement") {
-    				const std::vector<double> value = get_dirichlet_load(100,2);
+    				const std::vector<double> value = get_dirichlet_load(100,2,det_F_min);
 
     			    VectorTools::interpolate_boundary_values(
     			    		this->dof_handler_ref,
@@ -10095,7 +10142,7 @@ namespace NonLinearPoroViscoElasticity
 			}
 
     		// Define Dirichlet load, definition in derived classes
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const = 0;
     };
 
     // Derived class to apply a ramp load and maintain
@@ -10106,7 +10153,7 @@ namespace NonLinearPoroViscoElasticity
     		virtual ~BrainNanoFlatPunchRampLoad () {}
 
 		private:
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
 			{
     			std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
 
@@ -10288,7 +10335,7 @@ namespace NonLinearPoroViscoElasticity
             	tracked_vertices[1][2] = 0.0*this->parameters.scale;
             }
 
-    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
     		{
     			// Cylinder hull is drained
     			if (this->parameters.lateral_drained == "drained") {
@@ -10372,7 +10419,7 @@ namespace NonLinearPoroViscoElasticity
 							constraints,
 							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));*/
 
-    				const std::vector<double> value2 = get_dirichlet_load(101,2);
+    				const std::vector<double> value2 = get_dirichlet_load(101,2,det_F_min);
 
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
@@ -10448,7 +10495,7 @@ namespace NonLinearPoroViscoElasticity
 		    }
 
     		// Define Dirichlet load, definition in derived classes
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const = 0;
     };
 
 
@@ -10461,7 +10508,7 @@ namespace NonLinearPoroViscoElasticity
     		virtual ~HydroNanoGrazRelaxationCompressionQuarter () {}
 
         private:
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
 			{
     			if (this->parameters.load_type == "displacement") {
     				std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
@@ -10539,7 +10586,7 @@ namespace NonLinearPoroViscoElasticity
     	}
 
     private:
-    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
 		{
     		std::vector<double> displ_incr (dim,0.0);
 
@@ -10807,7 +10854,7 @@ namespace NonLinearPoroViscoElasticity
 				tracked_vertices[1][2] = 0.0*this->parameters.scale;
 			}
 
-			virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+			virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
 			{
 				if (true) {// Update boundary conditions
 				// loaded surface cell counter
@@ -10917,6 +10964,7 @@ namespace NonLinearPoroViscoElasticity
 										Tensor<1,dim> solution_here;
 										unsigned int index_x = 0;
 										unsigned int index_y = 0;
+										unsigned int index_p = 0;
 
 										for (unsigned int q_point = 0; q_point < n_face_q_points; ++q_point) {
 											const Point<dim> this_support_point_2 = fe_values_face.quadrature_point(q_point);
@@ -10931,12 +10979,15 @@ namespace NonLinearPoroViscoElasticity
 													dof_touched[index] = true;
 													solution_here[1] = this->solution_n(index);
 													index_y = index;
+												} else if (component == 3 && dof_touched[index] == false) {
+													dof_touched[index] = true;
+													index_p = index;
 												}
 											}
 										}
 
 										//const double obstacle_value = obstacle->value(this_support_point, 2);  // TODO
-										std::vector<double> obstacle_value = get_dirichlet_load(100,2);
+										std::vector<double> obstacle_value = get_dirichlet_load(100,2,det_F_min);
 										solution_here[2] = this->solution_n(index_z);  // TODO Block vector???
 										this_support_point = this_support_point + solution_here;
 										//this->pcout << "x = " << this_support_point[0] << ", y = " << this_support_point[1] << ", z = " << this_support_point[2] << std::endl;
@@ -10950,10 +11001,10 @@ namespace NonLinearPoroViscoElasticity
 											const double undeformed_gap = pt_z_c-this_support_point[2];
 											constraints.add_line(index_z);
 											constraints.set_inhomogeneity(index_z, undeformed_gap);
-											constraints.add_line(index_x);
-											constraints.set_inhomogeneity(index_x, 0);
-											constraints.add_line(index_y);
-											constraints.set_inhomogeneity(index_y, 0);
+//											constraints.add_line(index_x);
+//											constraints.set_inhomogeneity(index_x, 0);
+//											constraints.add_line(index_y);
+//											constraints.set_inhomogeneity(index_y, 0);
 											std::ofstream z_displ;
 											z_displ.open(this->parameters.output_directory + "/z_displ", std::ofstream::app);
 											z_displ << std::setprecision(6) << std::scientific;
@@ -10963,7 +11014,11 @@ namespace NonLinearPoroViscoElasticity
 											z_displ.close();
 											this->distributed_solution(index_z) = undeformed_gap;
 											this->active_set.add_index(index_z);
+										} else {
+											constraints.add_line(index_p);
+											constraints.set_inhomogeneity(index_p, 0);
 										}
+
 
 										/*// flat-punch
 										const double flat_punch_height = this->parameters.height + obstacle_value[0];
@@ -11174,7 +11229,7 @@ namespace NonLinearPoroViscoElasticity
 				  return std::make_pair(1,2);
 			}
 
-			virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
+			virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const = 0;
 	};
 
 
@@ -11189,7 +11244,7 @@ namespace NonLinearPoroViscoElasticity
 
         private:
 			virtual std::vector<double>
-			get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+			get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
 			{
                 std::vector<double> displ_incr (dim+1,0.0);
 
