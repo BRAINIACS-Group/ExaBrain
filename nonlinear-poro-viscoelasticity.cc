@@ -4814,12 +4814,14 @@ namespace NonLinearPoroViscoElasticity
                  << time->get_current()
                  << "s"
                  << std::endl;
+        pcout << here1 << std::endl;
 
         //Declare newton_update vector (solution of a Newton iteration),
         //which must have as many positions as global DoFs.
         TrilinosWrappers::MPI::BlockVector newton_update
             (locally_owned_partitioning, mpi_communicator);
 
+        pcout << here2 << std::endl;
         //Reset the error storage objects
         error_residual.reset();
         error_residual_0.reset();
@@ -4828,7 +4830,9 @@ namespace NonLinearPoroViscoElasticity
         error_update_0.reset();
         error_update_norm.reset();
 
+        pcout << here3 << std::endl;
         print_conv_header();
+        pcout << here4 << std::endl;
 
         //Declare and initialize iterator for the Newton-Raphson algorithm steps
         unsigned int newton_iteration = 0;
