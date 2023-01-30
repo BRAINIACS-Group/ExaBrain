@@ -2348,7 +2348,9 @@ namespace NonLinearPoroViscoElasticity
             	  else if (time_current > time_end_load)
             		  dt = delta_t;
               }
-              return dt;
+              const double multiplier = std::pow(10.0, 6);
+              return std::ceil(dt * multiplier) / multiplier;
+              //return dt;
           }
           unsigned int get_timestep() const
           {
@@ -2356,7 +2358,8 @@ namespace NonLinearPoroViscoElasticity
           }
           void increment_time (double det_F_min)
           {
-              double dt    = delta_t;
+              double dt = get_delta_t(det_F_min);
+        	  /*double dt    = delta_t;
               double n_0S  = 0.8;
               double n     = 4;
               double range = 0.1;
@@ -2374,7 +2377,7 @@ namespace NonLinearPoroViscoElasticity
             	  //	  dt = 5*delta_t;
             	  else if (time_current > time_end_load)
             		  dt = delta_t;
-              }
+              }*/
               time_current += dt;
               ++timestep;
           }
@@ -4326,9 +4329,10 @@ namespace NonLinearPoroViscoElasticity
           outfile << "\n  ASM_SYS = assemble system";
           outfile << "\n  SLV     = linear solver \n";
 
+
+          double det_F_min = 0.0;
           while ( (time->get_end() - time->get_current()) > -1.0*parameters.tol_u )
             {
-        	  double det_F_min;
               //Initialize the current solution increment to zero
               solution_delta = 0.0;
 
