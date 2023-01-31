@@ -4330,7 +4330,7 @@ namespace NonLinearPoroViscoElasticity
           outfile << "\n  SLV     = linear solver \n";
 
 
-          double det_F_min = 0.0;
+          double det_F_min = 1.0;
           while ( (time->get_end() - time->get_current()) > -1.0*parameters.tol_u )
             {
               //Initialize the current solution increment to zero
