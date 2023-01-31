@@ -4336,6 +4336,7 @@ namespace NonLinearPoroViscoElasticity
               //Initialize the current solution increment to zero
               solution_delta = 0.0;
 
+              this->pcout << "J = " << det_F_min << std::endl;
               //Solve the non-linear system using a Newton-Raphson scheme
               solve_nonlinear_timestep(solution_delta, det_F_min);
 
@@ -9476,6 +9477,9 @@ namespace NonLinearPoroViscoElasticity
     						displ_incr[2] = current_displ - previous_displ;
     					} else
     						displ_incr[2] = 0.0;
+
+    					this->pcout << "d_c = " << current_displ << ", d_p = " << previous_displ << std::endl;
+    					this->pcout << "du = " << displ_incr[2] << ", dt = " << delta_time << ", v = " << displ_incr[2]/delta_time << std::endl;
     				}
     				//return displ_incr;
     			}
