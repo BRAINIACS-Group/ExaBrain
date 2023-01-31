@@ -9456,10 +9456,8 @@ namespace NonLinearPoroViscoElasticity
     			}
     			min_det_F = *std::min_element(det_F.begin(),det_F.end());*/
 
-
+    			std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
     			if (this->parameters.load_type == "displacement") {
-    				std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
-
     				if ((boundary_id == 2) && (direction == 2)) {
     					const double final_displ = this->parameters.load;
     					const double final_load_time = this->parameters.end_load_time;
@@ -9479,8 +9477,9 @@ namespace NonLinearPoroViscoElasticity
     					} else
     						displ_incr[2] = 0.0;
     				}
-    				return displ_incr;
+    				//return displ_incr;
     			}
+    			return displ_incr;
 			}
 
     		virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const
