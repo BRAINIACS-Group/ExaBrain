@@ -2341,12 +2341,9 @@ namespace NonLinearPoroViscoElasticity
             		  dt = a*std::pow((det_F_min-n_0S),n);
             	  else if (time_current <= delta_t)
             		  dt = delta_t - time_current;
-            	  //else if (time_current >= 20*time_end_load)
-            	  //    dt = 20*delta_t;
-            	  //else if (time_current >= 10*time_end_load)
-            	  //    dt = 5*delta_t;
-            	  else if (time_current > time_end_load)
-            		  dt = delta_t;
+            	  else if (time_current > time_end_load && det_F_min <= 0.9)
+            		  dt = a*std::pow((det_F_min-n_0S),n);
+            		  //dt = delta_t;
               }
               const double multiplier = std::pow(10.0, 6);
               return std::ceil(dt * multiplier) / multiplier;
