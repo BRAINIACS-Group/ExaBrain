@@ -2218,7 +2218,7 @@ namespace NonLinearPoroViscoElasticity
         
           virtual double get_end() const = 0;
           
-          virtual double get_delta_t(double det_F_min=1) const = 0;
+          virtual double get_delta_t() const = 0;
          
           virtual unsigned int get_timestep() const = 0;
           
@@ -2254,7 +2254,7 @@ namespace NonLinearPoroViscoElasticity
           {
             return this->time_points.back();
           }
-          double get_delta_t(double det_F_min) const
+          double get_delta_t() const
           {
             // Assert ((this->timestep +1) < this->time_points.size(),
             //          ExcMessage("timestep greater then timesteps vector length -1"))
@@ -2313,11 +2313,14 @@ namespace NonLinearPoroViscoElasticity
             time_current(0.0),
             time_end(time_end),
             time_end_load(time_end_load),
-            delta_t(delta_t)
+            delta_t(delta_t),
+			dt(delta_t)
           {}
 
           virtual ~TimeFixed()
           {}
+
+          double dt;
 
           double get_current() const
           {
@@ -2327,9 +2330,9 @@ namespace NonLinearPoroViscoElasticity
           {
             return time_end;
           }
-          double get_delta_t(double det_F_min) const
+          double get_delta_t() const
           {
-              double dt    = delta_t;
+              /*double dt    = delta_t;
               double n_0S  = 0.8;
               double n     = 4;
               double range = 0.1;
@@ -2346,8 +2349,8 @@ namespace NonLinearPoroViscoElasticity
             		  //dt = delta_t;
               }
               const double multiplier = std::pow(10.0, 6);
-              return std::ceil(dt * multiplier) / multiplier;
-              //return dt;
+              return std::ceil(dt * multiplier) / multiplier;*/
+              return dt;
           }
           unsigned int get_timestep() const
           {
@@ -2355,26 +2358,35 @@ namespace NonLinearPoroViscoElasticity
           }
           void increment_time (double det_F_min)
           {
-              double dt = get_delta_t(det_F_min);
-        	  /*double dt    = delta_t;
-              double n_0S  = 0.8;
-              double n     = 4;
-              double range = 0.1;
-              double a     = 1/(std::pow(range,n))*delta_t;
-              if (time_end_load > 0) {
-            	  if (time_current <= time_end_load && det_F_min > 0.9)
-            		  dt = 1*delta_t;
-            	  else if (time_current <= time_end_load && det_F_min <= 0.9)
-            	      dt = a*std::pow((det_F_min-n_0S),n);
-            	  else if (time_current <= delta_t)
-            		  dt = delta_t - time_current;
-            	  //else if (time_current >= 20*time_end_load)
-            	  //    dt = 20*delta_t;
-            	  //else if (time_current >= 10*time_end_load)
-            	  //	  dt = 5*delta_t;
-            	  else if (time_current > time_end_load)
-            		  dt = delta_t;
-              }*/
+        	  //dt    = delta_t;
+
+        	  // based on cubic function
+        	  /*double n_0S  = 0.8;
+        	  double n     = 3;
+        	  double range = 0.05;
+        	  double a     = 1/(std::pow(range,n))*delta_t;
+        	  if (time_end_load > 0) {
+        		  if (time_current <= time_end_load && det_F_min > (n_0S+range))
+        			  dt = 1*delta_t;
+        		  else if (det_F_min <= (n_0S+range))
+        			  dt = a*std::pow((det_F_min-n_0S),n);
+        		  else if (time_current <= delta_t)
+        			  dt = delta_t - time_current;
+        	  }*/
+
+        	  // based on change in det(F)
+        	  if (time_end_load > 0) {
+        		  if (time_current < delta_t)
+        		      dt = delta_t - time_current;
+        		  else if (det_F_min > 0.03)
+        			  dt = 0.5*dt;
+        		  else if (det_F_min < 0.005)
+        			  dt = 2*dt;
+        	  }
+
+        	  const double multiplier = std::pow(10.0, 8);
+        	  dt = std::ceil(dt * multiplier) / multiplier;
+
               time_current += dt;
               ++timestep;
           }
@@ -3723,8 +3735,12 @@ namespace NonLinearPoroViscoElasticity
                    "Material_Darcy_Fluid --> Only Markert "
                    "and Ehlers formulations have been implemented."));
 
-             return ( -1.0 * permeability_term * det_F
-                      * (grad_p_fluid - get_body_force_FR_current()) );
+             //return ( -1.0 * permeability_term * det_F   //what about this det_F in there?!
+              //        * (grad_p_fluid - get_body_force_FR_current()) );
+
+             // try w_F from the theory
+             const NumberType n_F_inv = det_F/(det_F-n_OS);
+             return ( -1.0 * permeability_term * n_F_inv * (grad_p_fluid - get_body_force_FR_current()) );
          }
 
          double get_porous_dissipation(const Tensor<2,dim, NumberType> &F,
@@ -3985,8 +4001,8 @@ namespace NonLinearPoroViscoElasticity
             void copy_local_to_global_system(const PerTaskData_ASM &data);
 
             // Define boundary conditions
-            virtual void make_constraints(const int &it_nr, double det_F_min);
-            virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min) = 0;
+            virtual void make_constraints(const int &it_nr);
+            virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) = 0;
             virtual Tensor<1,dim> get_neumann_traction
                    (const types::boundary_id &boundary_id,
                     const Point<dim>         &pt,
@@ -4000,14 +4016,13 @@ namespace NonLinearPoroViscoElasticity
                      get_drained_boundary_id_for_output () const = 0;
             virtual std::vector<double> get_dirichlet_load
                     (const types::boundary_id   &boundary_id,
-                     const int                  &direction,
-					 double                     det_F_min) const = 0;
+                     const int                  &direction) const = 0;
 
             // Create and update the quadrature points.
             void setup_qph();
 
             //Solve non-linear system using a Newton-Raphson scheme
-            void solve_nonlinear_timestep(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT, double det_F_min);
+            void solve_nonlinear_timestep(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT);
 
             //Solve the linearized equations using a direct solver
             void solve_linear_system ( TrilinosWrappers::MPI::BlockVector &newton_update_OUT);
@@ -4328,20 +4343,24 @@ namespace NonLinearPoroViscoElasticity
 
 
           double det_F_min = 1.0;
+          double det_F_min_mpi = 1.0;
           while ( (time->get_end() - time->get_current()) > -1.0*parameters.tol_u )
             {
               //Initialize the current solution increment to zero
               solution_delta = 0.0;
 
-              this->pcout << "J = " << det_F_min << std::endl;
+              this->pcout << "J_min_change = " << det_F_min << std::endl;
+              //std::cout << "J = " << det_F_min_mpi << std::endl;
               //Solve the non-linear system using a Newton-Raphson scheme
-              solve_nonlinear_timestep(solution_delta, det_F_min);
+              solve_nonlinear_timestep(solution_delta);
 
               //Add the computed solution increment to total solution
               solution_n += solution_delta;
 
               //Store the converged values of the internal variables
-              det_F_min = update_end_timestep();
+              det_F_min_mpi = update_end_timestep();
+              //det_F_min = Utilities::MPI::min(det_F_min_mpi, mpi_communicator);
+              det_F_min = Utilities::MPI::max(det_F_min_mpi, mpi_communicator);
 
               //Output results
               if ( (time->get_timestep()%parameters.timestep_output) == 0 )
@@ -4534,7 +4553,7 @@ namespace NonLinearPoroViscoElasticity
 
     //Define the boundary conditions on the mesh
     template <int dim>
-    void Solid<dim>::make_constraints(const int &it_nr_IN, double det_F_min)
+    void Solid<dim>::make_constraints(const int &it_nr_IN)
     {
         pcout     << " CST " << std::flush;
         outfile   << " CST " << std::flush;
@@ -4563,7 +4582,7 @@ namespace NonLinearPoroViscoElasticity
                 }
             }
           constraints.clear();
-          make_dirichlet_constraints(constraints, det_F_min);
+          make_dirichlet_constraints(constraints);
         }
         else
         {
@@ -4797,7 +4816,7 @@ namespace NonLinearPoroViscoElasticity
 
     //Solve the non-linear system using a Newton-Raphson scheme
     template <int dim>
-    void Solid<dim>::solve_nonlinear_timestep(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT, double det_F_min)
+    void Solid<dim>::solve_nonlinear_timestep(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT)
     {
         double start = MPI_Wtime();
 
@@ -4849,7 +4868,7 @@ namespace NonLinearPoroViscoElasticity
             system_rhs_nb = 0.0;
 
             //Apply boundary conditions
-            make_constraints(newton_iteration, det_F_min);
+            make_constraints(newton_iteration);
             assemble_system(solution_delta_OUT);
 
             //Compute the rhs residual (error between external and internal forces in FE system)
@@ -5433,22 +5452,30 @@ namespace NonLinearPoroViscoElasticity
                 dof_handler_ref.end());
 
           std::vector<double> det_F;
-          double  min_det_F;
+          std::vector<double> det_F_old;
+          double det_F_min;
+          double det_F_min_old;
+          double det_F_change;
 
           for (; cell!=endc; ++cell)
           {
-            Assert(cell->is_locally_owned(), ExcInternalError());
-            Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
+        	  Assert(cell->is_locally_owned(), ExcInternalError());
+        	  Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
 
-            const std::vector<std::shared_ptr<PointHistory<dim, ADNumberType> > >
-                lqph = quadrature_point_history.get_data(cell);
-            Assert(lqph.size() == n_q_points, ExcInternalError());
-            for (unsigned int q_point = 0; q_point < n_q_points; ++q_point){
-              lqph[q_point]->update_end_timestep();
-              det_F.push_back (lqph[q_point]->get_converged_det_F());
-            }
+        	  const std::vector<std::shared_ptr<PointHistory<dim, ADNumberType> > >
+        	  	  lqph = quadrature_point_history.get_data(cell);
+        	  Assert(lqph.size() == n_q_points, ExcInternalError());
+        	  for (unsigned int q_point = 0; q_point < n_q_points; ++q_point){
+        		  det_F_old.push_back (lqph[q_point]->get_converged_det_F());
+        		  lqph[q_point]->update_end_timestep();
+        		  det_F.push_back (lqph[q_point]->get_converged_det_F());
+        	  }
           }
-          return min_det_F = *std::min_element(det_F.begin(),det_F.end());
+          det_F_min_old = *std::min_element(det_F_old.begin(),det_F_old.end());
+          det_F_min = *std::min_element(det_F.begin(),det_F.end());
+          return det_F_change = (det_F_min_old-det_F_min)/(det_F_min_old-parameters.solid_vol_frac);
+
+          //return det_F_min = *std::min_element(det_F.begin(),det_F.end());
     }
 
 
@@ -5621,24 +5648,25 @@ namespace NonLinearPoroViscoElasticity
 
         //Declare local vectors to store values
         // OUTPUT AVERAGED ON ELEMENTS -------------------------------------------
-        std::vector<Vector<double>>cauchy_stresses_total_elements
-                             (num_comp_symm_tensor,
-                              Vector<double> (triangulation.n_active_cells()));
-        std::vector<Vector<double>>cauchy_stresses_E_elements
-                             (num_comp_symm_tensor,
-                              Vector<double> (triangulation.n_active_cells()));
-        std::vector<Vector<double>>stretches_elements
-                             (dim,
-                              Vector<double> (triangulation.n_active_cells()));
-        std::vector<Vector<double>>seepage_velocity_elements
-                              (dim,
-                               Vector<double> (triangulation.n_active_cells()));
-        Vector<double> porous_dissipation_elements
-                              (triangulation.n_active_cells());
-        Vector<double> viscous_dissipation_elements
-                              (triangulation.n_active_cells());
-        Vector<double> solid_vol_fraction_elements
-                              (triangulation.n_active_cells());
+        std::vector<Vector<double>> cauchy_stresses_total_elements
+                                    (num_comp_symm_tensor,
+                                     Vector<double> (triangulation.n_active_cells()));
+        std::vector<Vector<double>> cauchy_stresses_E_elements
+                                    (num_comp_symm_tensor,
+                                     Vector<double> (triangulation.n_active_cells()));
+        std::vector<Vector<double>> cauchy_stresses_E_ext_func_elements
+                                    (num_comp_symm_tensor,
+                                     Vector<double> (triangulation.n_active_cells()));
+        std::vector<Vector<double>> stretches_elements
+                                    (dim,
+                                     Vector<double> (triangulation.n_active_cells()));
+        std::vector<Vector<double>> seepage_velocity_elements
+                                    (dim,
+                                     Vector<double> (triangulation.n_active_cells()));
+
+        Vector<double> porous_dissipation_elements(triangulation.n_active_cells());
+        Vector<double> viscous_dissipation_elements(triangulation.n_active_cells());
+        Vector<double> solid_vol_fraction_elements(triangulation.n_active_cells());
 
         // OUTPUT AVERAGED ON NODES ----------------------------------------------
         // We need to create a new FE space with a single dof per node to avoid
@@ -5650,29 +5678,34 @@ namespace NonLinearPoroViscoElasticity
           ExcDimensionMismatch(vertex_handler_ref.n_dofs(),
                                triangulation.n_vertices()));
 
-        Vector<double> counter_on_vertices_mpi
-                        (vertex_handler_ref.n_dofs());
-        Vector<double> sum_counter_on_vertices
-                        (vertex_handler_ref.n_dofs());
+        Vector<double> counter_on_vertices_mpi(vertex_handler_ref.n_dofs());
+        Vector<double> sum_counter_on_vertices(vertex_handler_ref.n_dofs());
 
-        std::vector<Vector<double>>cauchy_stresses_total_vertex_mpi
-                                  (num_comp_symm_tensor,
-                                   Vector<double>(vertex_handler_ref.n_dofs()));
-        std::vector<Vector<double>>sum_cauchy_stresses_total_vertex
-                                  (num_comp_symm_tensor,
-                                   Vector<double>(vertex_handler_ref.n_dofs()));
-        std::vector<Vector<double>>cauchy_stresses_E_vertex_mpi
-                                  (num_comp_symm_tensor,
-                                   Vector<double>(vertex_handler_ref.n_dofs()));
-        std::vector<Vector<double>>sum_cauchy_stresses_E_vertex
-                                  (num_comp_symm_tensor,
-                                   Vector<double>(vertex_handler_ref.n_dofs()));
-        std::vector<Vector<double>>stretches_vertex_mpi
-                                  (dim,
-                                   Vector<double>(vertex_handler_ref.n_dofs()));
-        std::vector<Vector<double>>sum_stretches_vertex
-                                  (dim,
-                                   Vector<double>(vertex_handler_ref.n_dofs()));
+        std::vector<Vector<double>> cauchy_stresses_total_vertex_mpi
+                                    (num_comp_symm_tensor,
+                                     Vector<double>(vertex_handler_ref.n_dofs()));
+        std::vector<Vector<double>> sum_cauchy_stresses_total_vertex
+                                    (num_comp_symm_tensor,
+                                     Vector<double>(vertex_handler_ref.n_dofs()));
+        std::vector<Vector<double>> cauchy_stresses_E_vertex_mpi
+                                    (num_comp_symm_tensor,
+                                     Vector<double>(vertex_handler_ref.n_dofs()));
+        std::vector<Vector<double>> sum_cauchy_stresses_E_vertex
+                                    (num_comp_symm_tensor,
+                                     Vector<double>(vertex_handler_ref.n_dofs()));
+        std::vector<Vector<double>> cauchy_stresses_E_ext_func_vertex_mpi
+								    (num_comp_symm_tensor,
+								     Vector<double>(vertex_handler_ref.n_dofs()));
+        std::vector<Vector<double>> sum_cauchy_stresses_E_ext_func_vertex
+								    (num_comp_symm_tensor,
+								     Vector<double>(vertex_handler_ref.n_dofs()));
+        std::vector<Vector<double>> stretches_vertex_mpi
+                                    (dim,
+                                     Vector<double>(vertex_handler_ref.n_dofs()));
+        std::vector<Vector<double>> sum_stretches_vertex
+                                    (dim,
+                                     Vector<double>(vertex_handler_ref.n_dofs()));
+
         Vector<double> porous_dissipation_vertex_mpi(vertex_handler_ref.n_dofs());
         Vector<double> sum_porous_dissipation_vertex(vertex_handler_ref.n_dofs());
         Vector<double> viscous_dissipation_vertex_mpi(vertex_handler_ref.n_dofs());
@@ -5765,16 +5798,18 @@ namespace NonLinearPoroViscoElasticity
 
                 const double p_fluid = solution_values_p_fluid_total[q_point];
 
-                //Cauchy stress
-                static const SymmetricTensor<2,dim,double>
-                  I (Physics::Elasticity::StandardTensors<dim>::I);
+                // Cauchy extra stress and volumetric Cauchy extra stress from extension function
+                static const SymmetricTensor<2,dim,double> I (Physics::Elasticity::StandardTensors<dim>::I);
                 SymmetricTensor<2,dim> sigma_E;
-                const SymmetricTensor<2,dim,ADNumberType> sigma_E_AD =
-                  lqph[q_point]->get_Cauchy_E(F_AD);
+                SymmetricTensor<2,dim> sigma_E_ext_func;
+                const SymmetricTensor<2,dim,ADNumberType> sigma_E_AD = lqph[q_point]->get_Cauchy_E(F_AD);
+                const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[q_point]->get_Cauchy_E_ext_func(F_AD);
 
                 for (unsigned int i=0; i<dim; ++i)
-                    for (unsigned int j=0; j<dim; ++j)
-                       sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
+                	for (unsigned int j=0; j<dim; ++j) {
+                		sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
+                		sigma_E_ext_func[i][j] = Tensor<0,dim,double>(sigma_E_ext_func_AD[i][j]);
+                    }
 
                 SymmetricTensor<2,dim> sigma_fluid_vol (I);
                 sigma_fluid_vol *= -p_fluid;
@@ -5812,6 +5847,8 @@ namespace NonLinearPoroViscoElasticity
                           += ((sigma*basis_vectors[j])*basis_vectors[j])/n_q_points;
                         cauchy_stresses_E_elements[j](cell->active_cell_index())
                           += ((sigma_E*basis_vectors[j])*basis_vectors[j])/n_q_points;
+                        cauchy_stresses_E_ext_func_elements[j](cell->active_cell_index())
+                          += ((sigma_E_ext_func*basis_vectors[j])*basis_vectors[j])/n_q_points;
                         stretches_elements[j](cell->active_cell_index())
                           += std::sqrt(1.0+2.0*Tensor<0,dim,double>(E_strain[j][j]))
                              /n_q_points;
@@ -5829,16 +5866,23 @@ namespace NonLinearPoroViscoElasticity
                     cauchy_stresses_total_elements[3](cell->active_cell_index())
                       += ((sigma*basis_vectors[0])*basis_vectors[1])/n_q_points; //sig_xy
                     cauchy_stresses_total_elements[4](cell->active_cell_index())
-                      += ((sigma*basis_vectors[0])*basis_vectors[2])/n_q_points;//sig_xz
+                      += ((sigma*basis_vectors[0])*basis_vectors[2])/n_q_points; //sig_xz
                     cauchy_stresses_total_elements[5](cell->active_cell_index())
-                      += ((sigma*basis_vectors[1])*basis_vectors[2])/n_q_points;//sig_yz
+                      += ((sigma*basis_vectors[1])*basis_vectors[2])/n_q_points; //sig_yz
 
                     cauchy_stresses_E_elements[3](cell->active_cell_index())
                       += ((sigma_E*basis_vectors[0])* basis_vectors[1])/n_q_points; //sig_xy
                     cauchy_stresses_E_elements[4](cell->active_cell_index())
-                      += ((sigma_E*basis_vectors[0])* basis_vectors[2])/n_q_points;//sig_xz
+                      += ((sigma_E*basis_vectors[0])* basis_vectors[2])/n_q_points; //sig_xz
                     cauchy_stresses_E_elements[5](cell->active_cell_index())
-                      += ((sigma_E*basis_vectors[1])* basis_vectors[2])/n_q_points;//sig_yz
+                      += ((sigma_E*basis_vectors[1])* basis_vectors[2])/n_q_points; //sig_yz
+
+                    cauchy_stresses_E_ext_func_elements[3](cell->active_cell_index())
+                      += ((sigma_E_ext_func*basis_vectors[0])* basis_vectors[1])/n_q_points; //sig_xy
+                    cauchy_stresses_E_ext_func_elements[4](cell->active_cell_index())
+                      += ((sigma_E_ext_func*basis_vectors[0])* basis_vectors[2])/n_q_points; //sig_xz
+                    cauchy_stresses_E_ext_func_elements[5](cell->active_cell_index())
+                      += ((sigma_E_ext_func*basis_vectors[1])* basis_vectors[2])/n_q_points; //sig_yz
 
                 }
                 // OUTPUT AVERAGED ON NODES -------------------------------------------
@@ -5855,6 +5899,8 @@ namespace NonLinearPoroViscoElasticity
                             += (sigma*basis_vectors[k])*basis_vectors[k];
                           cauchy_stresses_E_vertex_mpi[k](local_vertex_indices)
                             += (sigma_E*basis_vectors[k])*basis_vectors[k];
+                          cauchy_stresses_E_ext_func_vertex_mpi[k](local_vertex_indices)
+                            += (sigma_E_ext_func*basis_vectors[k])*basis_vectors[k];
                           stretches_vertex_mpi[k](local_vertex_indices)
                             += std::sqrt(1.0+2.0*Tensor<0,dim,double>(E_strain[k][k]));
 
@@ -5875,16 +5921,23 @@ namespace NonLinearPoroViscoElasticity
                       cauchy_stresses_total_vertex_mpi[3](local_vertex_indices)
                         += (sigma*basis_vectors[0])*basis_vectors[1]; //sig_xy
                       cauchy_stresses_total_vertex_mpi[4](local_vertex_indices)
-                        += (sigma*basis_vectors[0])*basis_vectors[2];//sig_xz
+                        += (sigma*basis_vectors[0])*basis_vectors[2]; //sig_xz
                       cauchy_stresses_total_vertex_mpi[5](local_vertex_indices)
                         += (sigma*basis_vectors[1])*basis_vectors[2]; //sig_yz
 
                       cauchy_stresses_E_vertex_mpi[3](local_vertex_indices)
                         += (sigma_E*basis_vectors[0])*basis_vectors[1]; //sig_xy
                       cauchy_stresses_E_vertex_mpi[4](local_vertex_indices)
-                        += (sigma_E*basis_vectors[0])*basis_vectors[2];//sig_xz
+                        += (sigma_E*basis_vectors[0])*basis_vectors[2]; //sig_xz
                       cauchy_stresses_E_vertex_mpi[5](local_vertex_indices)
                         += (sigma_E*basis_vectors[1])*basis_vectors[2]; //sig_yz
+
+                      cauchy_stresses_E_ext_func_vertex_mpi[3](local_vertex_indices)
+                        += (sigma_E_ext_func*basis_vectors[0])*basis_vectors[1]; //sig_xy
+                      cauchy_stresses_E_ext_func_vertex_mpi[4](local_vertex_indices)
+                        += (sigma_E_ext_func*basis_vectors[0])*basis_vectors[2]; //sig_xz
+                      cauchy_stresses_E_ext_func_vertex_mpi[5](local_vertex_indices)
+                        += (sigma_E_ext_func*basis_vectors[1])*basis_vectors[2]; //sig_yz
                     }
               }
               //---------------------------------------------------------------
@@ -5919,6 +5972,9 @@ namespace NonLinearPoroViscoElasticity
               sum_cauchy_stresses_E_vertex[k][d] =
                   Utilities::MPI::sum(cauchy_stresses_E_vertex_mpi[k][d],
                                       mpi_communicator);
+              sum_cauchy_stresses_E_ext_func_vertex[k][d] =
+                  Utilities::MPI::sum(cauchy_stresses_E_ext_func_vertex_mpi[k][d],
+                                      mpi_communicator);
             }
             for (unsigned int k=0; k<dim; ++k)
             {
@@ -5946,6 +6002,7 @@ namespace NonLinearPoroViscoElasticity
               {
                   sum_cauchy_stresses_total_vertex[i][d] /= sum_counter_on_vertices[d];
                   sum_cauchy_stresses_E_vertex[i][d] /= sum_counter_on_vertices[d];
+                  sum_cauchy_stresses_E_ext_func_vertex[i][d] /= sum_counter_on_vertices[d];
               }
               for (unsigned int i=0; i<dim; ++i)
               {
@@ -6012,6 +6069,13 @@ namespace NonLinearPoroViscoElasticity
           data_out.add_data_vector(cauchy_stresses_E_elements[4], "cauchy_E_xz");
           data_out.add_data_vector(cauchy_stresses_E_elements[5], "cauchy_E_yz");
 
+          data_out.add_data_vector(cauchy_stresses_E_ext_func_elements[0], "cauchy_E_ext_func_xx");
+          data_out.add_data_vector(cauchy_stresses_E_ext_func_elements[1], "cauchy_E_ext_func_yy");
+          data_out.add_data_vector(cauchy_stresses_E_ext_func_elements[2], "cauchy_E_ext_func_zz");
+          data_out.add_data_vector(cauchy_stresses_E_ext_func_elements[3], "cauchy_E_ext_func_xy");
+          data_out.add_data_vector(cauchy_stresses_E_ext_func_elements[4], "cauchy_E_ext_func_xz");
+          data_out.add_data_vector(cauchy_stresses_E_ext_func_elements[5], "cauchy_E_ext_func_yz");
+
           data_out.add_data_vector(stretches_elements[0], "stretch_xx");
           data_out.add_data_vector(stretches_elements[1], "stretch_yy");
           data_out.add_data_vector(stretches_elements[2], "stretch_zz");
@@ -6063,6 +6127,25 @@ namespace NonLinearPoroViscoElasticity
           data_out.add_data_vector(vertex_handler_ref,
                                    sum_cauchy_stresses_E_vertex[5],
                                    "cauchy_E_yz");
+
+          data_out.add_data_vector(vertex_handler_ref,
+        		  	  	  	  	   sum_cauchy_stresses_E_ext_func_vertex[0],
+								   "cauchy_E_ext_func_xx");
+          data_out.add_data_vector(vertex_handler_ref,
+        		  	  	  	  	   sum_cauchy_stresses_E_ext_func_vertex[1],
+								   "cauchy_E_ext_func_yy");
+          data_out.add_data_vector(vertex_handler_ref,
+        		  	  	  	  	   sum_cauchy_stresses_E_ext_func_vertex[2],
+								   "cauchy_E_ext_func_zz");
+          data_out.add_data_vector(vertex_handler_ref,
+        		  	  	  	  	   sum_cauchy_stresses_E_ext_func_vertex[3],
+								   "cauchy_E_ext_func_xy");
+          data_out.add_data_vector(vertex_handler_ref,
+        		  	  	  	  	   sum_cauchy_stresses_E_ext_func_vertex[4],
+								   "cauchy_E_ext_func_xz");
+          data_out.add_data_vector(vertex_handler_ref,
+        		  	  	  	  	   sum_cauchy_stresses_E_ext_func_vertex[5],
+								   "cauchy_E_ext_func_yz");
 
           data_out.add_data_vector(vertex_handler_ref,
                                    sum_stretches_vertex[0],
@@ -6452,6 +6535,8 @@ namespace NonLinearPoroViscoElasticity
         double total_vol_reference = 0.0;
         std::vector<Point<dim+1>> solution_vertices(tracked_vertices_IN.size());
         double reaction_torque = 0.0;
+        double det_F_min = 1.0;
+        double seepage_vec_mean = 0.0;
 
         //Auxiliar variables needed for mpi processing
         Tensor<1,dim> sum_reaction_mpi;
@@ -6471,6 +6556,10 @@ namespace NonLinearPoroViscoElasticity
         double sum_vol_current_mpi = 0.0;
         double sum_vol_reference_mpi = 0.0;
         double sum_torque_mpi = 0.0;
+        double det_F_min_mpi = 1.0;
+        std::vector<double> det_F_mpi;
+        std::vector<double> seepage_vec_mpi;
+        double seepage_vec_mean_mpi = 0.0;
 
         //Declare an instance of the material class object
         if (parameters.mat_type == "Neo-Hooke")
@@ -6487,7 +6576,7 @@ namespace NonLinearPoroViscoElasticity
         //Define a local instance of FEValues to compute updated values required
         //to calculate stresses
         const UpdateFlags uf_cell(update_values | update_gradients |
-                                  update_JxW_values);
+                                  update_JxW_values | update_quadrature_points);
         FEValues<dim> fe_values_ref (fe, qf_cell, uf_cell);
 
         //Iterate through elements (cells) and Gauss Points
@@ -6523,6 +6612,7 @@ namespace NonLinearPoroViscoElasticity
                   F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u[q_point]);
                 ADNumberType det_F_AD = determinant(F_AD);
                 const double det_F = Tensor<0,dim,double>(det_F_AD);
+                det_F_mpi.push_back (det_F);
 
                 const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>>
                     lqph = quadrature_point_history.get_data(cell);
@@ -6542,6 +6632,19 @@ namespace NonLinearPoroViscoElasticity
                   grad_p_fluid_AD =  solution_grads_p_fluid_AD[q_point]*F_inv;
                 const Tensor<1,dim,ADNumberType> seepage_vel_AD
                 = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p_fluid_AD);
+
+                Tensor<1,dim> seepage;
+                for (unsigned int i=0; i<dim; ++i)
+                	seepage[i] = Tensor<0,dim,double>(seepage_vel_AD[i]);
+
+                //if (seepage[2]>0)
+                //	std::cout << seepage[2] << " cell loop" << std::endl;
+
+                //const Point<dim> gauss_coord = fe_values_ref.quadrature_point(q_point);
+                //if (gauss_coord[2] < 0.1) {
+                //	seepage_vec_mpi.push_back (seepage[2]);
+                	//std::cout << seepage[2] << std::endl;
+                //}
 
                 //Dissipations
                 const double porous_dissipation =
@@ -6671,6 +6774,8 @@ namespace NonLinearPoroViscoElasticity
                     }//end gauss points on faces loop
                 }
 
+
+
                 //Fluid flow
                 if (cell->face(face)->at_boundary() == true &&
                    (cell->face(face)->boundary_id() ==
@@ -6695,8 +6800,7 @@ namespace NonLinearPoroViscoElasticity
                     //start gauss points on faces loop
                     for (unsigned int f_q_point=0; f_q_point<n_q_points_f; ++f_q_point)
                     {
-                        const Tensor<1,dim> &N =
-                                  fe_face_values_ref.normal_vector(f_q_point);
+                        const Tensor<1,dim> &N = fe_face_values_ref.normal_vector(f_q_point);
                         const double JxW_f = fe_face_values_ref.JxW(f_q_point);
 
                         //Deformation gradient and inverse from displacements gradient
@@ -6723,6 +6827,9 @@ namespace NonLinearPoroViscoElasticity
                         for (unsigned int i=0; i<dim; ++i)
                             seepage[i] = Tensor<0,dim,double>(seepage_AD[i]);
 
+                        //sum_total_flow_mpi += seepage * N * JxW_f;
+                        //if (seepage[2]>0)
+                        //	std::cout << seepage[2] << " face loop" << std::endl;
                         //sum_total_flow_mpi += (seepage/det_F) * N * JxW_f;
                         const Tensor<1,dim> temp1 = contract<0,0>(seepage,F_inv_AD_trans);
                         sum_total_flow_mpi += temp1 * N * JxW_f; //added-1.10.21
@@ -6751,6 +6858,16 @@ namespace NonLinearPoroViscoElasticity
         total_vol_current = Utilities::MPI::sum(sum_vol_current_mpi, mpi_communicator);
         total_vol_reference = Utilities::MPI::sum(sum_vol_reference_mpi, mpi_communicator);
         reaction_torque = Utilities::MPI::sum(sum_torque_mpi, mpi_communicator);
+
+        det_F_min_mpi = *std::min_element(det_F_mpi.begin(),det_F_mpi.end());
+        det_F_min = Utilities::MPI::min(det_F_min_mpi, mpi_communicator);
+
+        //if (seepage_vec_mpi.size()>1) {
+        //	seepage_vec_mean_mpi = std::accumulate(seepage_vec_mpi.begin(), seepage_vec_mpi.end(), 0.0) / seepage_vec_mpi.size();
+        //	std::cout << seepage_vec_mean_mpi << std::endl;
+        //	seepage_vec_mean = seepage_vec_mean_mpi;
+        //}
+       // seepage_vec_mean = Utilities::MPI::sum(seepage_vec_mean_mpi, mpi_communicator) / 6;
 
       //  Extract solution for tracked vectors
       // Copying an MPI::BlockVector into MPI::Vector is not possible,
@@ -6854,6 +6971,8 @@ namespace NonLinearPoroViscoElasticity
 
                 for (unsigned int d=0; d<(2*dim); ++d)
                 	plotpointfile << std::setw(15) << 0.0 << ",";
+
+                plotpointfile << std::setw(15) << 1.0 << ",";
             }
             else
             {
@@ -6876,6 +6995,7 @@ namespace NonLinearPoroViscoElasticity
                     plotpointfile << std::setw(15) << reaction_force_extra[d] << ",";
 
                 plotpointfile << std::setw(15) << total_fluid_flow << ","
+                			  //<< std::setw(15) << seepage_vec_mean << ","
                               << std::setw(15) << total_porous_dissipation << ","
                               << std::setw(15) << total_viscous_dissipation << ","
 							  << std::setw(15) << reaction_torque << ",";
@@ -6884,6 +7004,8 @@ namespace NonLinearPoroViscoElasticity
                 	plotpointfile << std::setw(15) << reaction_force_extra_base[d] << ",";
                 for (unsigned int d=0; d<dim; ++d)
                 	plotpointfile << std::setw(15) << reaction_force_extra_ext_func[d] << ",";
+
+                plotpointfile << std::setw(15) << det_F_min << ",";
             }
             plotpointfile << std::endl;
         }
@@ -6929,7 +7051,7 @@ namespace NonLinearPoroViscoElasticity
 					  << std::endl
 					  << "#";
 
-		unsigned int columns = 31;
+		unsigned int columns = 32;
 		for (unsigned int d=1; d<columns; ++d)
 			plotpointfile << std::setw(15)<< d <<",";
 
@@ -6965,6 +7087,7 @@ namespace NonLinearPoroViscoElasticity
 		for (unsigned int d=0; d<dim; ++d)
 			plotpointfile << std::right << std::setw(13) << "ext_func(E) [" << d << "],";
 
+		plotpointfile << std::right<< std::setw(16)<< "det_F_min,";
 		plotpointfile << std::endl;
     }
 
@@ -7069,7 +7192,7 @@ namespace NonLinearPoroViscoElasticity
             tracked_vertices[1][2] = -0.5*this->parameters.scale;
           }
 
-          virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+          virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
             if (this->time->get_timestep() < 2)
             {
@@ -7127,7 +7250,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction, double det_F_min) const
+                             const int                  &direction) const
           {
               std::vector<double> displ_incr(dim, 0.0);
               (void)boundary_id;
@@ -7262,7 +7385,7 @@ namespace NonLinearPoroViscoElasticity
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
             if (this->time->get_timestep() < 2)
             {
@@ -7355,7 +7478,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction, double det_F_min) const
+                             const int                  &direction) const
           {
               std::vector<double> displ_incr(dim, 0.0);
               (void)boundary_id;
@@ -7438,7 +7561,7 @@ namespace NonLinearPoroViscoElasticity
             tracked_vertices[1][2] = 0.0*this->parameters.scale;
           }
 
-          virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+          virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
             if (this->time->get_timestep() < 2)
             {
@@ -7515,7 +7638,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction, double det_F_min) const
+                             const int                  &direction) const
           {
               std::vector<double> displ_incr(dim, 0.0);
               (void)boundary_id;
@@ -7643,7 +7766,7 @@ namespace NonLinearPoroViscoElasticity
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
               if (this->time->get_timestep() < 2)
               {
@@ -7684,7 +7807,7 @@ namespace NonLinearPoroViscoElasticity
 
             if (this->parameters.load_type == "displacement")
             {
-                const std::vector<double> value = get_dirichlet_load(5,2,det_F_min);
+                const std::vector<double> value = get_dirichlet_load(5,2);
                 FEValuesExtractors::Scalar direction;
                 direction = this->z_displacement;
 
@@ -7727,7 +7850,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction, double det_F_min) const
+                             const int                  &direction) const
           {
                 std::vector<double> displ_incr(dim,0.0);
 
@@ -7799,7 +7922,7 @@ namespace NonLinearPoroViscoElasticity
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
               if (this->time->get_timestep() < 2)
               {
@@ -7829,7 +7952,7 @@ namespace NonLinearPoroViscoElasticity
 
             if (this->parameters.load_type == "displacement")
             {
-                const std::vector<double> value = get_dirichlet_load(5,2,det_F_min);
+                const std::vector<double> value = get_dirichlet_load(5,2);
                 FEValuesExtractors::Scalar direction;
                 direction = this->z_displacement;
 
@@ -7879,7 +8002,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction, double det_F_min) const
+                             const int                  &direction) const
           {
                 std::vector<double> displ_incr(dim,0.0);
 
@@ -7949,7 +8072,7 @@ namespace NonLinearPoroViscoElasticity
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
               if (this->time->get_timestep() < 2)
               {
@@ -7979,7 +8102,7 @@ namespace NonLinearPoroViscoElasticity
 
             if (this->parameters.load_type == "displacement")
             {
-                const std::vector<double> value = get_dirichlet_load(4,0,det_F_min);
+                const std::vector<double> value = get_dirichlet_load(4,0);
                 FEValuesExtractors::Scalar direction;
                 direction = this->x_displacement;
 
@@ -8032,7 +8155,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction, double det_F_min) const
+                             const int                  &direction) const
           {
                 std::vector<double> displ_incr (dim, 0.0);
 
@@ -8087,7 +8210,7 @@ namespace NonLinearPoroViscoElasticity
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
               if (this->time->get_timestep() < 2)
               {
@@ -8134,7 +8257,7 @@ namespace NonLinearPoroViscoElasticity
                                                          this->fe.component_mask(this->z_displacement) ));
             if (this->parameters.load_type == "displacement")
             {
-                const std::vector<double> value = get_dirichlet_load(5,2,det_F_min);
+                const std::vector<double> value = get_dirichlet_load(5,2);
                 FEValuesExtractors::Scalar direction;
                 direction = this->z_displacement;
 
@@ -8178,7 +8301,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction, double det_F_min) const
+                             const int                  &direction) const
           {
                 std::vector<double> displ_incr(dim,0.0);
                 const double current_time = this->time->get_current();
@@ -8374,7 +8497,7 @@ namespace NonLinearPoroViscoElasticity
 
         private:
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
             if (this->time->get_timestep() < 2)
             {
@@ -8403,7 +8526,7 @@ namespace NonLinearPoroViscoElasticity
 
              if (this->parameters.load_type == "displacement")
              {
-                const std::vector<double> value = get_dirichlet_load(2,-1,det_F_min);
+                const std::vector<double> value = get_dirichlet_load(2,-1);
                 VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                           2,
                                                           get_dirichlet_bc_LTMShear<dim>(value[0],value[1],value[2]),
@@ -8417,7 +8540,7 @@ namespace NonLinearPoroViscoElasticity
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction, double det_F_min) const
+                             const int                  &direction) const
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -8461,7 +8584,7 @@ namespace NonLinearPoroViscoElasticity
           	virtual ~BrainRheometerLTMShearRelaxationLateralDrained () {}
 
         private:
-          	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+          	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
           	{
           		if (this->time->get_timestep() < 2) {
           			VectorTools::interpolate_boundary_values(
@@ -8487,7 +8610,7 @@ namespace NonLinearPoroViscoElasticity
                         (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
           		if (this->parameters.load_type == "displacement") {
-          			const std::vector<double> value = get_dirichlet_load(2,-1,det_F_min);
+          			const std::vector<double> value = get_dirichlet_load(2,-1);
           			VectorTools::interpolate_boundary_values(
           					this->dof_handler_ref,
                             2,
@@ -8498,7 +8621,7 @@ namespace NonLinearPoroViscoElasticity
           	}
 
 
-          	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+          	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
         	{
           		std::vector<double> displ_incr (dim,0.0);
 
@@ -8544,7 +8667,7 @@ namespace NonLinearPoroViscoElasticity
     		virtual ~BrainRheometerLTMCyclicTensionCompression () {}
 
         private:
-    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
     		{
     			// Cylinder hull is drained
     			if (this->time->get_timestep() < 2) {
@@ -8572,7 +8695,7 @@ namespace NonLinearPoroViscoElasticity
 
     			// Apply vertical displacement on cylinder top surface and fix in x- and y-direction to account for glue
     			if (this->parameters.load_type == "displacement") {
-    				const std::vector<double> value = get_dirichlet_load(2,2,det_F_min);
+    				const std::vector<double> value = get_dirichlet_load(2,2);
 
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
@@ -8589,7 +8712,7 @@ namespace NonLinearPoroViscoElasticity
     			}
     		}
 
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
         	{
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -8651,7 +8774,7 @@ namespace NonLinearPoroViscoElasticity
     	}
 
     private:
-    	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+    	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
     	{
     		// Cylinder hull is drained
     		if (this->time->get_timestep() < 2) {
@@ -8679,7 +8802,7 @@ namespace NonLinearPoroViscoElasticity
 
     		// Apply vertical displacement on cylinder top surface and fix in x- and y-direction to account for glue
     		if (this->parameters.load_type == "displacement") {
-    			const std::vector<double> value = get_dirichlet_load(2,2,det_F_min);
+    			const std::vector<double> value = get_dirichlet_load(2,2);
 
     			VectorTools::interpolate_boundary_values(
     					this->dof_handler_ref,
@@ -8696,7 +8819,7 @@ namespace NonLinearPoroViscoElasticity
     		}
     	}
 
-    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
         {
     		std::vector<double> displ_incr (dim,0.0);
 
@@ -8724,7 +8847,7 @@ namespace NonLinearPoroViscoElasticity
         		virtual ~BrainRheometerLTMCyclicTrapezoidalTensionCompression () {}
 
             private:
-        		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+        		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
         		{
         			// Cylinder hull is drained
         			if (this->time->get_timestep() < 2) {
@@ -8752,7 +8875,7 @@ namespace NonLinearPoroViscoElasticity
 
         			// Apply vertical displacement on cylinder top surface and fix in x- and y-direction to account for glue
         			if (this->parameters.load_type == "displacement") {
-        				const std::vector<double> value = get_dirichlet_load(2,2,det_F_min);
+        				const std::vector<double> value = get_dirichlet_load(2,2);
 
         				VectorTools::interpolate_boundary_values(
         						this->dof_handler_ref,
@@ -8769,7 +8892,7 @@ namespace NonLinearPoroViscoElasticity
         			}
         		}
 
-                virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+                virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
                 {
                       std::vector<double> displ_incr (dim,0.0);
 
@@ -8824,7 +8947,7 @@ namespace NonLinearPoroViscoElasticity
             virtual ~BrainRheometerLTMRelaxationTensionCompression () {}
 
         private:
-            virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+            virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
             {
             	// Cylinder hull is drained
             	if (this->parameters.lateral_drained == "drained") {
@@ -8874,7 +8997,7 @@ namespace NonLinearPoroViscoElasticity
 
             	// Apply vertical displacement on cylinder top surface and fix in x- and y-direction to account for glue
             	if (this->parameters.load_type == "displacement") {
-            		const std::vector<double> value = get_dirichlet_load(2,2,det_F_min);
+            		const std::vector<double> value = get_dirichlet_load(2,2);
 
             		VectorTools::interpolate_boundary_values(
             				this->dof_handler_ref,
@@ -8901,7 +9024,7 @@ namespace NonLinearPoroViscoElasticity
     			}
             }
 
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
 			{
     			std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
 
@@ -9030,7 +9153,7 @@ namespace NonLinearPoroViscoElasticity
             	tracked_vertices[1][2] = this->parameters.height/2*this->parameters.scale;
             }
 
-    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
     		{
     			// Cylinder hull is drained
     			if (this->parameters.lateral_drained == "drained") {
@@ -9112,7 +9235,7 @@ namespace NonLinearPoroViscoElasticity
 
     			// Apply vertical displacement on cylinder top surface and fix in x- and y-direction to account for glue
     			if (this->parameters.load_type == "displacement") {
-    				const std::vector<double> value = get_dirichlet_load(2,2,det_F_min);
+    				const std::vector<double> value = get_dirichlet_load(2,2);
 
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
@@ -9189,7 +9312,7 @@ namespace NonLinearPoroViscoElasticity
 		    }
 
     		// Define Dirichlet load, definition in derived classes
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const = 0;
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
     	};
 
 
@@ -9203,7 +9326,7 @@ namespace NonLinearPoroViscoElasticity
 
         private:
 
-          virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+          virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -9264,7 +9387,7 @@ namespace NonLinearPoroViscoElasticity
     	}
 
     private:
-    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
         {
     		std::vector<double> displ_incr (dim,0.0);
 
@@ -9290,7 +9413,7 @@ namespace NonLinearPoroViscoElasticity
 		virtual ~BrainRheometerLTMCyclicCompressionQuarter () {}
 
 	   private:
-		 virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+		 virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
 		 {
 			   std::vector<double> displ_incr (dim,0.0);
 
@@ -9331,7 +9454,7 @@ namespace NonLinearPoroViscoElasticity
 
   	   private:
 
-  		 virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+  		 virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
   		 {
   			   std::vector<double> displ_incr (dim,0.0);
 
@@ -9370,7 +9493,7 @@ namespace NonLinearPoroViscoElasticity
 
         private:
 
-          virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+          virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -9425,7 +9548,7 @@ namespace NonLinearPoroViscoElasticity
     		virtual ~BrainRheometerLTMRelaxationTensionCompressionQuarter () {}
 
         private:
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
 			{
     			/*FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
     			cell (IteratorFilters::LocallyOwnedCell(),
@@ -9456,7 +9579,7 @@ namespace NonLinearPoroViscoElasticity
     					const double final_displ = this->parameters.load;
     					const double final_load_time = this->parameters.end_load_time;
     					const double current_time = this->time->get_current();
-    					const double delta_time = this->time->get_delta_t(det_F_min);
+    					const double delta_time = this->time->get_delta_t();
 
     					double current_displ = 0.0;
     					double previous_displ = 0.0;
@@ -9471,8 +9594,8 @@ namespace NonLinearPoroViscoElasticity
     					} else
     						displ_incr[2] = 0.0;
 
-    					this->pcout << "d_c = " << current_displ << ", d_p = " << previous_displ << std::endl;
-    					this->pcout << "du = " << displ_incr[2] << ", dt = " << delta_time << ", v = " << displ_incr[2]/delta_time << std::endl;
+    					//this->pcout << "d_c = " << current_displ << ", d_p = " << previous_displ << std::endl;
+    					//this->pcout << "du = " << displ_incr[2] << ", dt = " << delta_time << ", v = " << displ_incr[2]/delta_time << std::endl;
     				}
     				//return displ_incr;
     			}
@@ -9670,7 +9793,7 @@ namespace NonLinearPoroViscoElasticity
           }
         
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints)
           {
             // Top (unloaded) surface is drained
             if (this->time->get_timestep() < 2)
@@ -9714,7 +9837,7 @@ namespace NonLinearPoroViscoElasticity
              {
                 if (this->time->get_current()<=this->parameters.end_load_time)
                 {
-                    const std::vector<double> value = get_dirichlet_load(5,-1,det_F_min);
+                    const std::vector<double> value = get_dirichlet_load(5,-1);
                     VectorTools::interpolate_boundary_values(
                              this->dof_handler_ref,
                              5,
@@ -9773,7 +9896,7 @@ namespace NonLinearPoroViscoElasticity
         
         virtual std::vector<double>
         get_dirichlet_load(const types::boundary_id   &boundary_id,
-                           const int                  &direction, double det_F_min) const = 0;
+                           const int                  &direction) const = 0;
     };
 
     //@sect4{Derived class: One cycle of load and unload}
@@ -9791,7 +9914,7 @@ namespace NonLinearPoroViscoElasticity
         private:
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction, double det_F_min) const
+                             const int                  &direction) const
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -9837,7 +9960,7 @@ namespace NonLinearPoroViscoElasticity
         private:
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction, double det_F_min) const
+                             const int                  &direction) const
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -10050,7 +10173,7 @@ namespace NonLinearPoroViscoElasticity
     		}
 
     		// Apply Dirichlet constraints
-    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
     		{
     			// Top (unloaded) surface is drained
     			if (this->time->get_timestep() < 2) {
@@ -10105,7 +10228,7 @@ namespace NonLinearPoroViscoElasticity
 
     			// Apply displacement to loaded top surface
     			if (this->parameters.load_type == "displacement") {
-    				const std::vector<double> value = get_dirichlet_load(100,2,det_F_min);
+    				const std::vector<double> value = get_dirichlet_load(100,2);
 
     			    VectorTools::interpolate_boundary_values(
     			    		this->dof_handler_ref,
@@ -10146,7 +10269,7 @@ namespace NonLinearPoroViscoElasticity
 			}
 
     		// Define Dirichlet load, definition in derived classes
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const = 0;
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
     };
 
     // Derived class to apply a ramp load and maintain
@@ -10157,7 +10280,7 @@ namespace NonLinearPoroViscoElasticity
     		virtual ~BrainNanoFlatPunchRampLoad () {}
 
 		private:
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
 			{
     			std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
 
@@ -10339,7 +10462,7 @@ namespace NonLinearPoroViscoElasticity
             	tracked_vertices[1][2] = 0.0*this->parameters.scale;
             }
 
-    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
     		{
     			// Cylinder hull is drained
     			if (this->parameters.lateral_drained == "drained") {
@@ -10423,7 +10546,7 @@ namespace NonLinearPoroViscoElasticity
 							constraints,
 							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));*/
 
-    				const std::vector<double> value2 = get_dirichlet_load(101,2,det_F_min);
+    				const std::vector<double> value2 = get_dirichlet_load(101,2);
 
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
@@ -10499,7 +10622,7 @@ namespace NonLinearPoroViscoElasticity
 		    }
 
     		// Define Dirichlet load, definition in derived classes
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const = 0;
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
     };
 
 
@@ -10512,7 +10635,7 @@ namespace NonLinearPoroViscoElasticity
     		virtual ~HydroNanoGrazRelaxationCompressionQuarter () {}
 
         private:
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
 			{
     			if (this->parameters.load_type == "displacement") {
     				std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
@@ -10590,7 +10713,7 @@ namespace NonLinearPoroViscoElasticity
     	}
 
     private:
-    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
 		{
     		std::vector<double> displ_incr (dim,0.0);
 
@@ -10858,7 +10981,7 @@ namespace NonLinearPoroViscoElasticity
 				tracked_vertices[1][2] = 0.0*this->parameters.scale;
 			}
 
-			virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints, double det_F_min)
+			virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
 			{
 				if (true) {// Update boundary conditions
 				// loaded surface cell counter
@@ -10991,7 +11114,7 @@ namespace NonLinearPoroViscoElasticity
 										}
 
 										//const double obstacle_value = obstacle->value(this_support_point, 2);  // TODO
-										std::vector<double> obstacle_value = get_dirichlet_load(100,2,det_F_min);
+										std::vector<double> obstacle_value = get_dirichlet_load(100,2);
 										solution_here[2] = this->solution_n(index_z);  // TODO Block vector???
 										this_support_point = this_support_point + solution_here;
 										//this->pcout << "x = " << this_support_point[0] << ", y = " << this_support_point[1] << ", z = " << this_support_point[2] << std::endl;
@@ -11233,7 +11356,7 @@ namespace NonLinearPoroViscoElasticity
 				  return std::make_pair(1,2);
 			}
 
-			virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const = 0;
+			virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
 	};
 
 
@@ -11248,7 +11371,7 @@ namespace NonLinearPoroViscoElasticity
 
         private:
 			virtual std::vector<double>
-			get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction, double det_F_min) const
+			get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
 			{
                 std::vector<double> displ_incr (dim+1,0.0);
 
