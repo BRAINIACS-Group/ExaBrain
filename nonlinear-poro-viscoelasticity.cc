@@ -2378,9 +2378,11 @@ namespace NonLinearPoroViscoElasticity
         	  if (time_end_load > 0) {
         		  if (time_current < delta_t)
         		      dt = delta_t - time_current;
-        		  else if (det_F_min > 0.03)
+        		  else if (det_F_min > 0.05)
         			  dt = 0.5*dt;
-        		  else if (det_F_min < 0.005)
+        		  else if (time_current+dt > time_end)// && time_end-time_current > 1e-3)
+        			  dt = time_end-time_current;//-1e-4;
+        		  else if (det_F_min < 0.005 && dt < time_end/20)
         			  dt = 2*dt;
         	  }
 
@@ -4034,6 +4036,7 @@ namespace NonLinearPoroViscoElasticity
             // Store the converged values of the internal variables at the end of each timestep
             //void update_end_timestep();
             double update_end_timestep();
+            double jacobian_on_faces(TrilinosWrappers::MPI::BlockVector solution);
 
             //Post-processing and writing data to files
             void output_results_to_vtu(const unsigned int timestep,
@@ -4344,6 +4347,9 @@ namespace NonLinearPoroViscoElasticity
 
           double det_F_min = 1.0;
           double det_F_min_mpi = 1.0;
+          double det_F_change = 1.0;
+          double det_F_change_mpi = 1.0;
+
           while ( (time->get_end() - time->get_current()) > -1.0*parameters.tol_u )
             {
               //Initialize the current solution increment to zero
@@ -4357,10 +4363,13 @@ namespace NonLinearPoroViscoElasticity
               //Add the computed solution increment to total solution
               solution_n += solution_delta;
 
+
+              det_F_change_mpi = jacobian_on_faces(solution_n);
+              det_F_change = Utilities::MPI::max(det_F_change_mpi, mpi_communicator);
               //Store the converged values of the internal variables
               det_F_min_mpi = update_end_timestep();
-              //det_F_min = Utilities::MPI::min(det_F_min_mpi, mpi_communicator);
               det_F_min = Utilities::MPI::max(det_F_min_mpi, mpi_communicator);
+              det_F_min = std::max(det_F_change, det_F_min);
 
               //Output results
               if ( (time->get_timestep()%parameters.timestep_output) == 0 )
@@ -5445,38 +5454,88 @@ namespace NonLinearPoroViscoElasticity
     //template <int dim> void Solid<dim>::update_end_timestep()
 	template <int dim> double Solid<dim>::update_end_timestep()
     {
-          FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+        FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
           cell (IteratorFilters::LocallyOwnedCell(),
                 dof_handler_ref.begin_active()),
           endc (IteratorFilters::LocallyOwnedCell(),
                 dof_handler_ref.end());
 
-          std::vector<double> det_F;
-          std::vector<double> det_F_old;
-          double det_F_min;
-          double det_F_min_old;
-          double det_F_change;
+        std::vector<double> det_F;
+        std::vector<double> det_F_old;
+        double det_F_min;
+        double det_F_min_old;
+        double det_F_change;
 
-          for (; cell!=endc; ++cell)
-          {
-        	  Assert(cell->is_locally_owned(), ExcInternalError());
-        	  Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
+        for (; cell!=endc; ++cell) {
+        	Assert(cell->is_locally_owned(), ExcInternalError());
+        	Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
 
-        	  const std::vector<std::shared_ptr<PointHistory<dim, ADNumberType> > >
-        	  	  lqph = quadrature_point_history.get_data(cell);
-        	  Assert(lqph.size() == n_q_points, ExcInternalError());
-        	  for (unsigned int q_point = 0; q_point < n_q_points; ++q_point){
-        		  det_F_old.push_back (lqph[q_point]->get_converged_det_F());
-        		  lqph[q_point]->update_end_timestep();
-        		  det_F.push_back (lqph[q_point]->get_converged_det_F());
-        	  }
-          }
-          det_F_min_old = *std::min_element(det_F_old.begin(),det_F_old.end());
-          det_F_min = *std::min_element(det_F.begin(),det_F.end());
-          return det_F_change = (det_F_min_old-det_F_min)/(det_F_min_old-parameters.solid_vol_frac);
-
-          //return det_F_min = *std::min_element(det_F.begin(),det_F.end());
+        	const std::vector<std::shared_ptr<PointHistory<dim, ADNumberType> > >
+        	 	lqph = quadrature_point_history.get_data(cell);
+        	Assert(lqph.size() == n_q_points, ExcInternalError());
+        	for (unsigned int q_point = 0; q_point < n_q_points; ++q_point){
+        		det_F_old.push_back (lqph[q_point]->get_converged_det_F());
+        		lqph[q_point]->update_end_timestep();
+        		det_F.push_back (lqph[q_point]->get_converged_det_F());
+        	}
+        }
+        det_F_min_old = *std::min_element(det_F_old.begin(),det_F_old.end());
+        det_F_min = *std::min_element(det_F.begin(),det_F.end());
+        return det_F_change = (det_F_min_old-det_F_min)/(det_F_min_old-parameters.solid_vol_frac);
     }
+
+	//Compute the change of the Jacobian on the faces to adjust the timestep
+	template <int dim> double Solid<dim>::jacobian_on_faces(TrilinosWrappers::MPI::BlockVector solution_IN)
+	{
+		TrilinosWrappers::MPI::BlockVector solution_total(locally_owned_partitioning,
+														  locally_relevant_partitioning,
+														  mpi_communicator,
+														  false);
+		solution_total = solution_IN;
+
+		FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+		  cell (IteratorFilters::LocallyOwnedCell(),
+				dof_handler_ref.begin_active()),
+		  endc (IteratorFilters::LocallyOwnedCell(),
+				dof_handler_ref.end());
+
+		std::vector<double> det_F;
+		double det_F_min;
+		static double det_F_min_old = 1;
+		double det_F_change;
+
+		for (; cell!=endc; ++cell) {
+		    Assert(cell->is_locally_owned(), ExcInternalError());
+			Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
+
+			const UpdateFlags uf_face( update_gradients );
+			FEFaceValues<dim> fe_face_values_ref(fe, qf_face, uf_face);
+
+			//start face loop
+			for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face) {
+			    //check if face is at the boundary
+				if (cell->face(face)->at_boundary() == true) {
+				    fe_face_values_ref.reinit(cell, face);
+
+					//Get displacement gradients for current face
+					std::vector<Tensor<2,dim> > solution_grads_u_f(n_q_points_f);
+					fe_face_values_ref[u_fe].get_function_gradients(solution_total, solution_grads_u_f);
+
+					//start Gauss points loop on faces
+					for (unsigned int f_q_point=0; f_q_point<n_q_points_f; ++f_q_point) {
+						//Compute deformation gradient from displacements gradient and its Jacobian
+						const Tensor<2,dim,ADNumberType> F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
+						ADNumberType det_F_AD = determinant(F_AD);
+						det_F.push_back(Tensor<0,dim,double>(det_F_AD));
+					}
+			    }
+			}
+		}
+		det_F_min = *std::min_element(det_F.begin(),det_F.end());
+		det_F_change = (det_F_min_old-det_F_min)/(det_F_min_old-parameters.solid_vol_frac);
+		det_F_min_old = det_F_min;
+		return det_F_change;
+	}
 
 
      //Solve the linearized equations
@@ -6637,6 +6696,33 @@ namespace NonLinearPoroViscoElasticity
                 for (unsigned int i=0; i<dim; ++i)
                 	seepage[i] = Tensor<0,dim,double>(seepage_vel_AD[i]);
 
+                /*test
+                SymmetricTensor<2,dim> sigma_E_ext_func;
+                const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[q_point]->get_Cauchy_E_ext_func(F_AD);
+
+                double det_F_converged = lqph[q_point]->get_converged_det_F();
+
+                for (unsigned int i=0; i<dim; ++i)
+                	for (unsigned int j=0; j<dim; ++j) {
+                		sigma_E_ext_func[i][j] = Tensor<0,dim,double>(sigma_E_ext_func_AD[i][j]);
+                	}
+
+                const Point<dim> gauss_coord2 = fe_values_ref.quadrature_point(q_point);
+                std::ofstream sigma_ext_func_2;
+                sigma_ext_func_2.open("sigma_ext_func_2", std::ofstream::app);
+                sigma_ext_func_2 << std::setprecision(6) << std::scientific;
+                sigma_ext_func_2 << std::setw(16) << this->time->get_current() << ","
+                		<< std::setw(16) << gauss_coord2[0] << ","
+						<< std::setw(16) << gauss_coord2[1] << ","
+						<< std::setw(16) << gauss_coord2[2] << ","
+						<< std::setw(16) << JxW << ","
+						<< std::setw(16) << det_F << ","
+						<< std::setw(16) << det_F_converged << ","
+						<< std::setw(16) << sigma_E_ext_func[0][0] << ","
+						<< std::setw(16) << sigma_E_ext_func[1][1] << ","
+						<< std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
+                sigma_ext_func_2.close();
+
                 //if (seepage[2]>0)
                 //	std::cout << seepage[2] << " cell loop" << std::endl;
 
@@ -6644,7 +6730,7 @@ namespace NonLinearPoroViscoElasticity
                 //if (gauss_coord[2] < 0.1) {
                 //	seepage_vec_mpi.push_back (seepage[2]);
                 	//std::cout << seepage[2] << std::endl;
-                //}
+                //}*/
 
                 //Dissipations
                 const double porous_dissipation =
@@ -6696,6 +6782,8 @@ namespace NonLinearPoroViscoElasticity
                         //(present configuration)
                         const Tensor<2,dim,ADNumberType> F_AD =
                           Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
+                        ADNumberType det_F_AD = determinant(F_AD);
+                        double det_F = Tensor<0,dim,double>(det_F_AD);
 
                         const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>>
                             lqph = quadrature_point_history.get_data(cell);
@@ -6712,6 +6800,8 @@ namespace NonLinearPoroViscoElasticity
                         const SymmetricTensor<2,dim,ADNumberType> sigma_E_base_AD = lqph[f_q_point]->get_Cauchy_E_base(F_AD);
                         const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[f_q_point]->get_Cauchy_E_ext_func(F_AD);
 
+                        double det_F_converged = lqph[f_q_point]->get_converged_det_F();
+
                         for (unsigned int i=0; i<dim; ++i)
                             for (unsigned int j=0; j<dim; ++j) {
                                sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
@@ -6727,6 +6817,23 @@ namespace NonLinearPoroViscoElasticity
                         sum_reaction_extra_mpi += sigma_E * N * JxW_f;
                         sum_reaction_extra_base_mpi += sigma_E_base * N * JxW_f;
                         sum_reaction_extra_ext_func_mpi += sigma_E_ext_func * N * JxW_f;
+
+
+                        /*const Point<dim> gauss_coord2 = fe_face_values_ref.quadrature_point(f_q_point);
+                        std::ofstream sigma_ext_func;
+                        sigma_ext_func.open("sigma_ext_func", std::ofstream::app);
+                        sigma_ext_func << std::setprecision(6) << std::scientific;
+                        sigma_ext_func << std::setw(16) << this->time->get_current() << ","
+                        		<< std::setw(16) << gauss_coord2[0] << ","
+								<< std::setw(16) << gauss_coord2[1] << ","
+								<< std::setw(16) << gauss_coord2[2] << ","
+								<< std::setw(16) << JxW_f << ","
+								<< std::setw(16) << det_F << ","
+								<< std::setw(16) << det_F_converged << ","
+                        		<< std::setw(16) << sigma_E_ext_func[0][0] << ","
+                        		<< std::setw(16) << sigma_E_ext_func[1][1] << ","
+								<< std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
+                        sigma_ext_func.close();*/
 
                         //Transform components of Cauchy stresses into cylindrical coordinates for torque
                         //evaluation under torsional shear loading
@@ -6834,6 +6941,23 @@ namespace NonLinearPoroViscoElasticity
                         const Tensor<1,dim> temp1 = contract<0,0>(seepage,F_inv_AD_trans);
                         sum_total_flow_mpi += temp1 * N * JxW_f; //added-1.10.21
                     }//end gauss points on faces loop
+                }
+
+                // Minimal Jacobian
+                if (cell->face(face)->at_boundary() == true) {
+                	fe_face_values_ref.reinit(cell, face);
+
+                	//Get displacement gradients for current face
+                	std::vector<Tensor<2,dim> > solution_grads_u_f(n_q_points_f);
+                	fe_face_values_ref[u_fe].get_function_gradients(solution_total, solution_grads_u_f);
+
+                	//start Gauss points loop on faces
+                	for (unsigned int f_q_point=0; f_q_point<n_q_points_f; ++f_q_point) {
+                		//Compute deformation gradient from displacements gradient and its Jacobian
+                		const Tensor<2,dim,ADNumberType> F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
+                		ADNumberType det_F_AD = determinant(F_AD);
+                		det_F_mpi.push_back(Tensor<0,dim,double>(det_F_AD));
+                	}
                 }
             }//end face loop
         }//end cell loop
