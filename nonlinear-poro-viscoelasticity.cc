@@ -2380,6 +2380,8 @@ namespace NonLinearPoroViscoElasticity
         		      dt = delta_t - time_current;
         		  else if (det_F_min > 0.05)
         			  dt = 0.5*dt;
+        		  else if (std::abs(time_current-time_end) < 1e-3)
+        			  dt = delta_t;
         		  else if (time_current+dt > time_end)// && time_end-time_current > 1e-3)
         			  dt = time_end-time_current;//-1e-4;
         		  else if (det_F_min < 0.005 && dt < time_end/20)
