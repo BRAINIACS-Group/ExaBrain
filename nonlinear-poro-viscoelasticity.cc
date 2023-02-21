@@ -6702,7 +6702,7 @@ namespace NonLinearPoroViscoElasticity
                 for (unsigned int i=0; i<dim; ++i)
                 	seepage[i] = Tensor<0,dim,double>(seepage_vel_AD[i]);
 
-                //test
+                /*//test
                 SymmetricTensor<2,dim> sigma_E_ext_func;
                 const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[q_point]->get_Cauchy_E_ext_func(F_AD);
 
@@ -6825,7 +6825,7 @@ namespace NonLinearPoroViscoElasticity
                         sum_reaction_extra_ext_func_mpi += sigma_E_ext_func * N * JxW_f;
 
 
-                        const Point<dim> gauss_coord2 = fe_face_values_ref.quadrature_point(f_q_point);
+                        /*const Point<dim> gauss_coord2 = fe_face_values_ref.quadrature_point(f_q_point);
                         std::ofstream sigma_ext_func_reaction_force_boundary;
                         sigma_ext_func_reaction_force_boundary.open("sigma_ext_func_reaction_force_boundary", std::ofstream::app);
                         sigma_ext_func_reaction_force_boundary << std::setprecision(8) << std::scientific;
@@ -6839,7 +6839,7 @@ namespace NonLinearPoroViscoElasticity
                         		<< std::setw(16) << sigma_E_ext_func[0][0] << ","
                         		<< std::setw(16) << sigma_E_ext_func[1][1] << ","
 								<< std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
-                        sigma_ext_func_reaction_force_boundary.close();
+                        sigma_ext_func_reaction_force_boundary.close();*/
 
                         //Transform components of Cauchy stresses into cylindrical coordinates for torque
                         //evaluation under torsional shear loading
@@ -6965,7 +6965,7 @@ namespace NonLinearPoroViscoElasticity
                 		ADNumberType det_F_AD = determinant(F_AD);
                 		det_F_mpi.push_back(Tensor<0,dim,double>(det_F_AD));
 
-                		//test
+                		/*//test
                 		const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>>
                 		                            lqph = quadrature_point_history.get_data(cell);
                 		Assert(lqph.size() == n_q_points, ExcInternalError());
@@ -6996,7 +6996,7 @@ namespace NonLinearPoroViscoElasticity
         						<< std::setw(16) << sigma_E_ext_func[0][0] << ","
         						<< std::setw(16) << sigma_E_ext_func[1][1] << ","
         						<< std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
-                        sigma_ext_func_faces.close();
+                        sigma_ext_func_faces.close();*/
                 	}
                 }
             }//end face loop
