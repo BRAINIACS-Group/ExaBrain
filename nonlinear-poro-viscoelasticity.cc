@@ -4135,9 +4135,11 @@ namespace NonLinearPoroViscoElasticity
 
             //Declare an instance of dealii QGauss class (The Gauss-Legendre family of quadrature rules for numerical integration)
             //Gauss Points in element, with n quadrature points (in each space direction <dim> )
-            const QGauss<dim>                qf_cell;
+            //const QGauss<dim>                qf_cell;
+            const QGaussLobatto<dim>                qf_cell;
             //Gauss Points on element faces (used for definition of BCs)
-            const QGauss<dim - 1>            qf_face;
+            //const QGauss<dim - 1>            qf_face;
+            const QGaussLobatto<dim - 1>            qf_face;
             //Integer to store num GPs per element (this value will be used often)
             const unsigned int               n_q_points;
             //Integer to store num GPs per face (this value will be used often)
@@ -4474,8 +4476,10 @@ namespace NonLinearPoroViscoElasticity
         std::vector<std::vector<Tensor<1,dim, NumberType>>>          grad_Nx_p_fluid;
 
         ScratchData_ASM(const FiniteElement<dim> &fe_cell,
-                        const QGauss<dim> &qf_cell, const UpdateFlags uf_cell,
-                        const QGauss<dim - 1> & qf_face, const UpdateFlags uf_face,
+                        //const QGauss<dim> &qf_cell, const UpdateFlags uf_cell,
+                        //const QGauss<dim - 1> & qf_face, const UpdateFlags uf_face,
+						const QGaussLobatto<dim> &qf_cell, const UpdateFlags uf_cell,
+						const QGaussLobatto<dim - 1> & qf_face, const UpdateFlags uf_face,
                         const TrilinosWrappers::MPI::BlockVector &solution_total    )
           :
           solution_total (solution_total),
@@ -5118,7 +5122,7 @@ namespace NonLinearPoroViscoElasticity
                                   update_gradients |
                                   update_JxW_values);
         
-	const UpdateFlags uf_face(update_values |
+        const UpdateFlags uf_face(update_values |
                                   update_gradients |
                                   update_normal_vectors |
                                   update_quadrature_points |
@@ -5128,7 +5132,7 @@ namespace NonLinearPoroViscoElasticity
         //memory addresses of the assembly functions to the WorkStream object for processing
         PerTaskData_ASM per_task_data(dofs_per_cell);
         
-	ScratchData_ASM<ADNumberType> scratch_data(fe, qf_cell, uf_cell,
+        ScratchData_ASM<ADNumberType> scratch_data(fe, qf_cell, uf_cell,
                                                    qf_face, uf_face,
                                                    solution_total);
 	
@@ -6698,7 +6702,7 @@ namespace NonLinearPoroViscoElasticity
                 for (unsigned int i=0; i<dim; ++i)
                 	seepage[i] = Tensor<0,dim,double>(seepage_vel_AD[i]);
 
-                /*test
+                //test
                 SymmetricTensor<2,dim> sigma_E_ext_func;
                 const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[q_point]->get_Cauchy_E_ext_func(F_AD);
 
@@ -6710,10 +6714,10 @@ namespace NonLinearPoroViscoElasticity
                 	}
 
                 const Point<dim> gauss_coord2 = fe_values_ref.quadrature_point(q_point);
-                std::ofstream sigma_ext_func_2;
-                sigma_ext_func_2.open("sigma_ext_func_2", std::ofstream::app);
-                sigma_ext_func_2 << std::setprecision(6) << std::scientific;
-                sigma_ext_func_2 << std::setw(16) << this->time->get_current() << ","
+                std::ofstream sigma_ext_func_cells;
+                sigma_ext_func_cells.open("sigma_ext_func_cells", std::ofstream::app);
+                sigma_ext_func_cells << std::setprecision(8) << std::scientific;
+                sigma_ext_func_cells << std::setw(16) << this->time->get_current() << ","
                 		<< std::setw(16) << gauss_coord2[0] << ","
 						<< std::setw(16) << gauss_coord2[1] << ","
 						<< std::setw(16) << gauss_coord2[2] << ","
@@ -6723,7 +6727,7 @@ namespace NonLinearPoroViscoElasticity
 						<< std::setw(16) << sigma_E_ext_func[0][0] << ","
 						<< std::setw(16) << sigma_E_ext_func[1][1] << ","
 						<< std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
-                sigma_ext_func_2.close();
+                sigma_ext_func_cells.close();
 
                 //if (seepage[2]>0)
                 //	std::cout << seepage[2] << " cell loop" << std::endl;
@@ -6821,11 +6825,11 @@ namespace NonLinearPoroViscoElasticity
                         sum_reaction_extra_ext_func_mpi += sigma_E_ext_func * N * JxW_f;
 
 
-                        /*const Point<dim> gauss_coord2 = fe_face_values_ref.quadrature_point(f_q_point);
-                        std::ofstream sigma_ext_func;
-                        sigma_ext_func.open("sigma_ext_func", std::ofstream::app);
-                        sigma_ext_func << std::setprecision(6) << std::scientific;
-                        sigma_ext_func << std::setw(16) << this->time->get_current() << ","
+                        const Point<dim> gauss_coord2 = fe_face_values_ref.quadrature_point(f_q_point);
+                        std::ofstream sigma_ext_func_reaction_force_boundary;
+                        sigma_ext_func_reaction_force_boundary.open("sigma_ext_func_reaction_force_boundary", std::ofstream::app);
+                        sigma_ext_func_reaction_force_boundary << std::setprecision(8) << std::scientific;
+                        sigma_ext_func_reaction_force_boundary << std::setw(16) << this->time->get_current() << ","
                         		<< std::setw(16) << gauss_coord2[0] << ","
 								<< std::setw(16) << gauss_coord2[1] << ","
 								<< std::setw(16) << gauss_coord2[2] << ","
@@ -6835,7 +6839,7 @@ namespace NonLinearPoroViscoElasticity
                         		<< std::setw(16) << sigma_E_ext_func[0][0] << ","
                         		<< std::setw(16) << sigma_E_ext_func[1][1] << ","
 								<< std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
-                        sigma_ext_func.close();*/
+                        sigma_ext_func_reaction_force_boundary.close();
 
                         //Transform components of Cauchy stresses into cylindrical coordinates for torque
                         //evaluation under torsional shear loading
@@ -6945,6 +6949,7 @@ namespace NonLinearPoroViscoElasticity
                     }//end gauss points on faces loop
                 }
 
+
                 // Minimal Jacobian
                 if (cell->face(face)->at_boundary() == true) {
                 	fe_face_values_ref.reinit(cell, face);
@@ -6959,6 +6964,39 @@ namespace NonLinearPoroViscoElasticity
                 		const Tensor<2,dim,ADNumberType> F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
                 		ADNumberType det_F_AD = determinant(F_AD);
                 		det_F_mpi.push_back(Tensor<0,dim,double>(det_F_AD));
+
+                		//test
+                		const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>>
+                		                            lqph = quadrature_point_history.get_data(cell);
+                		Assert(lqph.size() == n_q_points, ExcInternalError());
+
+                        SymmetricTensor<2,dim> sigma_E_ext_func;
+                        const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[f_q_point]->get_Cauchy_E_ext_func(F_AD);
+
+                        double det_F_converged = lqph[f_q_point]->get_converged_det_F();
+                        double det_F = Tensor<0,dim,double>(det_F_AD);
+                        const double JxW_f = fe_face_values_ref.JxW(f_q_point);
+
+                        for (unsigned int i=0; i<dim; ++i)
+                        	for (unsigned int j=0; j<dim; ++j) {
+                        		sigma_E_ext_func[i][j] = Tensor<0,dim,double>(sigma_E_ext_func_AD[i][j]);
+                        	}
+
+                        const Point<dim> gauss_coord2 = fe_face_values_ref.quadrature_point(f_q_point);
+                        std::ofstream sigma_ext_func_faces;
+                        sigma_ext_func_faces.open("sigma_ext_func_faces", std::ofstream::app);
+                        sigma_ext_func_faces << std::setprecision(8) << std::scientific;
+                        sigma_ext_func_faces << std::setw(16) << this->time->get_current() << ","
+                        		<< std::setw(16) << gauss_coord2[0] << ","
+        						<< std::setw(16) << gauss_coord2[1] << ","
+        						<< std::setw(16) << gauss_coord2[2] << ","
+        						<< std::setw(16) << JxW_f << ","
+        						<< std::setw(16) << det_F << ","
+        						<< std::setw(16) << det_F_converged << ","
+        						<< std::setw(16) << sigma_E_ext_func[0][0] << ","
+        						<< std::setw(16) << sigma_E_ext_func[1][1] << ","
+        						<< std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
+                        sigma_ext_func_faces.close();
                 	}
                 }
             }//end face loop
