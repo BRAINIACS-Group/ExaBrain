@@ -73,6 +73,7 @@
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/fe_tools.h>
 #include <deal.II/fe/fe_values.h>
+#include <deal.II/fe/mapping_q.h>
 
 #include <deal.II/lac/block_sparsity_pattern.h>
 #include <deal.II/lac/affine_constraints.h>
@@ -2314,13 +2315,15 @@ namespace NonLinearPoroViscoElasticity
             time_end(time_end),
             time_end_load(time_end_load),
             delta_t(delta_t),
-			dt(delta_t)
+			dt(delta_t),
+			dt_old(delta_t)
           {}
 
           virtual ~TimeFixed()
           {}
 
           double dt;
+          double dt_old;
 
           double get_current() const
           {
@@ -2358,34 +2361,39 @@ namespace NonLinearPoroViscoElasticity
           }
           void increment_time (double det_F_min)
           {
-        	  //dt    = delta_t;
-
-        	  // based on cubic function
-        	  /*double n_0S  = 0.8;
-        	  double n     = 3;
-        	  double range = 0.05;
-        	  double a     = 1/(std::pow(range,n))*delta_t;
-        	  if (time_end_load > 0) {
-        		  if (time_current <= time_end_load && det_F_min > (n_0S+range))
-        			  dt = 1*delta_t;
-        		  else if (det_F_min <= (n_0S+range))
-        			  dt = a*std::pow((det_F_min-n_0S),n);
-        		  else if (time_current <= delta_t)
-        			  dt = delta_t - time_current;
-        	  }*/
-
         	  // based on change in det(F)
         	  if (time_end_load > 0) {
-        		  if (time_current < delta_t)
-        		      dt = delta_t - time_current;
-        		  else if (det_F_min > 0.05)
-        			  dt = 0.5*dt;
-        		  else if (std::abs(time_current-time_end) < 1e-3)
-        			  dt = delta_t;
-        		  else if (time_current+dt > time_end)// && time_end-time_current > 1e-3)
-        			  dt = time_end-time_current;//-1e-4;
-        		  else if (det_F_min < 0.005 && dt < time_end/20)
-        			  dt = 2*dt;
+        		  if (time_current < time_end_load || std::abs(time_current-time_end_load) < 1e-6) {
+					  if (time_current < delta_t)
+						  dt = delta_t - time_current;
+					  else if (det_F_min > 0.2) {
+						  dt = 0.5*dt;
+						  dt_old = dt;
+					  	  if (time_current+dt > time_end_load)
+					  		  dt = time_end_load-time_current;
+					  }
+					  else if (std::abs(time_current-time_end_load) < 1e-6)
+						  dt = 0.1*dt_old;
+					  else if (time_current+dt > time_end_load) {
+						  dt_old = dt;
+						  dt = time_end_load-time_current;
+					  }
+					  else if (det_F_min < 0.01 && dt < delta_t) {
+						  dt = 2*dt;
+						  dt_old = dt;
+						  if (time_current+dt > time_end_load)
+						      dt = time_end_load-time_current;
+					  }
+        		  } else {
+        			  if (det_F_min > 0.2)
+        				  dt = 0.5*dt;
+        			  else if (std::abs(time_current-time_end) < 1e-6)
+        				  dt = delta_t;
+        			  else if (time_current+dt > time_end)
+        				  dt = time_end-time_current;
+        			  else if (det_F_min < 0.01 && dt < time_end/50)
+        				  dt = 2*dt;
+        		  }
         	  }
 
         	  const double multiplier = std::pow(10.0, 8);
@@ -3063,6 +3071,29 @@ namespace NonLinearPoroViscoElasticity
           {
               Material_Hyperelastic < dim, NumberType >::update_internal_equilibrium(F);
 
+              SymmetricTensor<2,dim> F_print;
+
+                             for (unsigned int i=0; i<dim; ++i)
+                             	for (unsigned int j=0; j<dim; ++j) {
+                             		F_print[i][j] = Tensor<0,dim,double>(F[i][j]);
+                             	}
+              // Print cell date to eigenvalue file
+              std::ofstream F_out;
+              F_out.open("F_out", std::ofstream::app);
+              F_out << std::setprecision(6) << std::scientific;
+              F_out << std::setw(16) << this->time->get_current() << ","
+                << std::setw(16) << F_print[0][0] << ","
+				<< std::setw(16) << F_print[0][1] << ","
+				<< std::setw(16) << F_print[0][2] << ","
+				<< std::setw(16) << F_print[1][0] << ","
+				<< std::setw(16) << F_print[1][1] << ","
+				<< std::setw(16) << F_print[1][2] << ","
+				<< std::setw(16) << F_print[2][0] << ","
+				<< std::setw(16) << F_print[2][1] << ","
+				<< std::setw(16) << F_print[2][2] << "," << std::endl;
+              F_out.close();
+
+
               this->Cinv_v_1 = this->Cinv_v_1_converged;
               SymmetricTensor<2, dim, NumberType> B_e_1_tr = symmetrize(F * this->Cinv_v_1 * transpose(F));
 
@@ -3102,6 +3133,8 @@ namespace NonLinearPoroViscoElasticity
                   }
 
                   J_e_1 = aux_J_e_1;
+                  //double J1 = Tensor<0,dim,double>(J_e_1);
+                  //std::cout << "J = " << J1 << " in iteration " << iteration << std::endl;
 
                   for (unsigned int a = 0; a < dim; ++a)
                       lambdas_e_1_iso[a] = lambdas_e_1[a]*std::pow(J_e_1,-1.0/dim);
@@ -4087,6 +4120,9 @@ namespace NonLinearPoroViscoElasticity
             //Declare an instance of dealii FESystem class (finite element definition)
             const FESystem<dim> fe;
 
+            //Mapping for curved boundaries
+            const MappingQ<dim> mapping;
+
             //Declare an instance of dealii DoFHandler class (assign DoFs to mesh)
             DoFHandler<dim>     dof_handler_ref;
 
@@ -4236,6 +4272,7 @@ namespace NonLinearPoroViscoElasticity
         degree_pore(parameters.poly_degree_pore),
         fe( FE_Q<dim>(parameters.poly_degree_displ), dim,
             FE_Q<dim>(parameters.poly_degree_pore), 1 ),
+		mapping(1),
         dof_handler_ref(triangulation),
         dofs_per_cell (fe.dofs_per_cell),
         u_fe(first_u_component),
@@ -4585,7 +4622,7 @@ namespace NonLinearPoroViscoElasticity
 
                 const UpdateFlags uf_face(update_quadrature_points | update_normal_vectors |
                                           update_values | update_JxW_values );
-                FEFaceValues<dim> fe_face_values_ref(fe, qf_face, uf_face);
+                FEFaceValues<dim> fe_face_values_ref(mapping, fe, qf_face, uf_face);
 
                 //Start loop over faces in element
                 for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
@@ -5515,7 +5552,7 @@ namespace NonLinearPoroViscoElasticity
 			Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
 
 			const UpdateFlags uf_face( update_gradients );
-			FEFaceValues<dim> fe_face_values_ref(fe, qf_face, uf_face);
+			FEFaceValues<dim> fe_face_values_ref(mapping, fe, qf_face, uf_face);
 
 			//start face loop
 			for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face) {
@@ -5813,8 +5850,8 @@ namespace NonLinearPoroViscoElasticity
         //Define a local instance of FEValues to compute updated values required
         //to calculate stresses
         const UpdateFlags uf_cell(update_values | update_gradients |
-                                  update_JxW_values);
-        FEValues<dim> fe_values_ref (fe, qf_cell, uf_cell);
+                                  update_JxW_values | update_quadrature_points);
+        FEValues<dim> fe_values_ref (mapping, fe, qf_cell, uf_cell);
 
         //Iterate through elements (cells) and Gauss Points
         FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
@@ -6091,6 +6128,10 @@ namespace NonLinearPoroViscoElasticity
 
         // Add the results to the solution to create the output file for Paraview
         DataOut<dim> data_out;
+        DataOutBase::VtkFlags flags;
+         flags.write_higher_order_cells = true;
+         data_out.set_flags(flags);
+
         //FilteredDataOut<dim> data_out;
         std::vector<DataComponentInterpretation::DataComponentInterpretation>
           comp_type(dim,
@@ -6244,7 +6285,10 @@ namespace NonLinearPoroViscoElasticity
         }
       //---------------------------------------------------------------------
 
-        data_out.build_patches(degree_displ);
+        //data_out.build_patches(degree_displ);
+        data_out.build_patches(mapping,
+        		degree_displ,
+                                          DataOut<dim>::curved_boundary);
 
         struct Filename
         {
@@ -6382,7 +6426,7 @@ namespace NonLinearPoroViscoElasticity
 
             const UpdateFlags uf_face(update_quadrature_points | update_normal_vectors |
                                       update_values | update_JxW_values );
-            FEFaceValues<dim> fe_face_values_ref(fe, qf_face, uf_face);
+            FEFaceValues<dim> fe_face_values_ref(mapping, fe, qf_face, uf_face);
 
             //Start loop over faces in element
             for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
@@ -6642,7 +6686,7 @@ namespace NonLinearPoroViscoElasticity
         //to calculate stresses
         const UpdateFlags uf_cell(update_values | update_gradients |
                                   update_JxW_values | update_quadrature_points);
-        FEValues<dim> fe_values_ref (fe, qf_cell, uf_cell);
+        FEValues<dim> fe_values_ref (mapping, fe, qf_cell, uf_cell);
 
         //Iterate through elements (cells) and Gauss Points
         FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
@@ -6755,7 +6799,7 @@ namespace NonLinearPoroViscoElasticity
             // to calculate reaction force
             const UpdateFlags uf_face( update_values | update_gradients |
                                        update_normal_vectors | update_JxW_values | update_quadrature_points);
-            FEFaceValues<dim> fe_face_values_ref(fe, qf_face, uf_face);
+            FEFaceValues<dim> fe_face_values_ref(mapping, fe, qf_face, uf_face);
 
             //start face loop
             for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
@@ -9714,29 +9758,6 @@ namespace NonLinearPoroViscoElasticity
         private:
     		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
 			{
-    			/*FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
-    			cell (IteratorFilters::LocallyOwnedCell(),
-    					this->dof_handler_ref.begin_active()),
-						endc (IteratorFilters::LocallyOwnedCell(),
-								this->dof_handler_ref.end());
-
-    			std::vector<double> det_F;
-    			double  min_det_F;
-
-    			for (; cell!=endc; ++cell)
-    			{
-    				Assert(cell->is_locally_owned(), ExcInternalError());
-    				Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
-
-    				const std::vector<std::shared_ptr<PointHistory<dim, Sacado::Fad::DFad<double>> > >
-    				lqph = this->quadrature_point_history.get_data(cell);
-    				Assert(lqph.size() == n_q_points, ExcInternalError());
-    				for (unsigned int q_point = 0; q_point < this->n_q_points; ++q_point){
-    					det_F.push_back (lqph[q_point]->get_converged_det_F());
-    				}
-    			}
-    			min_det_F = *std::min_element(det_F.begin(),det_F.end());*/
-
     			std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
     			if (this->parameters.load_type == "displacement") {
     				if ((boundary_id == 2) && (direction == 2)) {
@@ -9758,10 +9779,30 @@ namespace NonLinearPoroViscoElasticity
     					} else
     						displ_incr[2] = 0.0;
 
-    					//this->pcout << "d_c = " << current_displ << ", d_p = " << previous_displ << std::endl;
-    					//this->pcout << "du = " << displ_incr[2] << ", dt = " << delta_time << ", v = " << displ_incr[2]/delta_time << std::endl;
+    					/*//sinus load
+    					if (current_time <= final_load_time) {
+    						current_displ = 0.5*final_displ * std::sin((std::numbers::pi/final_load_time)*current_time-(final_load_time/4))+0.5*final_displ;
+
+    						if (current_time > delta_time)
+    							previous_displ = 0.5*final_displ * std::sin((std::numbers::pi/final_load_time)*(current_time-delta_time)-(final_load_time/4))+0.5*final_displ;
+
+    						displ_incr[2] = current_displ - previous_displ;
+    					} else
+    						displ_incr[2] = 0.0;
+
+    					//rounded zig-zag load
+    					const double s = 0.99; //sharpness of edges from 0 to 1 (smooth to sharp)
+    					const double a = final_displ/(std::acos(-s)-std::acos(s)) //amplitude
+						if (current_time <= final_load_time) {
+							current_displ = a * std::acos(s*(std::numbers::pi/final_load_time)*current_time)-a*std::acos(s);
+
+							if (current_time > delta_time)
+								previous_displ = a * std::acos(s*(std::numbers::pi/final_load_time)*(current_time-delta_time))-a*std::acos(s);
+
+							displ_incr[2] = current_displ - previous_displ;
+						} else
+							displ_incr[2] = 0.0;*/
     				}
-    				//return displ_incr;
     			}
     			return displ_incr;
 			}
@@ -11215,7 +11256,7 @@ namespace NonLinearPoroViscoElasticity
 				// functions per face and looping over quadrature points is equivalent to looping over
 				// shape functions defined on a face.
 				Quadrature<dim - 1> face_quadrature(this->fe.get_unit_face_support_points());
-				FEFaceValues<dim> fe_values_face(this->fe, face_quadrature, update_quadrature_points);
+				FEFaceValues<dim> fe_values_face(this->mapping, this->fe, face_quadrature, update_quadrature_points);
 
 				const unsigned int dofs_per_face = this->fe.dofs_per_face;
 				const unsigned int n_face_q_points = face_quadrature.size();
