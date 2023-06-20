@@ -1641,7 +1641,8 @@ namespace NonLinearPoroViscoElasticity
           	  	  	  	  	  	  	  	  	  	 "|brain_rheometer_shear_relaxation_lateral_drained"
           	  	  	  	  	  	  	  	  	  	 "|hydro_nano_graz_compression_relax"
                             		 	 	 	 "|hydro_nano_graz_compression_exp_relax"
-                            		 	 	 	 "|hydro_nano_graz_compression_relax_sphere"),
+                            		 	 	 	 "|hydro_nano_graz_compression_relax_sphere"
+                            		 	 	 	 "|odeometer_graz"),
                                 "Type of geometry used. "
                                 "For Ehlers verification examples see Ehlers and Eipper (1999). "
                                 "For Franceschini brain consolidation see Franceschini et al. (2006)"
@@ -1789,7 +1790,7 @@ namespace NonLinearPoroViscoElasticity
         prm.enter_subsection("Material properties");
         {
           prm.declare_entry("material", "Neo-Hooke",
-                            Patterns::Selection("Neo-Hooke|Ogden|visco-Ogden|visco2-Ogden"),
+                            Patterns::Selection("Neo-Hooke|Neo-Hooke-Ehlers|Neo-Hooke-PS|Ogden|visco-Ogden|visco2-Ogden"),
                             "Type of material used in the problem");
 
           prm.declare_entry("lambda", "8.375e6",
@@ -2361,12 +2362,13 @@ namespace NonLinearPoroViscoElasticity
           }
           void increment_time (double det_F_min)
           {
+        	  //double dt_min = 0.1;
         	  // based on change in det(F)
         	  if (time_end_load > 0) {
         		  if (time_current < time_end_load || std::abs(time_current-time_end_load) < 1e-6) {
 					  if (time_current < delta_t)
 						  dt = delta_t - time_current;
-					  else if (det_F_min > 0.2) {
+					  else if (det_F_min > 0.1) {// && dt > dt_min) {
 						  dt = 0.5*dt;
 						  dt_old = dt;
 					  	  if (time_current+dt > time_end_load)
@@ -2391,7 +2393,7 @@ namespace NonLinearPoroViscoElasticity
         				  dt = delta_t;
         			  else if (time_current+dt > time_end)
         				  dt = time_end-time_current;
-        			  else if (det_F_min < 0.01 && dt < time_end/50)
+        			  else if (det_F_min < 0.05 && dt < time_end/50)
         				  dt = 2*dt;
         		  }
         	  }
@@ -2427,612 +2429,279 @@ namespace NonLinearPoroViscoElasticity
 // We use the function proposed by
 // Ehlers & Eipper 1999 doi:10.1023/A:1006565509095
 // We also define some public functions to access and update the internal variables.
-    template <int dim, typename NumberType = Sacado::Fad::DFad<double> >
-    class Material_Hyperelastic
-    {
-        public:
-          Material_Hyperelastic(const Parameters::AllParameters &parameters,
-                                const std::shared_ptr<Time>     time)
-            :
-            n_OS (parameters.solid_vol_frac),
-            lambda (parameters.lambda),
-            time(time),
-            det_F (1.0),
-            det_F_converged (1.0),
-            eigen_solver (parameters.eigen_solver)
-           {}
-          ~Material_Hyperelastic()
-          {}
-
-          SymmetricTensor<2, dim, NumberType>
-          get_tau_E(const Tensor<2,dim, NumberType> &F) const
-          {
-            return ( get_tau_E_base(F) + get_tau_E_ext_func(F) );
-          }
-
-          SymmetricTensor<2, dim, NumberType>
-          get_Cauchy_E(const Tensor<2, dim, NumberType> &F) const
-          {
-              const NumberType det_F = determinant(F);
-              Assert(det_F > 0, ExcInternalError());
-              return get_tau_E(F)*NumberType(1/det_F);
-          }
-
-          SymmetricTensor<2, dim, NumberType>
-          get_Cauchy_E_base(const Tensor<2, dim, NumberType> &F) const
-		  {
-        	  const NumberType det_F = determinant(F);
-        	  Assert(det_F > 0, ExcInternalError());
-        	  return get_tau_E_base(F)*NumberType(1/det_F);
-		  }
-
-          SymmetricTensor<2, dim, NumberType>
-          get_Cauchy_E_ext_func(const Tensor<2, dim, NumberType> &F) const
-		  {
-        	  const NumberType det_F = determinant(F);
-        	  Assert(det_F > 0, ExcInternalError());
-        	  return get_tau_E_ext_func(F)*NumberType(1/det_F);
-		  }
-
-          double
-          get_converged_det_F() const
-          {
-              return  det_F_converged;
-          }
-
-          virtual void
-          update_end_timestep()
-          {
-              det_F_converged = det_F;
-          }
-
-          virtual void
-          update_internal_equilibrium( const Tensor<2, dim, NumberType> &F )
-          {
-              det_F = Tensor<0,dim,double>(determinant(F));
-          }
-
-          virtual double
-          get_viscous_dissipation( ) const = 0;
-
-          const double n_OS;
-          const double lambda;
-          std::shared_ptr<Time>  time;
-          double det_F;
-          double det_F_converged;
-          const enum SymmetricTensorEigenvectorMethod eigen_solver;
-
-        protected:
-          SymmetricTensor<2, dim, NumberType>
-          get_tau_E_ext_func(const Tensor<2,dim, NumberType> &F) const
-          {
-              const NumberType det_F = determinant(F);
-              Assert(det_F > 0, ExcInternalError());
-              Assert(det_F > n_OS, ExcInternalError());
-
-              static const SymmetricTensor< 2, dim, double>
-                    I (Physics::Elasticity::StandardTensors<dim>::I);
-              return  ( NumberType(lambda * (1.0-n_OS)*(1.0-n_OS)
-                         * (det_F/(1.0-n_OS) - det_F/(det_F-n_OS))) * I );
-          }
-
-          virtual SymmetricTensor<2, dim, NumberType>
-           get_tau_E_base(const Tensor<2,dim, NumberType> &F) const = 0;
-    };
-
-//@sect4{Derived class: Neo-Hookean hyperelastic material}
-    template <int dim, typename NumberType = Sacado::Fad::DFad<double> >
-    class NeoHooke : public Material_Hyperelastic < dim, NumberType >
-    {
-        public:
-            NeoHooke(const Parameters::AllParameters &parameters,
-                     const std::shared_ptr<Time>     time)
-            :
-            Material_Hyperelastic< dim, NumberType > (parameters,time),
-            mu(parameters.mu),
-			eigenvalue_analysis(parameters.eigenvalue_analysis)
-           {}
-          virtual ~NeoHooke()
-          {}
-
-           double
-           get_viscous_dissipation() const
-           {
-               return 0.0;
-           }
-
-        protected:
-          const double mu;
-          bool eigenvalue_analysis;
-
-          SymmetricTensor<2, dim, NumberType>
-          get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
-          {
-             static const SymmetricTensor< 2, dim, double>
-                I (Physics::Elasticity::StandardTensors<dim>::I);
-
-             const bool use_standard_model = true;
-             const bool use_simo_taylor = false;
-             const bool use_miehe = false;
-
-             if (use_standard_model)
-             {
-
-            	 // Neo-Hooke in terms of principal stretches
-            	 const SymmetricTensor<2, dim, NumberType>
-            	 B = symmetrize(F * transpose(F));
-            	 const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim >
-            	 eigen_B = eigenvectors(B, this->eigen_solver);
-
-            	 if (eigenvalue_analysis) {
-            		 double lambda_1 = Tensor<0,dim,double>(eigen_B[0].first);
-            		 double lambda_2 = Tensor<0,dim,double>(eigen_B[1].first);
-            		 double lambda_3 = Tensor<0,dim,double>(eigen_B[2].first);
-            		 Tensor<1,dim> ev_1 = Tensor<1,dim,double>(eigen_B[0].second);
-            		 Tensor<1,dim> ev_2 = Tensor<1,dim,double>(eigen_B[1].second);
-            		 Tensor<1,dim> ev_3 = Tensor<1,dim,double>(eigen_B[2].second);
-
-            		 // Print eigenvalues to file
-            		 std::ofstream eigenvalues;
-            		 eigenvalues.open("eigenvalues", std::ofstream::app);
-            		 eigenvalues << std::setprecision(6) << std::scientific;
-            		 eigenvalues << std::setw(16) << this->time->get_current() << ","
-            				 << std::setw(16) << lambda_1 << ","
-							 << std::setw(16) << lambda_2 << ","
-							 << std::setw(16) << lambda_3 << std::endl;
-            		 eigenvalues.close();
-
-            		 // Print eigenvectors to file
-            		 std::ofstream eigenvectors;
-            		 eigenvectors.open("eigenvectors", std::ofstream::app);
-            		 eigenvectors << std::setprecision(6) << std::scientific;
-            		 eigenvectors << std::setw(16) << this->time->get_current() << ","
-            				 << std::setw(16) << ev_1[0] << ","
-							 << std::setw(16) << ev_1[1] << ","
-							 << std::setw(16) << ev_1[2] << ","
-							 << std::setw(16) << ev_2[0] << ","
-							 << std::setw(16) << ev_2[1] << ","
-							 << std::setw(16) << ev_2[2] << ","
-							 << std::setw(16) << ev_3[0] << ","
-							 << std::setw(16) << ev_3[1] << ","
-							 << std::setw(16) << ev_3[2] << std::endl;
-            		 eigenvectors.close();
-            	 }
-               // Standard Neo-Hooke
-               return ( mu * ( symmetrize(F * transpose(F)) - I ) );
-             }
-             else if (use_simo_taylor)
-             {
-               // Neo-Hooke in terms of principal stretches
-               const SymmetricTensor<2, dim, NumberType>
-                B = symmetrize(F * transpose(F));
-               const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim >
-                eigen_B = eigenvectors(B, this->eigen_solver);
-
-               double lambda_1 = Tensor<0,dim,double>(eigen_B[0].first);
-               double lambda_2 = Tensor<0,dim,double>(eigen_B[1].first);
-               double lambda_3 = Tensor<0,dim,double>(eigen_B[2].first);
-               Tensor<1,dim> ev_1 = Tensor<1,dim,double>(eigen_B[0].second);
-               Tensor<1,dim> ev_2 = Tensor<1,dim,double>(eigen_B[1].second);
-               Tensor<1,dim> ev_3 = Tensor<1,dim,double>(eigen_B[2].second);
-
-               // Print eigenvalues to file
-               std::ofstream eigenvalues;
-               eigenvalues.open("eigenvalues", std::ofstream::app);
-               eigenvalues << std::setprecision(6) << std::scientific;
-               eigenvalues << std::setw(16) << this->time->get_current() << ","
-            		   	   << std::setw(16) << lambda_1 << ","
-						   << std::setw(16) << lambda_2 << ","
-						   << std::setw(16) << lambda_3 << std::endl;
-               eigenvalues.close();
-
-               // Print eigenvectors to file
-               std::ofstream eigenvectors_B;
-               eigenvectors_B.open("eigenvectors_B", std::ofstream::app);
-               eigenvectors_B << std::setprecision(6) << std::scientific;
-               eigenvectors_B << std::setw(16) << this->time->get_current() << ","
-                            << std::setw(16) << ev_1[0] << ","
-						    << std::setw(16) << ev_1[1] << ","
-						    << std::setw(16) << ev_1[2] << ","
-               	   	   	    << std::setw(16) << ev_2[0] << ","
-               	   	   	    << std::setw(16) << ev_2[1] << ","
-							<< std::setw(16) << ev_2[2] << ","
-               	   	   	    << std::setw(16) << ev_3[0] << ","
-               	   	   	    << std::setw(16) << ev_3[1] << ","
-							<< std::setw(16) << ev_3[2] << std::endl;
-               eigenvectors_B.close();
-
-               SymmetricTensor<2, dim, NumberType> B_ev;
-
-               double tol = 1e-6;
-               if (std::abs(lambda_1-lambda_2) < tol) {
-
-            	   SymmetricTensor<2, dim, NumberType> volumetric (I);
-            	   volumetric *= eigen_B[0].first;
-            	   B_ev = symmetrize(outer_product(eigen_B[2].second,eigen_B[2].second));
-            	   B_ev *= (eigen_B[2].first-eigen_B[0].first);
-            	   B_ev += volumetric;
-
-               } else {
-            	   for (unsigned int d=0; d<dim; ++d)
-            	   {
-            		   SymmetricTensor<2, dim, NumberType> B_ev_d = symmetrize(outer_product(eigen_B[d].second,eigen_B[d].second));
-            		   B_ev_d *= eigen_B[d].first;
-            		   B_ev += B_ev_d;
-            	   }
-               }
-
-               /*double tol = 1;
-               if (std::abs(lambda_1-lambda_2) < tol) {
-            	   SymmetricTensor<2, dim, NumberType> volumetric = eigen_B[0].first*I;
-            	   NumberType diff_lambda = eigen_B[2].first-eigen_B[0].first;
-            	   SymmetricTensor<2, dim, NumberType> m_3 = symmetrize(outer_product(eigen_B[2].second,eigen_B[2].second));
-            	   m_3 = diff_lambda * m_3;
-            	   B_ev = volumetric + m_3;
-
-            	   //SymmetricTensor<2, dim, NumberType> m_1;
-            	   //m_1[0][0]=1; m_1[0][1]=0; m_1[0][2]=0; m_1[1][0]=0; m_1[1][1]=0; m_1[1][2]=0; m_1[2][0]=0; m_1[2][1]=0; m_1[2][2]=0;
-            	   //SymmetricTensor<2, dim, NumberType> m_2;
-            	   //m_2[0][0]=0; m_2[0][1]=0; m_2[0][2]=0; m_2[1][0]=0; m_2[1][1]=1; m_2[1][2]=0; m_2[2][0]=0; m_2[2][1]=0; m_2[2][2]=0;
-            	   //SymmetricTensor<2, dim, NumberType> m_3;
-            	   //m_3[0][0]=0; m_3[0][1]=0; m_3[0][2]=0; m_3[1][0]=0; m_3[1][1]=0; m_3[1][2]=0; m_3[2][0]=0; m_3[2][1]=0; m_3[2][2]=1;
-            	   //B_ev = eigen_B[0].first*m_1 + eigen_B[1].first*m_2 + eigen_B[2].first*m_3;
-
-            	   SymmetricTensor<2,dim> B_ev_p = SymmetricTensor<2,dim,double>(B_ev);
-
-            	   // Print B_ev to file
-            	   std::ofstream cauchy_green_ev;
-            	   cauchy_green_ev.open("cauchy_green_ev", std::ofstream::app);
-            	   cauchy_green_ev << std::setprecision(6) << std::scientific;
-            	   cauchy_green_ev << std::setw(16) << this->time->get_current() << ","
-            			   << std::setw(16) << B_ev_p[0][0] << ","
-						   << std::setw(16) << B_ev_p[0][1] << ","
-						   << std::setw(16) << B_ev_p[0][2] << ","
-						   << std::setw(16) << B_ev_p[1][0] << ","
-						   << std::setw(16) << B_ev_p[1][1] << ","
-						   << std::setw(16) << B_ev_p[1][2] << ","
-						   << std::setw(16) << B_ev_p[2][0] << ","
-						   << std::setw(16) << B_ev_p[2][1] << ","
-						   << std::setw(16) << B_ev_p[2][2] << std::endl;
-            	   cauchy_green_ev.close();
-               } else {
-            	   for (unsigned int d=0; d<dim; ++d)
-            		   B_ev += eigen_B[d].first*symmetrize(outer_product(eigen_B[d].second,eigen_B[d].second));
-               }*/
-
-               const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim >
-                eigen_B_ev = eigenvectors(B_ev, this->eigen_solver);
-
-               double lambda_1_ev = Tensor<0,dim,double>(eigen_B_ev[0].first);
-               double lambda_2_ev = Tensor<0,dim,double>(eigen_B_ev[1].first);
-               double lambda_3_ev = Tensor<0,dim,double>(eigen_B_ev[2].first);
-               Tensor<1,dim> ev_1_ev = Tensor<1,dim,double>(eigen_B_ev[0].second);
-               Tensor<1,dim> ev_2_ev = Tensor<1,dim,double>(eigen_B_ev[1].second);
-               Tensor<1,dim> ev_3_ev = Tensor<1,dim,double>(eigen_B_ev[2].second);
-
-               // Print eigenvalues to file
-			   std::ofstream eigenvalues_ev;
-			   eigenvalues_ev.open("eigenvalues_ev", std::ofstream::app);
-			   eigenvalues_ev << std::setprecision(6) << std::scientific;
-			   eigenvalues_ev << std::setw(16) << this->time->get_current() << ","
-					   << std::setw(16) << lambda_1_ev << ","
-					   << std::setw(16) << lambda_2_ev << ","
-					   << std::setw(16) << lambda_3_ev << std::endl;
-			   eigenvalues_ev.close();
-
-			   // Print eigenvectors to file
-			   std::ofstream eigenvectors_ev;
-			   eigenvectors_ev.open("eigenvectors_ev", std::ofstream::app);
-			   eigenvectors_ev << std::setprecision(6) << std::scientific;
-			   eigenvectors_ev << std::setw(16) << this->time->get_current() << ","
-					   << std::setw(16) << ev_1_ev[0] << ","
-					   << std::setw(16) << ev_1_ev[1] << ","
-					   << std::setw(16) << ev_1_ev[2] << ","
-					   << std::setw(16) << ev_2_ev[0] << ","
-					   << std::setw(16) << ev_2_ev[1] << ","
-					   << std::setw(16) << ev_2_ev[2] << ","
-					   << std::setw(16) << ev_3_ev[0] << ","
-					   << std::setw(16) << ev_3_ev[1] << ","
-					   << std::setw(16) << ev_3_ev[2] << std::endl;
-			   eigenvectors_ev.close();
-
-			   SymmetricTensor<2,dim> B_ev_p = SymmetricTensor<2,dim,double>(B_ev);
-
-			   // Print B_ev to file
-			   std::ofstream cauchy_green_ev2;
-			   cauchy_green_ev2.open("cauchy_green_ev2", std::ofstream::app);
-			   cauchy_green_ev2 << std::setprecision(6) << std::scientific;
-			   cauchy_green_ev2 << std::setw(16) << this->time->get_current() << ","
-					   << std::setw(16) << B_ev_p[0][0] << ","
-					   << std::setw(16) << B_ev_p[0][1] << ","
-					   << std::setw(16) << B_ev_p[0][2] << ","
-					   << std::setw(16) << B_ev_p[1][0] << ","
-					   << std::setw(16) << B_ev_p[1][1] << ","
-					   << std::setw(16) << B_ev_p[1][2] << ","
-					   << std::setw(16) << B_ev_p[2][0] << ","
-					   << std::setw(16) << B_ev_p[2][1] << ","
-					   << std::setw(16) << B_ev_p[2][2] << std::endl;
-			   cauchy_green_ev2.close();
-
-                return ( mu*(B_ev-I) );
-             } else if (use_miehe) {
-            	 const SymmetricTensor<2, dim, NumberType> B = symmetrize(F * transpose(F));
-
-            	 SymmetricTensor<2,dim> B_p = SymmetricTensor<2,dim,double>(B);
-
-            	 // Print B to file
-            	 std::ofstream cauchy_green_ev;
-            	 cauchy_green_ev.open("cauchy_green_ev", std::ofstream::app);
-            	 cauchy_green_ev << std::setprecision(6) << std::scientific;
-            	 cauchy_green_ev << std::setw(16) << this->time->get_current() << ","
-            			 << std::setw(16) << B_p[0][0] << ","
-						 << std::setw(16) << B_p[0][1] << ","
-						 << std::setw(16) << B_p[0][2] << ","
-						 << std::setw(16) << B_p[1][0] << ","
-						 << std::setw(16) << B_p[1][1] << ","
-						 << std::setw(16) << B_p[1][2] << ","
-						 << std::setw(16) << B_p[2][0] << ","
-						 << std::setw(16) << B_p[2][1] << ","
-						 << std::setw(16) << B_p[2][2] << std::endl;
-            	 cauchy_green_ev.close();
-
-            	 // Compute invariants of B
-            	 const NumberType I_1 = first_invariant(B);
-            	 const NumberType I_2 = second_invariant(B);
-            	 const NumberType I_3 = third_invariant(B);
-
-            	 double I_1p = Tensor<0,dim,double>(I_1);
-            	 double I_2p = Tensor<0,dim,double>(I_2);
-            	 double I_3p = Tensor<0,dim,double>(I_3);
-
-            	 // Print invariants to file
-            	 std::ofstream invariants_miehe;
-            	 invariants_miehe.open("invariants_miehe", std::ofstream::app);
-            	 invariants_miehe << std::setprecision(6) << std::scientific;
-            	 invariants_miehe << std::setw(16) << this->time->get_current() << ","
-            			 << std::setw(16) << I_1p << ","
-						 << std::setw(16) << I_2p << ","
-						 << std::setw(16) << I_3p << std::endl;
-            	 invariants_miehe.close();
-
-            	 // Compute theta
-            	 const NumberType term11 = 2*I_1*I_1*I_1;
-            	 const NumberType term12 = 9*I_1*I_2;
-            	 const NumberType term13 = 27*I_3;
-            	 const NumberType term1  = 0.5*(term11-term12+term13);
-            	 const NumberType term21 = I_1*I_1;
-            	 const NumberType term22 = 3*I_2;
-            	 const NumberType term2  = std::pow(term21-term22,1.5);
-            	 const NumberType term3  = term1/term2;
-            	 NumberType theta;
-
-            	 if (term2 == 0) {
-            		 theta = std::acos(0);
-            	 } else {
-            		 theta  = std::acos(term3);
-            	 }
-
-            	 // Print theta to file
-            	 double thetap = Tensor<0,dim,double>(theta);
-            	 std::ofstream theta_miehe;
-            	 theta_miehe.open("theta_miehe", std::ofstream::app);
-            	 theta_miehe << std::setprecision(6) << std::scientific;
-            	 theta_miehe << std::setw(16) << this->time->get_current() << ","
-            			 << std::setw(16) << thetap << std::endl;
-            	 theta_miehe.close();
-
-            	 // Terms to compute lambda
-            	 const NumberType term41 = I_1*I_1;
-            	 const NumberType term42 = 3*I_2;
-            	 const NumberType term4  = 2*std::sqrt(term41-term42);
-            	 const NumberType PI 	 = std::acos(-1);
-            	 const double third      = (double)1/3;
-
-            	 NumberType lambda_B[dim];
-
-            	 for (unsigned int A=1; A<=dim; ++A) {
-            		 NumberType term51 = std::cos(third*(theta+2*PI*A));
-            		 lambda_B[A-1] = third*I_1+(term4*term51);
-            	 }
-
-            	 double lambda_1p = Tensor<0,dim,double>(lambda_B[0]);
-            	 double lambda_2p = Tensor<0,dim,double>(lambda_B[1]);
-            	 double lambda_3p = Tensor<0,dim,double>(lambda_B[2]);
-
-            	 // Print eigenvalues to file
-            	 std::ofstream eigenvalues_miehe;
-            	 eigenvalues_miehe.open("eigenvalues_miehe", std::ofstream::app);
-            	 eigenvalues_miehe << std::setprecision(6) << std::scientific;
-            	 eigenvalues_miehe << std::setw(16) << this->time->get_current() << ","
-            			 << std::setw(16) << lambda_1p << ","
-						 << std::setw(16) << lambda_2p << ","
-						 << std::setw(16) << lambda_3p << std::endl;
-            	 eigenvalues_miehe.close();
-
-            	 // Disturb eigenvalues
-            	 const NumberType diff_lambda_12 = std::abs(lambda_B[0]-lambda_B[1]);
-            	 const NumberType diff_lambda_13 = std::abs(lambda_B[0]-lambda_B[2]);
-            	 const NumberType diff_lambda_23 = std::abs(lambda_B[1]-lambda_B[2]);
-
-            	 const NumberType lambda_max1 = std::max(std::abs(lambda_B[0]),std::abs(lambda_B[1])); // probably better to use max_element
-            	 const NumberType lambda_max  = std::max(std::abs(lambda_max1),std::abs(lambda_B[2]));
-
-            	 const double tol = 1e-6;
-            	 const double delta = 1e-5;
-
-            	 if (diff_lambda_12/lambda_max < tol) {
-            		 lambda_B[0] = lambda_B[0]*(1+delta);
-            		 lambda_B[1] = lambda_B[1]*(1-delta);
-            		 lambda_B[2] = lambda_B[2]/((1+delta)*(1-delta));
-            	 } else if (diff_lambda_13/lambda_max < tol) {
-            		 lambda_B[0] = lambda_B[0]*(1+delta);
-            		 lambda_B[2] = lambda_B[2]*(1-delta);
-            		 lambda_B[1] = lambda_B[1]/((1+delta)*(1-delta));
-            	 } else if (diff_lambda_23/lambda_max < tol) {
-            		 lambda_B[1] = lambda_B[1]*(1+delta);
-            		 lambda_B[2] = lambda_B[2]*(1-delta);
-            		 lambda_B[0] = lambda_B[0]/((1+delta)*(1-delta));
-            	 }
-
-            	 double lambda_1dp = Tensor<0,dim,double>(lambda_B[0]);
-            	 double lambda_2dp = Tensor<0,dim,double>(lambda_B[1]);
-            	 double lambda_3dp = Tensor<0,dim,double>(lambda_B[2]);
-
-            	 // Print eigenvalues to file
-            	 std::ofstream disturbed_ev_miehe;
-            	 disturbed_ev_miehe.open("disturbed_ev_miehe", std::ofstream::app);
-            	 disturbed_ev_miehe << std::setprecision(10) << std::scientific;
-            	 disturbed_ev_miehe << std::setw(20) << this->time->get_current() << ","
-            			 << std::setw(20) << lambda_1dp << ","
-						 << std::setw(20) << lambda_2dp << ","
-						 << std::setw(20) << lambda_3dp << std::endl;
-            	 disturbed_ev_miehe.close();
-
-
-            	 // Compute eigenvalue bases
-            	 const NumberType diff_12 = lambda_B[0]-lambda_B[1];
-            	 const NumberType diff_13 = lambda_B[0]-lambda_B[2];
-            	 const NumberType diff_23 = lambda_B[1]-lambda_B[2];
-            	 const NumberType diff_21 = lambda_B[1]-lambda_B[0];
-            	 const NumberType diff_31 = lambda_B[2]-lambda_B[0];
-            	 const NumberType diff_32 = lambda_B[2]-lambda_B[1];
-
-            	 const NumberType D_1 = diff_12*diff_13;
-            	 const NumberType D_2 = diff_21*diff_23;
-            	 const NumberType D_3 = diff_31*diff_32;
-
-            	 Tensor<2, dim, NumberType> ev_B[dim];
-
-            	 const Tensor<2, dim, NumberType> M_11 = ((B-lambda_B[1]*I)/D_1);
-            	 const Tensor<2, dim, NumberType> M_12 = ((B-lambda_B[2]*I)/D_1);
-            	 ev_B[0] = M_11*M_12;
-
-            	 const Tensor<2, dim, NumberType> M_21 = ((B-lambda_B[0]*I)/D_2);
-            	 const Tensor<2, dim, NumberType> M_22 = ((B-lambda_B[2]*I)/D_2);
-            	 ev_B[1] = M_21*M_22;
-
-            	 const Tensor<2, dim, NumberType> M_31 = ((B-lambda_B[0]*I)/D_3);
-            	 const Tensor<2, dim, NumberType> M_32 = ((B-lambda_B[1]*I)/D_3);
-            	 ev_B[2] = M_31*M_32;
-
-            	 // Print eigenvalue basis to file
-            	 Tensor<2,dim> ev_Bp = Tensor<2,dim,double>(ev_B[0]);
-
-            	 std::ofstream ev_basis;
-            	 ev_basis.open("ev_basis", std::ofstream::app);
-            	 ev_basis << std::setprecision(6) << std::scientific;
-            	 ev_basis << std::setw(16) << this->time->get_current() << ","
-            			 << std::setw(16) << ev_Bp[0][0] << ","
-						 << std::setw(16) << ev_Bp[0][1] << ","
-						 << std::setw(16) << ev_Bp[0][2] << ","
-						 << std::setw(16) << ev_Bp[1][0] << ","
-						 << std::setw(16) << ev_Bp[1][1] << ","
-						 << std::setw(16) << ev_Bp[1][2] << ","
-						 << std::setw(16) << ev_Bp[2][0] << ","
-						 << std::setw(16) << ev_Bp[2][1] << ","
-						 << std::setw(16) << ev_Bp[2][2] << std::endl;
-            	 ev_basis.close();
-
-            	 SymmetricTensor<2, dim, NumberType> B_ev;
-
-            	 for (unsigned int d=0; d<dim; ++d)
-            		 B_ev += lambda_B[d]*symmetrize(ev_B[d]);
-
-            	 SymmetricTensor<2,dim> B_ev_p = SymmetricTensor<2,dim,double>(B_ev);
-
-            	 // Print B_ev to file
-            	 std::ofstream cauchy_green_ev2;
-            	 cauchy_green_ev2.open("cauchy_green_ev2", std::ofstream::app);
-            	 cauchy_green_ev2 << std::setprecision(6) << std::scientific;
-            	 cauchy_green_ev2 << std::setw(16) << this->time->get_current() << ","
-            			 << std::setw(16) << B_ev_p[0][0] << ","
-						 << std::setw(16) << B_ev_p[0][1] << ","
-						 << std::setw(16) << B_ev_p[0][2] << ","
-						 << std::setw(16) << B_ev_p[1][0] << ","
-						 << std::setw(16) << B_ev_p[1][1] << ","
-						 << std::setw(16) << B_ev_p[1][2] << ","
-						 << std::setw(16) << B_ev_p[2][0] << ","
-						 << std::setw(16) << B_ev_p[2][1] << ","
-						 << std::setw(16) << B_ev_p[2][2] << std::endl;
-            	 cauchy_green_ev2.close();
-
-            	 return ( mu*(B_ev-I) );
-
-             } else {
-            	 // Neo-Hooke in terms of principal stretches
-            	 const SymmetricTensor<2, dim, NumberType>
-            	 B = symmetrize(F * transpose(F));
-            	 const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim >
-            	 eigen_B = eigenvectors(B, this->eigen_solver);
-
-            	 SymmetricTensor<2, dim, NumberType> B_ev;
-
-            	 for (unsigned int d=0; d<dim; ++d)
-            	     B_ev += eigen_B[d].first*symmetrize(outer_product(eigen_B[d].second,eigen_B[d].second));
-
-            	 return ( mu*(B_ev-I) );
-             }
-          }
-    };
+template <int dim, typename NumberType = Sacado::Fad::DFad<double> >
+class Material_Hyperelastic
+{
+	public:
+		Material_Hyperelastic(const Parameters::AllParameters &parameters, const std::shared_ptr<Time> time)
+		:
+		n_OS (parameters.solid_vol_frac),
+		lambda (parameters.lambda),
+		time(time),
+		det_F (1.0),
+		det_F_converged (1.0),
+		eigen_solver (parameters.eigen_solver)
+		{}
+		virtual ~Material_Hyperelastic()
+		{}
+
+		SymmetricTensor<2, dim, NumberType> get_tau_E(const Tensor<2,dim, NumberType> &F) const
+		{
+			return ( get_tau_E_base(F) + get_tau_E_ext_func(F) );
+		}
+
+		SymmetricTensor<2, dim, NumberType> get_Cauchy_E(const Tensor<2, dim, NumberType> &F) const
+		{
+			const NumberType det_F = determinant(F);
+			Assert(det_F > 0, ExcInternalError());
+			return get_tau_E(F)*NumberType(1/det_F);
+		}
+
+		SymmetricTensor<2, dim, NumberType> get_Cauchy_E_base(const Tensor<2, dim, NumberType> &F) const
+		{
+			const NumberType det_F = determinant(F);
+			Assert(det_F > 0, ExcInternalError());
+			return get_tau_E_base(F)*NumberType(1/det_F);
+		}
+
+		SymmetricTensor<2, dim, NumberType> get_Cauchy_E_ext_func(const Tensor<2, dim, NumberType> &F) const
+		{
+			const NumberType det_F = determinant(F);
+			Assert(det_F > 0, ExcInternalError());
+			return get_tau_E_ext_func(F)*NumberType(1/det_F);
+		}
+
+		double get_converged_det_F() const
+		{
+			return det_F_converged;
+		}
+
+		virtual void update_end_timestep()
+		{
+			det_F_converged = det_F;
+		}
+
+		virtual void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F )
+		{
+			det_F = Tensor<0,dim,double>(determinant(F));
+		}
+
+		virtual double get_viscous_dissipation( ) const = 0;
+
+		const double n_OS;
+		const double lambda;
+		std::shared_ptr<Time> time;
+		double det_F;
+		double det_F_converged;
+		const enum SymmetricTensorEigenvectorMethod eigen_solver;
+
+	protected:
+		SymmetricTensor<2, dim, NumberType> get_tau_E_ext_func(const Tensor<2,dim, NumberType> &F) const
+		{
+			const NumberType det_F = determinant(F);
+			Assert(det_F > 0, ExcInternalError());
+			Assert(det_F > n_OS, ExcInternalError());
+
+			static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
+
+			return  ( NumberType(lambda * (1.0-n_OS)*(1.0-n_OS) * (det_F/(1.0-n_OS) - det_F/(det_F-n_OS))) * I );
+		}
+
+		virtual SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const = 0;
+};
+
+//@sect4{Derived class: Neo-Hookean hyperelastic material based on a decoupled strain-energy function (see Holzapfel eq. 6.85)}
+template <int dim, typename NumberType = Sacado::Fad::DFad<double> >
+class NeoHooke : public Material_Hyperelastic < dim, NumberType >
+{
+	public:
+		NeoHooke(const Parameters::AllParameters &parameters, const std::shared_ptr<Time> time)
+		:
+		Material_Hyperelastic< dim, NumberType > (parameters,time),
+		mu(parameters.mu)
+		{}
+		virtual ~NeoHooke()
+		{}
+
+		double get_viscous_dissipation() const
+		{
+			return 0.0;
+		}
+
+	protected:
+		const double mu;
+
+		SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+		{
+			// left Cauchy-Green strain tensor (see Holzapfel eq. 2.79)
+			const SymmetricTensor<2, dim, NumberType> b = symmetrize(F * transpose(F));
+
+			// isochoric left Cauchy-Green strain (see Holzapfel eq. 6.99)
+			const double det_F = Tensor<0, dim, double>(determinant(F));
+			SymmetricTensor<2, dim, NumberType> b_iso = std::pow(det_F, -2.0/3) * b;
+
+			// fictitious Kirchhoff stress (see Holzapfel eq. 6.104)
+			const SymmetricTensor<2, dim, NumberType> tau_fic = mu * b_iso;
+
+			// isochoric Kirchhoff stress (see Holzapfel eqs. 6.103, 6.105)
+			const SymmetricTensor<2, dim, NumberType> tau_iso = Physics::Elasticity::StandardTensors<dim>::dev_P * tau_fic;
+
+			return (tau_iso);
+		}
+};
+
+
+//@sect4{Derived class: Neo-Hookean hyperelastic material based on a decoupled strain-energy
+//function in terms of principal stretches (see Holzapfel eq. 6.85)}
+template <int dim, typename NumberType = Sacado::Fad::DFad<double> >
+class NeoHookePS : public Material_Hyperelastic < dim, NumberType >
+{
+public:
+	NeoHookePS(const Parameters::AllParameters &parameters, const std::shared_ptr<Time> time)
+	:
+	Material_Hyperelastic< dim, NumberType > (parameters,time),
+	mu(parameters.mu)
+	{}
+	virtual ~NeoHookePS()
+	{}
+
+	double get_viscous_dissipation() const
+	{
+		return 0.0;
+	}
+
+protected:
+	const double mu;
+
+	SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+	{
+		// left Cauchy-Green strain tensor (see Holzapfel eq. 2.79)
+		const SymmetricTensor<2, dim, NumberType> b = symmetrize(F * transpose(F));
+
+		// isochoric left Cauchy-Green strain in terms of principal stretches
+		const double det_F = Tensor<0, dim, double>(determinant(F));
+		SymmetricTensor<2, dim, NumberType> b_iso;
+
+		const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim >
+		eigen_b = eigenvectors(b, this->eigen_solver);
+		Tensor<1, dim, NumberType> lambda_b_iso;
+
+		for (unsigned int a = 0; a < dim; ++a) {
+			lambda_b_iso[a] = std::pow(det_F, -1.0/3) * eigen_b[a].first;
+
+			SymmetricTensor<2, dim, NumberType> ev_basis = symmetrize(outer_product(eigen_b[a].second,eigen_b[a].second));
+			b_iso += lambda_b_iso[a] * ev_basis;
+		}
+
+		// fictitious Kirchhoff stress (see Holzapfel eq. 6.104)
+		const SymmetricTensor<2, dim, NumberType> tau_fic = mu * b_iso;
+
+		// isochoric Kirchhoff stress (see Holzapfel eqs. 6.103, 6.105)
+		const SymmetricTensor<2, dim, NumberType> tau_iso = Physics::Elasticity::StandardTensors<dim>::dev_P * tau_fic;
+
+		return (tau_iso);
+	}
+};
+
+
+//@sect4{Derived class: Neo-Hookean hyperelastic material as in Ehlers & Eipper (1999), compare eq. 33}
+template <int dim, typename NumberType = Sacado::Fad::DFad<double> >
+class NeoHookeEhlers : public Material_Hyperelastic < dim, NumberType >
+{
+	public:
+		NeoHookeEhlers(const Parameters::AllParameters &parameters, const std::shared_ptr<Time> time)
+		:
+		Material_Hyperelastic< dim, NumberType > (parameters,time),
+		mu(parameters.mu)
+		{}
+		virtual ~NeoHookeEhlers()
+		{}
+
+		double get_viscous_dissipation() const
+		{
+			return 0.0;
+		}
+
+	protected:
+		const double mu;
+
+		SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+		{
+			static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
+			return ( mu * ( symmetrize(F * transpose(F)) - I ) );
+		}
+};
+
 
 //@sect4{Derived class: Ogden hyperelastic material}
-    template <int dim, typename NumberType = Sacado::Fad::DFad<double> >
-    class Ogden : public Material_Hyperelastic < dim, NumberType >
-    {
-        public:
-          Ogden(const Parameters::AllParameters &parameters,
-                const std::shared_ptr<Time>     time)
-          :
-          Material_Hyperelastic< dim, NumberType > (parameters,time),
-          mu({parameters.mu1_infty,
-              parameters.mu2_infty,
-              parameters.mu3_infty}),
-          alpha({parameters.alpha1_infty,
-                 parameters.alpha2_infty,
-                 parameters.alpha3_infty})
-           {}
-          virtual ~Ogden()
-          {}
+template <int dim, typename NumberType = Sacado::Fad::DFad<double> >
+class Ogden : public Material_Hyperelastic < dim, NumberType >
+{
+	public:
+		Ogden(const Parameters::AllParameters &parameters, const std::shared_ptr<Time> time)
+		:
+		Material_Hyperelastic< dim, NumberType > (parameters,time),
+		mu_infty({parameters.mu1_infty, parameters.mu2_infty, parameters.mu3_infty}),
+		alpha_infty({parameters.alpha1_infty, parameters.alpha2_infty, parameters.alpha3_infty})
+		{}
+		virtual ~Ogden()
+		{}
 
-           double
-           get_viscous_dissipation() const
-           {
-               return 0.0;
-           }
+		double get_viscous_dissipation() const
+		{
+			return 0.0;
+		}
 
-        protected:
-          std::vector<double> mu;
-          std::vector<double> alpha;
+	protected:
+		std::vector<double> mu_infty;
+		std::vector<double> alpha_infty;
 
-          SymmetricTensor<2, dim, NumberType>
-          get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
-          {
-            const SymmetricTensor<2, dim, NumberType>
-             B = symmetrize(F * transpose(F));
+		SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+		{
+			// left Cauchy-Green strain tensor (see Holzapfel eq. 2.79)
+			const SymmetricTensor<2, dim, NumberType> b = symmetrize(F * transpose(F));
 
-            const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim >
-             eigen_B = eigenvectors(B, this->eigen_solver);
+			// get squared principal stretches (eigenvalues of b) and eigenvectors of b
+			const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim >
+			eigen_b = eigenvectors(b, this->eigen_solver);
 
-            SymmetricTensor<2, dim, NumberType>  tau;
-            static const SymmetricTensor< 2, dim, double>
-              I (Physics::Elasticity::StandardTensors<dim>::I);
+			// compute isochoric principal stretches (see Holzapfel eq. 6.81)
+			double det_F = Tensor<0, dim, double>(determinant(F));
+			Tensor<1, dim, NumberType> lambda_iso;
 
-            for (unsigned int i = 0; i < 3; ++i)
-            {
-                for (unsigned int A = 0; A < dim; ++A)
-                {
-                    SymmetricTensor<2, dim, NumberType>  tau_aux1 = symmetrize(
-                            outer_product(eigen_B[A].second,eigen_B[A].second));
-                    tau_aux1 *= mu[i]*std::pow(eigen_B[A].first, (alpha[i]/2.) );
-                    tau += tau_aux1;
-                }
-                SymmetricTensor<2, dim, NumberType>  tau_aux2 (I);
-                tau_aux2 *= mu[i];
-                tau -= tau_aux2;
-            }
-            return tau;
-          }
-    };
+			for (unsigned int a = 0; a < dim; ++a) {
+				lambda_iso[a] = std::pow(det_F, -1.0/3) * std::sqrt(eigen_b[a].first);
+			}
+
+			// compute Kirchhoff stress tensor (see Comellas (2020) eq. 52)
+			SymmetricTensor<2, dim, NumberType> tau_iso;
+			for (unsigned int a = 0; a < dim; ++a) {
+				SymmetricTensor<2, dim, NumberType> ev_basis = symmetrize(outer_product(eigen_b[a].second,eigen_b[a].second));
+				tau_iso += get_beta_infty(lambda_iso, a) * ev_basis;
+			}
+			return tau_iso;
+		}
+
+		// compare Comellas (2020) eq. 52
+		NumberType get_beta_infty(Tensor<1, dim, NumberType> &lambda_iso, const unsigned int &a) const
+		{
+			NumberType beta = 0.0;
+
+			for (unsigned int i = 0; i < 3; ++i) //3rd-order Ogden model
+			{
+				NumberType aux = 0.0;
+				for (int p = 0; p < dim; ++p)
+					aux += std::pow(lambda_iso[p],alpha_infty[i]);
+
+				aux *= -1.0/dim;
+				aux += std::pow(lambda_iso[a], alpha_infty[i]);
+				aux *= mu_infty[i];
+
+				beta  += aux;
+			}
+			return beta;
+		}
+};
 
 //@sect4{Derived class: Single-mode Ogden viscoelastic material}
 // We use the finite viscoelastic model described in
@@ -3066,8 +2735,7 @@ namespace NonLinearPoroViscoElasticity
             virtual ~visco_Ogden()
             {}
 
-          void
-          update_internal_equilibrium( const Tensor<2, dim, NumberType> &F )
+          void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F )
           {
               Material_Hyperelastic < dim, NumberType >::update_internal_equilibrium(F);
 
@@ -3100,12 +2768,18 @@ namespace NonLinearPoroViscoElasticity
               const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim >
                 eigen_B_e_1_tr = eigenvectors(B_e_1_tr, this->eigen_solver);
 
+              NumberType J_e_1 = std::sqrt(determinant(B_e_1_tr));
+
               Tensor< 1, dim, NumberType > lambdas_e_1_tr;
               Tensor< 1, dim, NumberType > epsilon_e_1_tr;
+              Tensor< 1, dim, NumberType > lambdas_e_1_iso_tr; //remove
+              Tensor< 1, dim, NumberType > epsilon_e_1_iso_tr; //remove
               for (int a = 0; a < dim; ++a)
               {
                   lambdas_e_1_tr[a] = std::sqrt(eigen_B_e_1_tr[a].first);
                   epsilon_e_1_tr[a] = std::log(lambdas_e_1_tr[a]);
+                  lambdas_e_1_iso_tr[a] = lambdas_e_1_tr[a]*std::pow(J_e_1,-1.0/dim); //remove
+                  epsilon_e_1_iso_tr[a] = std::log(lambdas_e_1_iso_tr[a]); //remove
               }
 
              const double tolerance = 1e-8;
@@ -3113,15 +2787,16 @@ namespace NonLinearPoroViscoElasticity
              Tensor< 1, dim, NumberType > residual;
              Tensor< 2, dim, NumberType > tangent;
              static const SymmetricTensor< 2, dim, double> I(Physics::Elasticity::StandardTensors<dim>::I);
-             NumberType J_e_1 = std::sqrt(determinant(B_e_1_tr));
 
              std::vector<NumberType> lambdas_e_1_iso(dim);
+             Tensor< 1, dim, NumberType > epsilon_e_1_iso; //remove
              SymmetricTensor<2, dim, NumberType> B_e_1;
              int iteration = 0;
 
              Tensor< 1, dim, NumberType > lambdas_e_1;
              Tensor< 1, dim, NumberType > epsilon_e_1;
              epsilon_e_1 = epsilon_e_1_tr;
+             epsilon_e_1_iso = epsilon_e_1_iso_tr;
 
               while(residual_check > tolerance)
               {
@@ -3136,8 +2811,11 @@ namespace NonLinearPoroViscoElasticity
                   //double J1 = Tensor<0,dim,double>(J_e_1);
                   //std::cout << "J = " << J1 << " in iteration " << iteration << std::endl;
 
-                  for (unsigned int a = 0; a < dim; ++a)
+                  for (unsigned int a = 0; a < dim; ++a) {
                       lambdas_e_1_iso[a] = lambdas_e_1[a]*std::pow(J_e_1,-1.0/dim);
+                      //lambdas_e_1_iso[a] = std::exp(epsilon_e_1_iso[a]); //remove
+                      //epsilon_e_1_iso[a] = std::log(lambdas_e_1_iso[a]); //remove
+                  }
 
                   for (unsigned int a = 0; a < dim; ++a)
                   {
@@ -3145,6 +2823,8 @@ namespace NonLinearPoroViscoElasticity
                       residual[a] *= this->time->get_delta_t()/(2.0*viscosity_mode_1);
                       residual[a] += epsilon_e_1[a];
                       residual[a] -= epsilon_e_1_tr[a];
+                      //residual[a] += epsilon_e_1_iso[a]; //remove
+                      //residual[a] -= epsilon_e_1_iso_tr[a]; //remove
 
                       for (unsigned int b = 0; b < dim; ++b)
                       {
@@ -3155,6 +2835,7 @@ namespace NonLinearPoroViscoElasticity
 
                   }
                   epsilon_e_1 -= invert(tangent)*residual;
+                  //epsilon_e_1_iso -= invert(tangent)*residual; //remove
 
                   residual_check = 0.0;
                   for (unsigned int a = 0; a < dim; ++a)
@@ -3173,11 +2854,13 @@ namespace NonLinearPoroViscoElasticity
               {
                   lambdas_e_1[a] = std::exp(epsilon_e_1[a]);
                   aux_J_e_1 *= lambdas_e_1[a];
+                  //lambdas_e_1_iso[a] = std::exp(epsilon_e_1_iso[a]); //remove
               }
               J_e_1 = aux_J_e_1;
 
               for (unsigned int a = 0; a < dim; ++a)
                   lambdas_e_1_iso[a] = lambdas_e_1[a]*std::pow(J_e_1,-1.0/dim);
+              	  //lambdas_e_1[a] = lambdas_e_1_iso[a]*std::pow(J_e_1,1.0/dim);
 
               for (unsigned int a = 0; a < dim; ++a)
               {
@@ -3237,29 +2920,27 @@ namespace NonLinearPoroViscoElasticity
           SymmetricTensor<2, dim, NumberType>
           get_tau_E_eq(const Tensor<2,dim, NumberType> &F) const
           {
-            const SymmetricTensor<2, dim, NumberType> B = symmetrize(F * transpose(F));
+        	  const SymmetricTensor<2, dim, NumberType> B = symmetrize(F * transpose(F));
 
-            std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B;
-            eigen_B = eigenvectors(B, this->eigen_solver);
+        	  // get squared principal stretches (eigenvalues of b) and eigenvectors of b
+        	  std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B;
+        	  eigen_B = eigenvectors(B, this->eigen_solver);
 
-            SymmetricTensor<2, dim, NumberType>  tau;
-            static const SymmetricTensor< 2, dim, double>
-              I (Physics::Elasticity::StandardTensors<dim>::I);
+        	  // compute isochoric principal stretches
+        	  double det_F = Tensor<0, dim, double>(determinant(F));
+        	  Tensor<1, dim, NumberType> lambda_iso;
 
-            for (unsigned int i = 0; i < 3; ++i)
-            {
-                for (unsigned int A = 0; A < dim; ++A)
-                {
-                    SymmetricTensor<2, dim, NumberType>  tau_aux1 = symmetrize(
-                          outer_product(eigen_B[A].second,eigen_B[A].second));
-                    tau_aux1 *= mu_infty[i]*std::pow(eigen_B[A].first, (alpha_infty[i]/2.) );
-                    tau += tau_aux1;
-                }
-                SymmetricTensor<2, dim, NumberType>  tau_aux2 (I);
-                tau_aux2 *= mu_infty[i];
-                tau -= tau_aux2;
-            }
-            return tau;
+        	  for (unsigned int a = 0; a < dim; ++a) {
+        		  lambda_iso[a] = std::pow(det_F, -1.0/3) * std::sqrt(eigen_B[a].first);
+        	  }
+
+        	  SymmetricTensor<2, dim, NumberType>  tau;
+
+        	  for (unsigned int A = 0; A < dim; ++A) {
+        		  SymmetricTensor<2, dim, NumberType>  ev_basis = symmetrize(outer_product(eigen_B[A].second,eigen_B[A].second));
+        		  tau += get_beta_infty(lambda_iso, A) * ev_basis;
+        	  }
+        	  return tau;
           }
 
           SymmetricTensor<2, dim, NumberType>
@@ -3268,8 +2949,26 @@ namespace NonLinearPoroViscoElasticity
               return tau_neq_1;
           }
 
-          NumberType
-          get_beta_mode_1(std::vector< NumberType > &lambda, const int &A) const
+          NumberType get_beta_infty(Tensor<1, dim, NumberType> &lambda_iso, const unsigned int &A) const
+          {
+        	  NumberType beta = 0.0;
+
+        	  for (unsigned int i = 0; i < 3; ++i) //3rd-order Ogden model
+        	  {
+        		  NumberType aux = 0.0;
+        		  for (int p = 0; p < dim; ++p)
+        			  aux += std::pow(lambda_iso[p],alpha_infty[i]);
+
+        		  aux *= -1.0/dim;
+        		  aux += std::pow(lambda_iso[A], alpha_infty[i]);
+        		  aux *= mu_infty[i];
+
+        		  beta  += aux;
+        	  }
+        	  return beta;
+          }
+
+          NumberType get_beta_mode_1(std::vector< NumberType > &lambda, const int &A) const
           {
               NumberType beta = 0.0;
 
@@ -3772,12 +3471,12 @@ namespace NonLinearPoroViscoElasticity
                    "Material_Darcy_Fluid --> Only Markert "
                    "and Ehlers formulations have been implemented."));
 
-             //return ( -1.0 * permeability_term * det_F   //what about this det_F in there?!
-              //        * (grad_p_fluid - get_body_force_FR_current()) );
+             return ( -1.0 * permeability_term * det_F   //what about this det_F in there?!
+                      * (grad_p_fluid - get_body_force_FR_current()) );
 
              // try w_F from the theory
-             const NumberType n_F_inv = det_F/(det_F-n_OS);
-             return ( -1.0 * permeability_term * n_F_inv * (grad_p_fluid - get_body_force_FR_current()) );
+             //const NumberType n_F_inv = det_F/(det_F-n_OS);
+             //return ( -1.0 * permeability_term * n_F_inv * (grad_p_fluid - get_body_force_FR_current()) );
          }
 
          double get_porous_dissipation(const Tensor<2,dim, NumberType> &F,
@@ -3894,6 +3593,10 @@ namespace NonLinearPoroViscoElasticity
             {
                 if (parameters.mat_type == "Neo-Hooke")
                     solid_material.reset(new NeoHooke<dim,NumberType>(parameters,time));
+                else if (parameters.mat_type == "Neo-Hooke-PS")
+                    solid_material.reset(new NeoHookeEhlers<dim,NumberType>(parameters,time));
+                else if (parameters.mat_type == "Neo-Hooke-Ehlers")
+                    solid_material.reset(new NeoHookeEhlers<dim,NumberType>(parameters,time));
                 else if (parameters.mat_type == "Ogden")
                     solid_material.reset(new Ogden<dim,NumberType>(parameters,time));
                 else if (parameters.mat_type == "visco-Ogden")
@@ -4171,11 +3874,13 @@ namespace NonLinearPoroViscoElasticity
 
             //Declare an instance of dealii QGauss class (The Gauss-Legendre family of quadrature rules for numerical integration)
             //Gauss Points in element, with n quadrature points (in each space direction <dim> )
-            //const QGauss<dim>                qf_cell;
-            const QGaussLobatto<dim>                qf_cell;
+            const QGauss<dim>                qf_cell;
+            //const QGaussLobatto<dim>                qf_cell;
+            //const QGaussLobattoChebyshev<dim>                qf_cell;
             //Gauss Points on element faces (used for definition of BCs)
-            //const QGauss<dim - 1>            qf_face;
-            const QGaussLobatto<dim - 1>            qf_face;
+            const QGauss<dim - 1>            qf_face;
+            //const QGaussLobatto<dim - 1>            qf_face;
+            //const QGaussLobattoChebyshev<dim - 1>            qf_face;
             //Integer to store num GPs per element (this value will be used often)
             const unsigned int               n_q_points;
             //Integer to store num GPs per face (this value will be used often)
@@ -4405,12 +4110,12 @@ namespace NonLinearPoroViscoElasticity
               solution_n += solution_delta;
 
 
-              det_F_change_mpi = jacobian_on_faces(solution_n);
-              det_F_change = Utilities::MPI::max(det_F_change_mpi, mpi_communicator);
+              //det_F_change_mpi = jacobian_on_faces(solution_n);
+              //det_F_change = Utilities::MPI::max(det_F_change_mpi, mpi_communicator);
               //Store the converged values of the internal variables
               det_F_min_mpi = update_end_timestep();
               det_F_min = Utilities::MPI::max(det_F_min_mpi, mpi_communicator);
-              det_F_min = std::max(det_F_change, det_F_min);
+              //det_F_min = std::max(det_F_change, det_F_min);
 
               //Output results
               if ( (time->get_timestep()%parameters.timestep_output) == 0 )
@@ -4513,10 +4218,12 @@ namespace NonLinearPoroViscoElasticity
         std::vector<std::vector<Tensor<1,dim, NumberType>>>          grad_Nx_p_fluid;
 
         ScratchData_ASM(const FiniteElement<dim> &fe_cell,
-                        //const QGauss<dim> &qf_cell, const UpdateFlags uf_cell,
-                        //const QGauss<dim - 1> & qf_face, const UpdateFlags uf_face,
-						const QGaussLobatto<dim> &qf_cell, const UpdateFlags uf_cell,
-						const QGaussLobatto<dim - 1> & qf_face, const UpdateFlags uf_face,
+                        const QGauss<dim> &qf_cell, const UpdateFlags uf_cell,
+                        const QGauss<dim - 1> & qf_face, const UpdateFlags uf_face,
+						//const QGaussLobatto<dim> &qf_cell, const UpdateFlags uf_cell,
+						//const QGaussLobatto<dim - 1> & qf_face, const UpdateFlags uf_face,
+						//const QGaussLobattoChebyshev<dim> &qf_cell, const UpdateFlags uf_cell,
+						//const QGaussLobattoChebyshev<dim - 1> & qf_face, const UpdateFlags uf_face,
                         const TrilinosWrappers::MPI::BlockVector &solution_total    )
           :
           solution_total (solution_total),
@@ -4617,8 +4324,17 @@ namespace NonLinearPoroViscoElasticity
 
         if (apply_dirichlet_bc)
         {
+        	//////////////////////// TEST /////////////////////////
+        	const UpdateFlags uf_cell(update_quadrature_points | update_normal_vectors |
+        	                                          update_values | update_JxW_values );
+        	FEValues<dim> fe_values_ref(mapping, fe, qf_cell, uf_cell);
+        	//////////////////////// TEST /////////////////////////
+
         	for (auto cell : this->triangulation.active_cell_iterators())
             {
+        		//////////////////////// TEST /////////////////////////
+        		fe_values_ref.reinit(cell);
+        		//////////////////////// TEST /////////////////////////
 
                 const UpdateFlags uf_face(update_quadrature_points | update_normal_vectors |
                                           update_values | update_JxW_values );
@@ -4632,15 +4348,19 @@ namespace NonLinearPoroViscoElasticity
                       fe_face_values_ref.reinit(cell, face);
                   }
                 }
+
             }
           constraints.clear();
           make_dirichlet_constraints(constraints);
         }
         else
         {
-          for (unsigned int i=0; i<dof_handler_ref.n_dofs(); ++i)
-            if (constraints.is_inhomogeneously_constrained(i) == true)
-              constraints.set_inhomogeneity(i,0.0);
+        	//AffineConstraints<double> homogeneous_constraints(constraints); //remove
+        	for (unsigned int i=0; i<dof_handler_ref.n_dofs(); ++i)
+        		if (constraints.is_inhomogeneously_constrained(i) == true) //remove: homogeneous_
+        			constraints.set_inhomogeneity(i,0.0); //remove: homogeneous_
+        	//constraints.clear(); //remove
+        	//constraints.copy_from(homogeneous_constraints); //remove
         }
 
         constraints.close();
@@ -5157,6 +4877,7 @@ namespace NonLinearPoroViscoElasticity
         //Info given to FEValues and FEFaceValues constructors, to indicate which data will be needed at each element.
         const UpdateFlags uf_cell(update_values |
                                   update_gradients |
+								  update_quadrature_points |   //may be removed again
                                   update_JxW_values);
         
         const UpdateFlags uf_face(update_values |
@@ -5303,35 +5024,6 @@ namespace NonLinearPoroViscoElasticity
             double det_F_AG = Tensor<0,dim,double>(determinant(F_AD));
             double n_0S = this->parameters.solid_vol_frac;
             Assert(det_F_AG > n_0S, ExcInternalError());
-            /*Tensor<2,dim> F_AG = Tensor<2,dim,double>(F_AD);
-
-            // Print F_ij to file
-            std::ofstream F;
-            F.open("F", std::ofstream::app);
-            F << std::setprecision(6) << std::scientific;
-            F << std::setw(16) << this->time->get_current() << ","
-              << std::setw(16) << q_point << ","
-              << std::setw(16) << F_AG[0][0] << ","
-			  << std::setw(16) << F_AG[0][1] << ","
-			  << std::setw(16) << F_AG[0][2] << ","
-			  << std::setw(16) << F_AG[1][0] << ","
-			  << std::setw(16) << F_AG[1][1] << ","
-			  << std::setw(16) << F_AG[1][2] << ","
-			  << std::setw(16) << F_AG[2][0] << ","
-			  << std::setw(16) << F_AG[2][1] << ","
-			  << std::setw(16) << F_AG[2][2] << "," << std::endl;
-            F.close();
-
-            // Print J = det(F) to file
-            std::ofstream det_F;
-            det_F.open("det_F", std::ofstream::app);
-            det_F << std::setprecision(6) << std::scientific;
-            det_F << std::setw(16) << this->time->get_current() << ","
-            	  << std::setw(16) << cell->id() << ","
-         		  << std::setw(16) << q_point << ","
-				  << std::setw(16) << det_F_AG << "," << std::endl;
-            det_F.close();
-            */
 
             Assert(determinant(F_AD) > 0, ExcMessage("Invalid deformation map"));
             const Tensor<2, dim, ADNumberType> F_inv_AD = invert(F_AD);
@@ -5381,22 +5073,153 @@ namespace NonLinearPoroViscoElasticity
             }
 
             //Get some info from constitutive model of solid
-
-            // Print cell date to eigenvalue file
-            /*std::ofstream eigenvalues;
-            eigenvalues.open("eigenvalues", std::ofstream::app);
-            eigenvalues << std::setprecision(6) << std::scientific;
-            eigenvalues << std::setw(16) << this->time->get_current() << ","
-            			<< std::setw(16) << cell->id() << ","
-						<< std::setw(16) << q_point << ",";
-			eigenvalues.close();*/
-
             static const SymmetricTensor< 2, dim, double>
                 I (Physics::Elasticity::StandardTensors<dim>::I);
             const SymmetricTensor<2, dim, ADNumberType>
                 tau_E = lqph[q_point]->get_tau_E(F_AD);
             SymmetricTensor<2, dim, ADNumberType> tau_fluid_vol (I);
             tau_fluid_vol *= -1.0 * p_fluid * det_F_AD;
+
+
+            if (true) {
+            	const Point<dim> q_point_coord = scratch.fe_values_ref.quadrature_point(q_point);
+
+            	// Deformation gradient
+            	double det_F_AG = Tensor<0,dim,double>(determinant(F_AD));
+            	Tensor<2,dim> F_AG = Tensor<2,dim,double>(F_AD);
+
+            	// Print deformation gradient to file
+            	std::ofstream F;
+            	F.open("F", std::ofstream::app);
+            	F << std::setprecision(6) << std::scientific;
+            	F << std::setw(16) << this->time->get_current() << ","
+            			<< std::setw(16) << cell->id() << ","
+            			<< std::setw(16) << q_point << ","
+						<< std::setw(16) << q_point_coord[0] << ","
+						<< std::setw(16) << q_point_coord[1] << ","
+						<< std::setw(16) << q_point_coord[2] << ","
+						<< std::setw(16) << F_AG[0][0] << ","
+						<< std::setw(16) << F_AG[0][1] << ","
+						<< std::setw(16) << F_AG[0][2] << ","
+						<< std::setw(16) << F_AG[1][0] << ","
+						<< std::setw(16) << F_AG[1][1] << ","
+						<< std::setw(16) << F_AG[1][2] << ","
+						<< std::setw(16) << F_AG[2][0] << ","
+						<< std::setw(16) << F_AG[2][1] << ","
+						<< std::setw(16) << F_AG[2][2] << "," << std::endl;
+            	F.close();
+
+            	// Print Jacobian to file
+            	std::ofstream det_F;
+            	det_F.open("det_F", std::ofstream::app);
+            	det_F << std::setprecision(6) << std::scientific;
+            	det_F << std::setw(16) << this->time->get_current() << ","
+            			<< std::setw(16) << cell->id() << ","
+						<< std::setw(16) << q_point << ","
+						<< std::setw(16) << q_point_coord[0] << ","
+						<< std::setw(16) << q_point_coord[1] << ","
+						<< std::setw(16) << q_point_coord[2] << ","
+						<< std::setw(16) << det_F_AG << "," << std::endl;
+            	det_F.close();
+
+
+            	// Left Cauchy-Green tensor
+            	const SymmetricTensor<2, dim, ADNumberType> B = symmetrize(F_AD * transpose(F_AD));
+
+            	const std::array< std::pair< ADNumberType, Tensor< 1, dim, ADNumberType > >, dim >
+            	eigen_B = eigenvectors(B, SymmetricTensorEigenvectorMethod::ql_implicit_shifts);
+
+            	double lambda_B_1 = Tensor<0,dim,double>(eigen_B[0].first);
+            	double lambda_B_2 = Tensor<0,dim,double>(eigen_B[1].first);
+            	double lambda_B_3 = Tensor<0,dim,double>(eigen_B[2].first);
+            	Tensor<1,dim> ev_B_1 = Tensor<1,dim,double>(eigen_B[0].second);
+            	Tensor<1,dim> ev_B_2 = Tensor<1,dim,double>(eigen_B[1].second);
+            	Tensor<1,dim> ev_B_3 = Tensor<1,dim,double>(eigen_B[2].second);
+
+            	// Print eigenvalues of left Cauchy-Green tensor to file
+				std::ofstream eigenvalues_B;
+            	eigenvalues_B.open("eigenvalues_B", std::ofstream::app);
+            	eigenvalues_B << std::setprecision(6) << std::scientific;
+            	eigenvalues_B << std::setw(16) << this->time->get_current() << ","
+            			<< std::setw(16) << cell->id() << ","
+            			<< std::setw(16) << q_point << ","
+            			<< std::setw(16) << q_point_coord[0] << ","
+						<< std::setw(16) << q_point_coord[1] << ","
+						<< std::setw(16) << q_point_coord[2] << ","
+            			<< std::setw(16) << lambda_B_1 << ","
+						<< std::setw(16) << lambda_B_2 << ","
+						<< std::setw(16) << lambda_B_3 << std::endl;
+            	eigenvalues_B.close();
+
+            	// Print eigenvectors of left Cauchy-Green tensor to file
+            	std::ofstream eigenvectors_B;
+            	eigenvectors_B.open("eigenvectors_B", std::ofstream::app);
+            	eigenvectors_B << std::setprecision(6) << std::scientific;
+            	eigenvectors_B << std::setw(16) << this->time->get_current() << ","
+            			<< std::setw(16) << cell->id() << ","
+            			<< std::setw(16) << q_point << ","
+            			<< std::setw(16) << q_point_coord[0] << ","
+            			<< std::setw(16) << q_point_coord[1] << ","
+            			<< std::setw(16) << q_point_coord[2] << ","
+            			<< std::setw(16) << ev_B_1[0] << ","
+						<< std::setw(16) << ev_B_1[1] << ","
+						<< std::setw(16) << ev_B_1[2] << ","
+						<< std::setw(16) << ev_B_2[0] << ","
+						<< std::setw(16) << ev_B_2[1] << ","
+						<< std::setw(16) << ev_B_2[2] << ","
+						<< std::setw(16) << ev_B_3[0] << ","
+						<< std::setw(16) << ev_B_3[1] << ","
+						<< std::setw(16) << ev_B_3[2] << std::endl;
+            	eigenvectors_B.close();
+
+            	// Cauchy stress
+            	const SymmetricTensor<2, dim, ADNumberType> cauchy_E_base_AD = lqph[q_point]->get_Cauchy_E_base(F_AD);
+            	const SymmetricTensor<2, dim, ADNumberType> cauchy_E_ext_func_AD = lqph[q_point]->get_Cauchy_E_ext_func(F_AD);
+            	const SymmetricTensor<2,dim> cauchy_E_base = SymmetricTensor<2,dim,double>(cauchy_E_base_AD);
+            	const SymmetricTensor<2,dim> cauchy_E_ext_func = SymmetricTensor<2,dim,double>(cauchy_E_ext_func_AD);
+
+            	// Print isochoric Cauchy stress to file
+            	std::ofstream cauchy_iso;
+            	cauchy_iso.open("cauchy_iso", std::ofstream::app);
+            	cauchy_iso << std::setprecision(6) << std::scientific;
+            	cauchy_iso << std::setw(16) << this->time->get_current() << ","
+            			<< std::setw(16) << cell->id() << ","
+						<< std::setw(16) << q_point << ","
+						<< std::setw(16) << q_point_coord[0] << ","
+						<< std::setw(16) << q_point_coord[1] << ","
+						<< std::setw(16) << q_point_coord[2] << ","
+						<< std::setw(16) << cauchy_E_base[0][0] << ","
+						<< std::setw(16) << cauchy_E_base[0][1] << ","
+						<< std::setw(16) << cauchy_E_base[0][2] << ","
+						<< std::setw(16) << cauchy_E_base[1][0] << ","
+						<< std::setw(16) << cauchy_E_base[1][1] << ","
+						<< std::setw(16) << cauchy_E_base[1][2] << ","
+						<< std::setw(16) << cauchy_E_base[2][0] << ","
+						<< std::setw(16) << cauchy_E_base[2][1] << ","
+						<< std::setw(16) << cauchy_E_base[2][2] << "," << std::endl;
+            	cauchy_iso.close();
+
+            	// Print volumetric Cauchy stress to file
+            	std::ofstream cauchy_vol;
+            	cauchy_vol.open("cauchy_vol", std::ofstream::app);
+            	cauchy_vol << std::setprecision(6) << std::scientific;
+            	cauchy_vol << std::setw(16) << this->time->get_current() << ","
+            			<< std::setw(16) << cell->id() << ","
+						<< std::setw(16) << q_point << ","
+						<< std::setw(16) << q_point_coord[0] << ","
+						<< std::setw(16) << q_point_coord[1] << ","
+						<< std::setw(16) << q_point_coord[2] << ","
+						<< std::setw(16) << cauchy_E_ext_func[0][0] << ","
+						<< std::setw(16) << cauchy_E_ext_func[0][1] << ","
+						<< std::setw(16) << cauchy_E_ext_func[0][2] << ","
+						<< std::setw(16) << cauchy_E_ext_func[1][0] << ","
+						<< std::setw(16) << cauchy_E_ext_func[1][1] << ","
+						<< std::setw(16) << cauchy_E_ext_func[1][2] << ","
+						<< std::setw(16) << cauchy_E_ext_func[2][0] << ","
+						<< std::setw(16) << cauchy_E_ext_func[2][1] << ","
+						<< std::setw(16) << cauchy_E_ext_func[2][2] << "," << std::endl;
+            	cauchy_vol.close();
+            }
 
             //Get some info from constitutive model of fluid
             const ADNumberType det_F_aux =  lqph[q_point]->get_converged_det_F();
@@ -5597,12 +5420,18 @@ namespace NonLinearPoroViscoElasticity
            SolverControl solver_control (tangent_matrix_nb.m(),					// (maximum number of iterations, tolerance)
                                          1.0e-6 * system_rhs_nb.l2_norm());
            TrilinosWrappers::SolverDirect::AdditionalData additional_data;		// select solver type
-           additional_data.solver_type = "Amesos_Superludist";						// default: Amesos_Klu
+           additional_data.solver_type = "Amesos_Superludist";						// default: Amesos_Klu Superludist
            TrilinosWrappers::SolverDirect solver (solver_control, additional_data);
 
            double start = MPI_Wtime();
            solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb);	// linear system (A, x, b)
            double end = MPI_Wtime();
+
+           // print linear system
+//           std::ofstream tangent_matrix;
+//           tangent_matrix.open("tangent_matrix", std::ofstream::app);
+//		   tangent_matrix_nb.print(tangent_matrix);
+//		   tangent_matrix.close();
 
            // Copy the non-block solution back to block system
            for (unsigned int i=0; i<locally_owned_dofs.n_elements(); ++i)
@@ -5838,6 +5667,10 @@ namespace NonLinearPoroViscoElasticity
         //Declare an instance of the material class object
         if (parameters.mat_type == "Neo-Hooke")
             NeoHooke<dim,ADNumberType> material(parameters,time);
+        else if (parameters.mat_type == "Neo-Hooke-PS")
+            NeoHookePS<dim,ADNumberType> material(parameters,time);
+        else if (parameters.mat_type == "Neo-Hooke-Ehlers")
+            NeoHookeEhlers<dim,ADNumberType> material(parameters,time);
         else if (parameters.mat_type == "Ogden")
             Ogden<dim,ADNumberType> material(parameters,time);
         else if (parameters.mat_type == "visco-Ogden")
@@ -6401,6 +6234,10 @@ namespace NonLinearPoroViscoElasticity
         //Declare an instance of the material class object
        if (parameters.mat_type == "Neo-Hooke")
            NeoHooke<dim, ADNumberType> material(parameters,time);
+       else if (parameters.mat_type == "Neo-Hooke-PS")
+           NeoHookePS<dim, ADNumberType> material(parameters,time);
+       else if (parameters.mat_type == "Neo-Hooke-Ehlers")
+           NeoHookeEhlers<dim, ADNumberType> material(parameters,time);
        else if (parameters.mat_type == "Ogden")
            Ogden<dim, ADNumberType> material(parameters, time);
        else if (parameters.mat_type == "visco-Ogden")
@@ -6673,6 +6510,10 @@ namespace NonLinearPoroViscoElasticity
         //Declare an instance of the material class object
         if (parameters.mat_type == "Neo-Hooke")
             NeoHooke<dim,ADNumberType> material(parameters,time);
+        else if (parameters.mat_type == "Neo-Hooke-PS")
+            NeoHookePS<dim,ADNumberType> material(parameters,time);
+        else if (parameters.mat_type == "Neo-Hooke-Ehlers")
+            NeoHookeEhlers<dim,ADNumberType> material(parameters,time);
         else if (parameters.mat_type == "Ogden")
             Ogden<dim,ADNumberType> material(parameters, time);
         else if (parameters.mat_type == "visco-Ogden")
@@ -9439,6 +9280,7 @@ namespace NonLinearPoroViscoElasticity
 						1,
 						ZeroFunction<dim>(this->n_components),
 						constraints,
+//						this->fe.component_mask(this->z_displacement));
 						(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
     			// Apply vertical displacement on cylinder top surface and fix in x- and y-direction to account for glue
@@ -9458,7 +9300,7 @@ namespace NonLinearPoroViscoElasticity
 							ZeroFunction<dim>(this->n_components),
 							constraints,
 							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
-    			//}
+
 
     			// Define symmetry boundary conditions for lateral surfaces
 			    VectorTools::interpolate_boundary_values(
@@ -9777,7 +9619,7 @@ namespace NonLinearPoroViscoElasticity
 
     						displ_incr[2] = current_displ - previous_displ;
     					} else
-    						displ_incr[2] = 0.0;
+    						displ_incr[2] = -0.000000001;
 
     					/*//sinus load
     					if (current_time <= final_load_time) {
@@ -10540,7 +10382,7 @@ namespace NonLinearPoroViscoElasticity
             	const double height = this->parameters.height; //20.0;
 
             	// Define the indenter radius and the center of the applied displacement
-            	const double indenter_radius = 2;
+            	const double indenter_radius = 4;
             	const Point<dim> displ_center(0.0, 0.0, height);
 
             	// Create a quarter_hyper_ball in 2d, i.e. a quarter-circle and extrude it to obtain a quarter cylinder
@@ -10585,7 +10427,7 @@ namespace NonLinearPoroViscoElasticity
             	/*for (const auto &cell : this->triangulation.active_cell_iterators()) {
             		if (displ_center.distance(cell->center()) < 9)
             			cell->set_refine_flag();
-            	}*/
+            	}
 
             	this->triangulation.execute_coarsening_and_refinement();
 
@@ -10615,7 +10457,7 @@ namespace NonLinearPoroViscoElasticity
             			cell->set_refine_flag();
             	}
 
-            	this->triangulation.execute_coarsening_and_refinement();
+            	this->triangulation.execute_coarsening_and_refinement();*/
 
             	/*for (const auto &cell : this->triangulation.active_cell_iterators()) {
             		if (displ_center.distance(cell->center()) < 2.4 && displ_center.distance(cell->center()) > 1.6 && cell->center()[2] > (height - 0.7))
@@ -11104,7 +10946,7 @@ namespace NonLinearPoroViscoElasticity
 						cell->set_refine_flag();
 				}
 
-				this->triangulation.execute_coarsening_and_refinement();*/
+				this->triangulation.execute_coarsening_and_refinement();
 
 				for (const auto &cell : this->triangulation.active_cell_iterators()) {
 					if (displ_center.distance(cell->center()) < 7 && cell->center()[2] > (height - 4.5))
@@ -11125,7 +10967,7 @@ namespace NonLinearPoroViscoElasticity
 						cell->set_refine_flag();
 				}
 
-				this->triangulation.execute_coarsening_and_refinement();
+				this->triangulation.execute_coarsening_and_refinement();*/
 
 				/*for (const auto &cell : this->triangulation.active_cell_iterators()) {
 					if (displ_center.distance(cell->center()) < 2 && cell->center()[2] > (height - 0.3))
@@ -11325,7 +11167,7 @@ namespace NonLinearPoroViscoElasticity
 										//this->pcout << "x = " << this_support_point[0] << ", y = " << this_support_point[1] << ", z = " << this_support_point[2] << std::endl;
 										//this->pcout << "idx = " << index_x << ", idy = " << index_y << ", idz = " << index_z << std::endl;
 
-										const double z_0 = this->parameters.height + obstacle_value[2] + obstacle_value[0]; 	// current z-position of center of spherical indenter (d_c is negative)
+										/*const double z_0 = this->parameters.height + obstacle_value[2] + obstacle_value[0]; 	// current z-position of center of spherical indenter (d_c is negative)
 										const Point<dim> indent_center(0,0,z_0);
 										const double pt_z_c = z_0 - std::sqrt((obstacle_value[2]*obstacle_value[2]) - (this_support_point[0]*this_support_point[0]) - (this_support_point[1]*this_support_point[1])); 	// current z-position of a point on the indenter surface
 
@@ -11349,7 +11191,7 @@ namespace NonLinearPoroViscoElasticity
 										} else {
 											constraints.add_line(index_p);
 											constraints.set_inhomogeneity(index_p, 0);
-										}
+										}*/
 
 
 										/*// flat-punch
@@ -11374,14 +11216,14 @@ namespace NonLinearPoroViscoElasticity
 											this->active_set.add_index(index_z);
 										}*/
 
-										/*// whole surface
+										// whole surface
 										const double undeformed_gap = this->parameters.height + obstacle_value[0] - this_support_point[2];
 										constraints.add_line(index_z);
 										constraints.set_inhomogeneity(index_z, undeformed_gap);
-										//constraints.add_line(index_x);
-										//constraints.set_inhomogeneity(index_x, 0);
-										//constraints.add_line(index_y);
-										//constraints.set_inhomogeneity(index_y, 0);
+										constraints.add_line(index_x);
+										constraints.set_inhomogeneity(index_x, 0);
+										constraints.add_line(index_y);
+										constraints.set_inhomogeneity(index_y, 0);
 										std::ofstream z_displ;
 										z_displ.open(this->parameters.output_directory + "/z_displ", std::ofstream::app);
 										z_displ << std::setprecision(6) << std::scientific;
@@ -11390,7 +11232,7 @@ namespace NonLinearPoroViscoElasticity
 												<< std::setw(16) << undeformed_gap << std::endl;
 										z_displ.close();
 										this->distributed_solution(index_z) = undeformed_gap;
-										this->active_set.add_index(index_z);*/
+										this->active_set.add_index(index_z);
 
 
 
@@ -11611,6 +11453,232 @@ namespace NonLinearPoroViscoElasticity
                 return displ_incr;
           }
 	};
+
+
+	//@sect4{Base class: Odeometric testing device in TU Graz}
+	template <int dim>
+	class OdeometerGraz : public Solid<dim>
+	{
+	public:
+		OdeometerGraz (const Parameters::AllParameters &parameters) : Solid<dim> (parameters) {}
+		virtual ~OdeometerGraz () {}
+
+	private:
+		virtual void make_grid()
+		{
+			const Point<dim-1> mesh_center(0.0, 0.0);
+			const double radius = this->parameters.radius;
+			const double height = this->parameters.height;
+
+			// Create a quarter_hyper_ball in 2d, i.e. a quarter-circle and extrude it to obtain a quarter cylinder
+			Triangulation<dim-1> triangulation_in;
+			GridGenerator::quarter_hyper_ball(triangulation_in, mesh_center, radius);
+			GridGenerator::extrude_triangulation(triangulation_in, 3, height, this->triangulation);
+
+			// Assign a cylindrical manifold to the geometry
+			const CylindricalManifold<dim> cylinder_3d(2);
+			const types::manifold_id cylinder_id = 0;
+			this->triangulation.set_manifold(cylinder_id, cylinder_3d);
+
+			// Assign proper boundary ids
+			for (auto cell : this->triangulation.active_cell_iterators()) {
+				for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
+					if (cell->face(face)->at_boundary() == true) {
+						if (cell->face(face)->center()[2] == 0.0)
+							cell->face(face)->set_boundary_id(1); //bottom
+							else if (cell->face(face)->center()[2] == height)
+								cell->face(face)->set_boundary_id(2); //top
+							else if (cell->face(face)->center()[0] == 0.0) //-4.0
+								cell->face(face)->set_boundary_id(3); //left
+							else if (cell->face(face)->center()[1] == 0.0)
+								cell->face(face)->set_boundary_id(4); //front
+							else {
+								cell->face(face)->set_boundary_id(0);
+								cell->face(face)->set_all_manifold_ids(cylinder_id);
+							}
+					}
+				}
+			}
+
+			// Scale and refine the triangulation
+			GridTools::scale(this->parameters.scale, this->triangulation);
+			this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
+		}
+
+		virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+		{
+			tracked_vertices[0][0] = 0.0*this->parameters.scale;
+			tracked_vertices[0][1] = 0.0*this->parameters.scale;
+			tracked_vertices[0][2] = this->parameters.height*this->parameters.scale;
+
+			tracked_vertices[1][0] = this->parameters.radius*this->parameters.scale;
+			tracked_vertices[1][1] = 0.0*this->parameters.scale;
+			tracked_vertices[1][2] = this->parameters.height*this->parameters.scale;
+		}
+
+		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+		{
+			// Fluid pressure load on cylinder top
+			if (this->parameters.load_type == "pressure") {
+				const std::vector<double> value = get_dirichlet_load(2,2);
+				VectorTools::interpolate_boundary_values(
+						this->dof_handler_ref,
+						2,
+						ConstantFunction<dim>(value[2],this->n_components),
+						constraints,
+						this->fe.component_mask(this->pressure));
+			}
+
+			// Bottom drained
+			if (this->parameters.bottom_drained == "drained") {
+				if (this->time->get_timestep() < 2) {
+					VectorTools::interpolate_boundary_values(
+							this->dof_handler_ref,
+							1,
+							ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+							constraints,
+							this->fe.component_mask(this->pressure));
+				} else {
+					VectorTools::interpolate_boundary_values(
+							this->dof_handler_ref,
+							1,
+							ZeroFunction<dim>(this->n_components),
+							constraints,
+							this->fe.component_mask(this->pressure));
+				}
+			}
+
+			// Cylinder bottom is fully fixed in space (glued)
+			VectorTools::interpolate_boundary_values(
+					this->dof_handler_ref,
+					1,
+					ZeroFunction<dim>(this->n_components),
+					constraints,
+					(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
+
+			// Define symmetry boundary conditions for lateral surfaces
+			VectorTools::interpolate_boundary_values(
+					this->dof_handler_ref,
+					3,
+					ZeroFunction<dim>(this->n_components),
+					constraints,
+					this->fe.component_mask(this->x_displacement));
+			VectorTools::interpolate_boundary_values(
+					this->dof_handler_ref,
+					4,
+					ZeroFunction<dim>(this->n_components),
+					constraints,
+					this->fe.component_mask(this->y_displacement));
+
+			// Cylinder hull confined
+			if (this->parameters.lateral_confined == "confined") {
+				VectorTools::interpolate_boundary_values(
+						this->dof_handler_ref,
+						0,
+						ZeroFunction<dim>(this->n_components),
+						constraints,
+						(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
+			}
+		}
+
+		virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const
+	        			{
+			if (this->parameters.load_type == "pressure")
+				//AssertThrow(false, ExcMessage("Pressure loading not implemented for rheometer examples."));
+
+				(void)boundary_id;
+			(void)pt;
+			(void)N;
+			return Tensor<1,dim>();
+	        			}
+
+		virtual types::boundary_id get_reaction_boundary_id_for_output() const
+		{
+			return 1;
+		}
+
+		virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const
+		{
+			(void)pt;
+			(void)boundary_id;
+			return 0.0;
+		}
+
+		virtual std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const {
+			if (this->parameters.lateral_drained == "drained" && this->parameters.bottom_drained == "drained") {
+				return std::make_pair(0,1);
+			} else if (this->parameters.lateral_drained == "drained") {
+				return std::make_pair(0,0);
+			} else {
+				return std::make_pair(1,1);
+			}
+		}
+
+		// Define Dirichlet load, definition in derived classes
+		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
+	};
+
+	//@sect4{Derived class: Tension and Compression Relaxation}
+	template <int dim>
+	class OdeometerGrazConstant : public OdeometerGraz<dim>
+	{
+	public:
+		OdeometerGrazConstant (const Parameters::AllParameters &parameters) : OdeometerGraz<dim> (parameters) {}
+		virtual ~OdeometerGrazConstant () {}
+
+	private:
+		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+		{
+			std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
+			if (this->parameters.load_type == "pressure") {
+				if ((boundary_id == 2) && (direction == 2)) {
+					const double final_displ = std::abs(this->parameters.load);
+					const double final_load_time = this->parameters.end_load_time;
+					const double current_time = this->time->get_current();
+					const double delta_time = this->time->get_delta_t();
+
+					double current_displ = 0.0;
+					double previous_displ = 0.0;
+
+					if (current_time <= final_load_time) {
+						current_displ = (current_time/final_load_time) * final_displ;
+
+						if (current_time > delta_time)
+							previous_displ = ((current_time-delta_time)/final_load_time) * final_displ;
+
+						displ_incr[2] = current_displ - previous_displ;
+					} else
+						displ_incr[2] = 0.0;
+				}
+			}
+			return displ_incr;
+		}
+
+		virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const
+		{
+			if (this->parameters.load_type == "pressure") {
+				if (boundary_id == 2) {
+					//return this->parameters.load * N;
+
+					const double final_load = this->parameters.load;
+					const double final_time = this->parameters.end_load_time;
+					const double current_time = this->time->get_current();
+					double load;
+
+					// linear increasing load
+					if (current_time <= final_time) {
+						load = final_load * (current_time/final_time);
+					} else {
+						load = final_load;
+					}
+					return load * N;
+				}
+			}
+			(void)pt;
+			return Tensor<1,dim>();
+		}
+	};
+
 }
 
 
@@ -11761,6 +11829,11 @@ int main (int argc, char *argv[])
       else if (parameters.geom_type == "hydro_nano_graz_compression_relax_sphere")
       {
         HydroNanoGrazRelaxationCompressionQuarterSphere<3> solid_3d(parameters);
+        solid_3d.run();
+      }
+      else if (parameters.geom_type == "odeometer_graz")
+      {
+        OdeometerGrazConstant<3> solid_3d(parameters);
         solid_3d.run();
       }
       else
