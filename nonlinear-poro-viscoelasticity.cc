@@ -3874,12 +3874,12 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
 
             //Declare an instance of dealii QGauss class (The Gauss-Legendre family of quadrature rules for numerical integration)
             //Gauss Points in element, with n quadrature points (in each space direction <dim> )
-            const QGauss<dim>                qf_cell;
-            //const QGaussLobatto<dim>                qf_cell;
+            //const QGauss<dim>                qf_cell;
+            const QGaussLobatto<dim>                qf_cell;
             //const QGaussLobattoChebyshev<dim>                qf_cell;
             //Gauss Points on element faces (used for definition of BCs)
-            const QGauss<dim - 1>            qf_face;
-            //const QGaussLobatto<dim - 1>            qf_face;
+            //const QGauss<dim - 1>            qf_face;
+            const QGaussLobatto<dim - 1>            qf_face;
             //const QGaussLobattoChebyshev<dim - 1>            qf_face;
             //Integer to store num GPs per element (this value will be used often)
             const unsigned int               n_q_points;
@@ -4218,10 +4218,10 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
         std::vector<std::vector<Tensor<1,dim, NumberType>>>          grad_Nx_p_fluid;
 
         ScratchData_ASM(const FiniteElement<dim> &fe_cell,
-                        const QGauss<dim> &qf_cell, const UpdateFlags uf_cell,
-                        const QGauss<dim - 1> & qf_face, const UpdateFlags uf_face,
-						//const QGaussLobatto<dim> &qf_cell, const UpdateFlags uf_cell,
-						//const QGaussLobatto<dim - 1> & qf_face, const UpdateFlags uf_face,
+                        //const QGauss<dim> &qf_cell, const UpdateFlags uf_cell,
+                        //const QGauss<dim - 1> & qf_face, const UpdateFlags uf_face,
+						const QGaussLobatto<dim> &qf_cell, const UpdateFlags uf_cell,
+						const QGaussLobatto<dim - 1> & qf_face, const UpdateFlags uf_face,
 						//const QGaussLobattoChebyshev<dim> &qf_cell, const UpdateFlags uf_cell,
 						//const QGaussLobattoChebyshev<dim - 1> & qf_face, const UpdateFlags uf_face,
                         const TrilinosWrappers::MPI::BlockVector &solution_total    )
