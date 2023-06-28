@@ -5081,7 +5081,7 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
             tau_fluid_vol *= -1.0 * p_fluid * det_F_AD;
 
 
-            if (true) {
+            if (false) {
             	const Point<dim> q_point_coord = scratch.fe_values_ref.quadrature_point(q_point);
 
             	// Deformation gradient
