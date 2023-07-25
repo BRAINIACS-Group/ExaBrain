@@ -5598,6 +5598,7 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
         Vector<double> porous_dissipation_elements(triangulation.n_active_cells());
         Vector<double> viscous_dissipation_elements(triangulation.n_active_cells());
         Vector<double> solid_vol_fraction_elements(triangulation.n_active_cells());
+        Vector<double> jacobian_elements(triangulation.n_active_cells());
 
         // OUTPUT AVERAGED ON NODES ----------------------------------------------
         // We need to create a new FE space with a single dof per node to avoid
@@ -5643,6 +5644,8 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
         Vector<double> sum_viscous_dissipation_vertex(vertex_handler_ref.n_dofs());
         Vector<double> solid_vol_fraction_vertex_mpi(vertex_handler_ref.n_dofs());
         Vector<double> sum_solid_vol_fraction_vertex(vertex_handler_ref.n_dofs());
+        Vector<double> jacobian_vertex_mpi(vertex_handler_ref.n_dofs());
+        Vector<double> sum_jacobian_vertex(vertex_handler_ref.n_dofs());
 
         // We need to create a new FE space with a dim dof per node to
         // be able to ouput data on nodes in vector form
@@ -5797,6 +5800,8 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
                       +=  viscous_dissipation/n_q_points;
                     solid_vol_fraction_elements(cell->active_cell_index())
                       +=  solid_vol_fraction/n_q_points;
+                    jacobian_elements(cell->active_cell_index())
+                      +=  det_F/n_q_points;
 
                     cauchy_stresses_total_elements[3](cell->active_cell_index())
                       += ((sigma*basis_vectors[0])*basis_vectors[1])/n_q_points; //sig_xy
@@ -5852,6 +5857,8 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
                         += viscous_dissipation;
                       solid_vol_fraction_vertex_mpi(local_vertex_indices)
                         += solid_vol_fraction;
+                      jacobian_vertex_mpi(local_vertex_indices)
+                        += det_F;
 
                       cauchy_stresses_total_vertex_mpi[3](local_vertex_indices)
                         += (sigma*basis_vectors[0])*basis_vectors[1]; //sig_xy
@@ -5897,6 +5904,9 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
                                   mpi_communicator);
             sum_solid_vol_fraction_vertex[d] =
               Utilities::MPI::sum(solid_vol_fraction_vertex_mpi[d],
+                                  mpi_communicator);
+            sum_jacobian_vertex[d] =
+              Utilities::MPI::sum(jacobian_vertex_mpi[d],
                                   mpi_communicator);
 
             for (unsigned int k=0; k<num_comp_symm_tensor; ++k)
@@ -5946,6 +5956,7 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
               sum_porous_dissipation_vertex[d] /= sum_counter_on_vertices[d];
               sum_viscous_dissipation_vertex[d] /= sum_counter_on_vertices[d];
               sum_solid_vol_fraction_vertex[d] /= sum_counter_on_vertices[d];
+              sum_jacobian_vertex[d] /= sum_counter_on_vertices[d];
             }
           }
 
@@ -6026,6 +6037,7 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
           data_out.add_data_vector(porous_dissipation_elements, "dissipation_porous");
           data_out.add_data_vector(viscous_dissipation_elements, "dissipation_viscous");
           data_out.add_data_vector(solid_vol_fraction_elements, "solid_vol_fraction");
+          data_out.add_data_vector(jacobian_elements, "jacobian");
         }
         else if  (parameters.outtype == "nodes")
         {
@@ -6115,6 +6127,9 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
           data_out.add_data_vector(vertex_handler_ref,
                                    sum_solid_vol_fraction_vertex,
                                    "solid_vol_fraction");
+          data_out.add_data_vector(vertex_handler_ref,
+                                   sum_jacobian_vertex,
+                                   "jacobian");
         }
       //---------------------------------------------------------------------
 
