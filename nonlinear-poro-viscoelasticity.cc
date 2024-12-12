@@ -243,7 +243,7 @@ namespace io {
                                 std::setvbuf(file, 0, _IONBF, 0);
                         }
 
-                        int read(char*buffer, int size){
+                        int read(char*buffer, int size) override{
                                 return std::fread(buffer, 1, size, file);
                         }
 
@@ -259,7 +259,7 @@ namespace io {
                 public:
                         explicit NonOwningIStreamByteSource(std::istream&in):in(in){}
 
-                        int read(char*buffer, int size){
+                        int read(char*buffer, int size) override{
                                 in.read(buffer, size);
                                 return in.gcount();
                         }
@@ -274,7 +274,7 @@ namespace io {
                 public:
                         NonOwningStringByteSource(const char*str, long long size):str(str), remaining_byte_count(size){}
 
-                        int read(char*buffer, int desired_byte_count){
+                        int read(char*buffer, int desired_byte_count) override{
                                 int to_copy_byte_count = desired_byte_count;
                                 if(remaining_byte_count < to_copy_byte_count)
                                         to_copy_byte_count = remaining_byte_count;
@@ -1624,6 +1624,7 @@ namespace NonLinearPoroViscoElasticity
                                                  "|Budday_cube_tension_compression_fully_fixed"
                                                  "|Budday_cube_shear_fully_fixed"
                                                  "|Budday_cube_consolidation"
+                                                 "|Budday_cube_Auckland"
                                                  "|brain_rheometer_shear_lateral_drained"
                                                  "|brain_nanoindentation_sinus"
                                                  "|brain_nanoindentation_ramp"
@@ -1803,7 +1804,7 @@ namespace NonLinearPoroViscoElasticity
                             "shear modulus for Neo-Hooke materials [Pa].");
 
           prm.declare_entry("poisson ratio", "0.4",
-                            Patterns::Double(-1,0.499),
+                            Patterns::Double(-1,500),
                             "Poisson ratio [-].");
 
           prm.declare_entry("eigen solver", "QL Implicit Shifts",
@@ -2251,18 +2252,18 @@ namespace NonLinearPoroViscoElasticity
           virtual ~TimeFile()
           {}
 
-          double get_current() const
+          double get_current() const override
           {
         	  if (this->timestep == this->time_points.size())
         		  return (this->time_points[this->timestep - 1] + 1);
         	  else
         		  return this->time_points[this->timestep];
           }
-          double get_end() const
+          double get_end() const override
           {
             return this->time_points.back();
           }
-          double get_delta_t() const
+          double get_delta_t() const override
           {
             // Assert ((this->timestep +1) < this->time_points.size(),
             //          ExcMessage("timestep greater then timesteps vector length -1"))
@@ -2276,11 +2277,11 @@ namespace NonLinearPoroViscoElasticity
             //}
             return delta_t;
           }
-          unsigned int get_timestep() const
+          unsigned int get_timestep() const override
           {
             return this->timestep;
           }
-          void increment_time (double det_F_min)
+          void increment_time (double det_F_min) override
           {
         	  (void) det_F_min;
               Assert (this->timestep < this->time_points.size(),
@@ -2336,15 +2337,15 @@ namespace NonLinearPoroViscoElasticity
           //double dt_old;
           //double cycle_time;
 
-          double get_current() const
+          double get_current() const override
           {
             return time_current;
           }
-          double get_end() const
+          double get_end() const override
           {
             return time_end;
           }
-          double get_delta_t() const
+          double get_delta_t() const override
           {
               /*double dt    = delta_t;
               double n_0S  = 0.8;
@@ -2366,19 +2367,22 @@ namespace NonLinearPoroViscoElasticity
               return std::ceil(dt * multiplier) / multiplier;*/
               return dt;
           }
-          unsigned int get_timestep() const
+          unsigned int get_timestep() const override
           {
             return timestep;
           }
-          void increment_time (double det_F_min)
+          void increment_time (double det_F_min) override
           {
+            if (true) {
+              dt = delta_t;
+            } //remove
         	  //double dt_min = 0.1;
         	  // based on change in det(F)
-        	  if (time_end_load > 0) {
+        	  else if (time_end_load > 0) {
         		  if (time_current < time_end_load || std::abs(time_current-time_end_load) < 1e-6) {
 					  if (time_current < delta_t)
 						  dt = delta_t - time_current;
-					  else if (det_F_min > 0.02) {// && dt > dt_min) {
+					  else if (det_F_min > 0.1) {// && dt > dt_min) { //0.02
 						  dt = 0.5*dt;
 						  dt_old = dt;
 					  	  if (time_current+dt > time_end_load)
@@ -2390,7 +2394,7 @@ namespace NonLinearPoroViscoElasticity
 						  dt_old = dt;
 						  dt = time_end_load-time_current;
 					  }
-					  else if (det_F_min < 0.005 && dt < delta_t) {
+					  else if (det_F_min < 0.05 && dt < delta_t) { //0.005
 						  dt = 2*dt;
 						  dt_old = dt;
 						  if (time_current+dt > time_end_load)
@@ -2407,6 +2411,7 @@ namespace NonLinearPoroViscoElasticity
         				  dt = 2*dt;
         		  }
         	  }
+            
 
         	  // for cyclic loading
         	  if (time_end_load == 0){
@@ -2557,7 +2562,7 @@ class NeoHooke : public Material_Hyperelastic < dim, NumberType >
 		virtual ~NeoHooke()
 		{}
 
-		double get_viscous_dissipation() const
+		double get_viscous_dissipation() const override
 		{
 			return 0.0;
 		}
@@ -2565,7 +2570,7 @@ class NeoHooke : public Material_Hyperelastic < dim, NumberType >
 	protected:
 		const double mu;
 
-		SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+		SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const override
 		{
 			// left Cauchy-Green strain tensor (see Holzapfel eq. 2.79)
 			const SymmetricTensor<2, dim, NumberType> b = symmetrize(F * transpose(F));
@@ -2599,7 +2604,7 @@ public:
 	virtual ~NeoHookePS()
 	{}
 
-	double get_viscous_dissipation() const
+	double get_viscous_dissipation() const override
 	{
 		return 0.0;
 	}
@@ -2607,7 +2612,7 @@ public:
 protected:
 	const double mu;
 
-	SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+	SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const override
 	{
 		// left Cauchy-Green strain tensor (see Holzapfel eq. 2.79)
 		const SymmetricTensor<2, dim, NumberType> b = symmetrize(F * transpose(F));
@@ -2651,7 +2656,7 @@ class NeoHookeEhlers : public Material_Hyperelastic < dim, NumberType >
 		virtual ~NeoHookeEhlers()
 		{}
 
-		double get_viscous_dissipation() const
+		double get_viscous_dissipation() const override
 		{
 			return 0.0;
 		}
@@ -2659,7 +2664,7 @@ class NeoHookeEhlers : public Material_Hyperelastic < dim, NumberType >
 	protected:
 		const double mu;
 
-		SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+		SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const override
 		{
 			static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
 			return ( mu * ( symmetrize(F * transpose(F)) - I ) );
@@ -2681,7 +2686,7 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
 		virtual ~Ogden()
 		{}
 
-		double get_viscous_dissipation() const
+		double get_viscous_dissipation() const override
 		{
 			return 0.0;
 		}
@@ -2690,7 +2695,7 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
 		std::vector<double> mu_infty;
 		std::vector<double> alpha_infty;
 
-		SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+		SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const override
 		{
 			// left Cauchy-Green strain tensor (see Holzapfel eq. 2.79)
 			const SymmetricTensor<2, dim, NumberType> b = symmetrize(F * transpose(F));
@@ -2706,7 +2711,7 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
 				lambda[a] = std::sqrt(eigen_b[a].first);
 			}
 
-			if (true) {
+			if (false) {
 				Tensor<1,dim,double> lambda_miehe = Tensor<1,dim,double>(lambda);
 
 				// Disturb eigenvalues
@@ -2759,43 +2764,20 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
 				ev_B[2] = contract<1,0>(M_31,M_32);
 
 				// compute Kirchhoff stress tensor (see Comellas (2020) eq. 52)
-				SymmetricTensor<2, dim, NumberType> tau_iso;
+				SymmetricTensor<2, dim, NumberType> tau;
 				for (unsigned int a = 0; a < dim; ++a) {
-					tau_iso += get_beta_infty(lambda, a) * symmetrize(ev_B[a]);
+					tau += get_beta_infty(lambda, a) * symmetrize(ev_B[a]);
 				}
-				return tau_iso;
-//				// Print eigenvalue basis to file
-//				Tensor<2,dim> ev_Bp = Tensor<2,dim,double>(ev_B[0]);
-//
-//				std::ofstream ev_basis;
-//				ev_basis.open("ev_basis", std::ofstream::app);
-//				ev_basis << std::setprecision(6) << std::scientific;
-//				ev_basis << std::setw(16) << this->time->get_current() << ","
-//						<< std::setw(16) << ev_Bp[0][0] << ","
-//						<< std::setw(16) << ev_Bp[0][1] << ","
-//						<< std::setw(16) << ev_Bp[0][2] << ","
-//						<< std::setw(16) << ev_Bp[1][0] << ","
-//						<< std::setw(16) << ev_Bp[1][1] << ","
-//						<< std::setw(16) << ev_Bp[1][2] << ","
-//						<< std::setw(16) << ev_Bp[2][0] << ","
-//						<< std::setw(16) << ev_Bp[2][1] << ","
-//						<< std::setw(16) << ev_Bp[2][2] << std::endl;
-//				ev_basis.close();
-//
-//				SymmetricTensor<2, dim, NumberType> B_ev;
-//
-//				for (unsigned int d=0; d<dim; ++d)
-//					B_ev += lambda_B[d]*symmetrize(ev_B[d]);
-
+				return tau;
 			}
-			if (false) {
+			if (true) {
 				// compute Kirchhoff stress tensor (see Comellas (2020) eq. 52)
-				SymmetricTensor<2, dim, NumberType> tau_iso;
+				SymmetricTensor<2, dim, NumberType> tau;
 				for (unsigned int a = 0; a < dim; ++a) {
 					SymmetricTensor<2, dim, NumberType> ev_basis = symmetrize(outer_product(eigen_b[a].second,eigen_b[a].second));
-					tau_iso += get_beta_infty(lambda, a) * ev_basis;
+					tau += get_beta_infty(lambda, a) * ev_basis;
 				}
-				return tau_iso;
+				return tau;
 			}
 		}
 
@@ -2832,7 +2814,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 		virtual ~OgdenIso()
 		{}
 
-		double get_viscous_dissipation() const
+		double get_viscous_dissipation() const override
 		{
 			return 0.0;
 		}
@@ -2842,7 +2824,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 		std::vector<double> alpha_infty;
 		double nu;
 
-		SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+		SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const override
 		{
 			// left Cauchy-Green strain tensor (see Holzapfel eq. 2.79)
 			const SymmetricTensor<2, dim, NumberType> b = symmetrize(F * transpose(F));
@@ -2894,14 +2876,30 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			return beta;
 		}
 
-		// Add a volumetric contribution (see Holzapfel eq. 6.138)
+//		// Add a volumetric contribution (see Holzapfel eq. 6.138)
+//		SymmetricTensor<2, dim, NumberType> get_tau_E_vol(NumberType det_F_AD) const
+//		{
+//			static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
+//			const double mu_classic = 0.5 * (mu_infty[0] * alpha_infty[0] + mu_infty[1] * alpha_infty[1] + mu_infty[2] * alpha_infty[2]);
+//			const double kappa = (2*mu_classic*(1+nu))/(3*(1-2*nu));
+//
+//			SymmetricTensor<2, dim, NumberType> tau_vol = NumberType(kappa/2 * (det_F_AD*det_F_AD - 1)) * I;
+//
+//			return tau_vol;
+//		}
+
+		// Add a volumetric contribution (see Nedjar, 2016 eq. 28)
 		SymmetricTensor<2, dim, NumberType> get_tau_E_vol(NumberType det_F_AD) const
 		{
 			static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
-			const double mu_classic = 0.5 * (mu_infty[0] * alpha_infty[0] + mu_infty[1] * alpha_infty[1] + mu_infty[2] * alpha_infty[2]);
-			const double kappa = (2*mu_classic*(1+nu))/(3*(1-2*nu));
+			SymmetricTensor<2, dim, NumberType> tau_vol;
 
-			SymmetricTensor<2, dim, NumberType> tau_vol = NumberType(kappa/2 * (det_F_AD*det_F_AD - 1)) * I;
+			for (unsigned int i = 0; i < 3; ++i) // corresponds to 3rd-order Ogden model
+			{
+				// here nu is the ratio between reference bulk and shear modulus
+				// nu = 2/3 should render an apparent Poisson's ratio of zero
+				tau_vol += NumberType((nu * mu_infty[i] / 2) * (std::pow(det_F_AD,2*alpha_infty[i]/3) - std::pow(det_F_AD,-alpha_infty[i]/3))) * I;
+			}
 
 			return tau_vol;
 		}
@@ -2935,36 +2933,37 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                           parameters.alpha3_mode_1}),
             viscosity_mode_1(parameters.viscosity_mode_1),
             Cinv_v_1(Physics::Elasticity::StandardTensors<dim>::I),
-            Cinv_v_1_converged(Physics::Elasticity::StandardTensors<dim>::I)
+            Cinv_v_1_converged(Physics::Elasticity::StandardTensors<dim>::I),
+			nu(parameters.nu)
             {}
             virtual ~visco_Ogden()
             {}
 
-          void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F )
+          void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F ) override
           {
               Material_Hyperelastic < dim, NumberType >::update_internal_equilibrium(F);
 
-              SymmetricTensor<2,dim> F_print;
-
-                             for (unsigned int i=0; i<dim; ++i)
-                             	for (unsigned int j=0; j<dim; ++j) {
-                             		F_print[i][j] = Tensor<0,dim,double>(F[i][j]);
-                             	}
-              // Print cell date to eigenvalue file
-              std::ofstream F_out;
-              F_out.open("F_out", std::ofstream::app);
-              F_out << std::setprecision(6) << std::scientific;
-              F_out << std::setw(16) << this->time->get_current() << ","
-                << std::setw(16) << F_print[0][0] << ","
-				<< std::setw(16) << F_print[0][1] << ","
-				<< std::setw(16) << F_print[0][2] << ","
-				<< std::setw(16) << F_print[1][0] << ","
-				<< std::setw(16) << F_print[1][1] << ","
-				<< std::setw(16) << F_print[1][2] << ","
-				<< std::setw(16) << F_print[2][0] << ","
-				<< std::setw(16) << F_print[2][1] << ","
-				<< std::setw(16) << F_print[2][2] << "," << std::endl;
-              F_out.close();
+//              SymmetricTensor<2,dim> F_print;
+//
+//                             for (unsigned int i=0; i<dim; ++i)
+//                             	for (unsigned int j=0; j<dim; ++j) {
+//                             		F_print[i][j] = Tensor<0,dim,double>(F[i][j]);
+//                             	}
+//              // Print cell date to eigenvalue file
+//              std::ofstream F_out;
+//              F_out.open("F_out", std::ofstream::app);
+//              F_out << std::setprecision(6) << std::scientific;
+//              F_out << std::setw(16) << this->time->get_current() << ","
+//                << std::setw(16) << F_print[0][0] << ","
+//				<< std::setw(16) << F_print[0][1] << ","
+//				<< std::setw(16) << F_print[0][2] << ","
+//				<< std::setw(16) << F_print[1][0] << ","
+//				<< std::setw(16) << F_print[1][1] << ","
+//				<< std::setw(16) << F_print[1][2] << ","
+//				<< std::setw(16) << F_print[2][0] << ","
+//				<< std::setw(16) << F_print[2][1] << ","
+//				<< std::setw(16) << F_print[2][2] << "," << std::endl;
+//              F_out.close();
 
 
               this->Cinv_v_1 = this->Cinv_v_1_converged;
@@ -2974,6 +2973,8 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                 eigen_B_e_1_tr = eigenvectors(B_e_1_tr, this->eigen_solver);
 
               NumberType J_e_1 = std::sqrt(determinant(B_e_1_tr));
+              //double J_e_1_print = Tensor<0,dim,double>(J_e_1);
+              //std::cout << "J_e_start = " << J_e_1_print;
 
               Tensor< 1, dim, NumberType > lambdas_e_1_tr;
               Tensor< 1, dim, NumberType > epsilon_e_1_tr;
@@ -3049,10 +3050,12 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                           residual_check = std::abs(Tensor<0,dim,double>(residual[a]));
                   }
                   iteration += 1;
+
                   if (iteration > 15 )
                       AssertThrow(false, ExcMessage("No convergence in local Newton iteration for the "
                                                     "viscoelastic exponential time integration algorithm."));
               }
+              //std::cout << ", iter = " << iteration;
 
               NumberType aux_J_e_1 = 1.0;
               for (unsigned int a = 0; a < dim; ++a)
@@ -3086,19 +3089,39 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                   this->tau_neq_1 += tau_neq_1_aux;
               }
 
+              // Add a volumetric contribution (see Holzapfel eq. 6.138)
+              if (nu > -1) {
+
+            	  SymmetricTensor<2, dim, NumberType> tau_vol_neq;
+        		  const NumberType det_F_AD = determinant(F);
+        		  NumberType J_v_1 = det_F_AD/J_e_1;
+
+            	  for (unsigned int i = 0; i < 3; ++i) // corresponds to 3rd-order Ogden model
+            	  {
+            		  // here nu is the ratio between reference bulk and shear modulus
+            		  // nu = 2/3 should render an apparent Poisson's ratio of zero
+            		  tau_vol_neq += NumberType((nu * mu_mode_1[i] / 2) * (std::pow(J_v_1,2*alpha_mode_1[i]/3) - std::pow(J_v_1,-alpha_mode_1[i]/3))) * I;
+            	  }
+            	  this->tau_neq_1 += tau_vol_neq;
+            	  //double det_F_AD_print = Tensor<0,dim,double>(det_F_AD);
+            	  //double J_e_1_print = Tensor<0,dim,double>(J_e_1);
+            	  //double J_v_1_print = Tensor<0,dim,double>(J_v_1);
+            	  //std::cout << "J_e = " << J_e_1_print << std::endl; //<< ", J_e = " << J_e_1_print << ", J_v = " << J_v_1_print << std::endl;
+              }
+
               // Store history
               for (unsigned int a = 0; a < dim; ++a)
                   for (unsigned int b = 0; b < dim; ++b)
                       this->Cinv_v_1[a][b]= Tensor<0,dim,double>(Cinv_v_1_AD[a][b]);
           }
 
-          void update_end_timestep()
+          void update_end_timestep() override
           {
               Material_Hyperelastic < dim, NumberType >::update_end_timestep();
               this->Cinv_v_1_converged = this->Cinv_v_1;
           }
 
-           double get_viscous_dissipation() const
+           double get_viscous_dissipation() const override
            {
                NumberType dissipation_term = get_tau_E_neq() * get_tau_E_neq(); //Double contract the two SymmetricTensor
                dissipation_term /= (2*viscosity_mode_1);
@@ -3115,11 +3138,12 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           SymmetricTensor<2, dim, double> Cinv_v_1;
           SymmetricTensor<2, dim, double> Cinv_v_1_converged;
           SymmetricTensor<2, dim, NumberType> tau_neq_1;
+          double nu;
 
           SymmetricTensor<2, dim, NumberType>
-          get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+          get_tau_E_base(const Tensor<2,dim, NumberType> &F) const override
           {
-              return ( get_tau_E_neq() + get_tau_E_eq(F) );
+              return ( get_tau_E_neq() + get_tau_E_eq(F) + get_tau_E_vol(F));
           }
 
           SymmetricTensor<2, dim, NumberType>
@@ -3147,6 +3171,23 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         	  }
         	  return tau;
           }
+
+          // Add a volumetric contribution (see Nedjar, 2016 eq. 28)
+          SymmetricTensor<2, dim, NumberType> get_tau_E_vol(const Tensor<2,dim, NumberType> &F) const
+  		  {
+        	  const NumberType det_F_AD = determinant(F);
+        	  static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
+        	  SymmetricTensor<2, dim, NumberType> tau_vol;
+
+        	  for (unsigned int i = 0; i < 3; ++i) // corresponds to 3rd-order Ogden model
+        	  {
+        		  // here nu is the ratio between reference bulk and shear modulus
+        		  // nu = 2/3 should render an apparent Poisson's ratio of zero
+        		  tau_vol += NumberType((nu * mu_infty[i] / 2) * (std::pow(det_F_AD,2*alpha_infty[i]/3) - std::pow(det_F_AD,-alpha_infty[i]/3))) * I;
+        	  }
+
+        	  return tau_vol;
+  		  }
 
           SymmetricTensor<2, dim, NumberType>
           get_tau_E_neq() const
@@ -3267,7 +3308,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     	virtual ~visco2_Ogden()
     	{}
 
-    	void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F )
+    	void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F ) override
     	{
     		Material_Hyperelastic < dim, NumberType >::update_internal_equilibrium(F);
 
@@ -3451,14 +3492,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     			}
     	}
 
-    	void update_end_timestep()
+    	void update_end_timestep() override
     	{
     		Material_Hyperelastic < dim, NumberType >::update_end_timestep();
     		this->Cinv_v_1_converged = this->Cinv_v_1;
     		this->Cinv_v_2_converged = this->Cinv_v_2;
     	}
 
-    	double get_viscous_dissipation() const
+    	double get_viscous_dissipation() const override
     	{
     		NumberType dissipation_term_1 = this->tau_neq_1 * this->tau_neq_1; //Double contract the two SymmetricTensor
     		dissipation_term_1 /= (2*viscosity_mode_1);
@@ -3485,7 +3526,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     	SymmetricTensor<2, dim, NumberType> tau_neq_2;
 
     	SymmetricTensor<2, dim, NumberType>
-    	get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+    	get_tau_E_base(const Tensor<2,dim, NumberType> &F) const override
 		{
     		return ( get_tau_E_neq() + get_tau_E_eq(F) );
 		}
@@ -4177,7 +4218,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         this_mpi_process (Utilities::MPI::this_mpi_process(mpi_communicator)),
         pcout(std::cout, this_mpi_process == 0),
         parameters(parameters),
-        triangulation(mpi_communicator,Triangulation<dim>::maximum_smoothing),
+        triangulation(mpi_communicator,Triangulation<dim>::maximum_smoothing,false,parallel::shared::Triangulation<dim>::partition_zorder),
         timerconsole( mpi_communicator,
                       pcout,
                       TimerOutput::summary,
@@ -4242,10 +4283,10 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
           //Generate mesh
           make_grid();
-
+std::cout << "here3" << std::endl;
           //Assign DOFs and create the stiffness and right-hand-side force vector
           system_setup(solution_delta);
-
+std::cout << "here4" << std::endl;
           //Define points for post-processing
           std::vector<Point<dim> > tracked_vertices (2);
           define_tracked_vertices(tracked_vertices);
@@ -4306,8 +4347,8 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
           double det_F_min = 1.0;
           double det_F_min_mpi = 1.0;
-          double det_F_change = 1.0;
-          double det_F_change_mpi = 1.0;
+          //double det_F_change = 1.0;
+          //double det_F_change_mpi = 1.0;
 
           while ( (time->get_end() - time->get_current()) > -1.0*parameters.tol_u )
             {
@@ -4803,7 +4844,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     template <int dim>
     void Solid<dim>::solve_nonlinear_timestep(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT)
     {
-        double start = MPI_Wtime();
+        //double start = MPI_Wtime();
 
     	//Print the load step
         pcout  << std::endl
@@ -4960,7 +5001,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         //If maximum allowed number of iterations for Newton algorithm are reached, print non-convergence message and abort program
         AssertThrow (newton_iteration < parameters.max_iterations_NR, ExcMessage("No convergence in nonlinear solver!"));
 
-        double end = MPI_Wtime();
+        //double end = MPI_Wtime();
 
         /*if (this_mpi_process == 0) {
         	std::ofstream solve_nonlinear_timestep_time;
@@ -5496,8 +5537,10 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                           = scratch.fe_face_values_ref.quadrature_point(f_q_point);
                       const Tensor<1, dim> traction
                           = get_neumann_traction(cell->face(face)->boundary_id(), pt, N);
+//                      std::cout << traction[0] << ", " << traction[1] << ", " << traction[2] << std::endl;
                       const double flow
                           = get_prescribed_fluid_flow(cell->face(face)->boundary_id(), pt);
+//                      std::cout << flow << std::endl;
 
                       if ( (traction.norm() < 1e-12) && (std::abs(flow) < 1e-12) ) continue;
 
@@ -5694,7 +5737,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			virtual void
 			evaluate_vector_field
 				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const
+				 std::vector<Vector<double> >               &computed_quantities) const override
 			{
 				AssertDimension (input_data.solution_gradients.size(),
 								 computed_quantities.size());
@@ -5729,7 +5772,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			virtual void
 			evaluate_vector_field
 				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const
+				 std::vector<Vector<double> >               &computed_quantities) const override
 			{
 				AssertDimension (input_data.solution_gradients.size(),
 								 computed_quantities.size());
@@ -5804,7 +5847,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 				}
 			}
 
-			virtual std::vector<std::string> get_names() const
+			virtual std::vector<std::string> get_names() const override
 			{
 				std::vector<std::string> solution_names;
 				solution_names.emplace_back("total cauchy stress xx");
@@ -5830,13 +5873,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 				return solution_names;
 			}
 
-			virtual std::vector<DataComponentInterpretation::DataComponentInterpretation>get_data_component_interpretation() const
+			virtual std::vector<DataComponentInterpretation::DataComponentInterpretation>get_data_component_interpretation() const override
 			{
 			    std::vector<DataComponentInterpretation::DataComponentInterpretation> interpretation(18,DataComponentInterpretation::component_is_scalar);
 			    return interpretation;
 			}
 
-			virtual UpdateFlags get_needed_update_flags() const
+			virtual UpdateFlags get_needed_update_flags() const override
 			{
 				return (update_values | update_gradients | update_JxW_values);
 			}
@@ -5866,7 +5909,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			virtual void
 			evaluate_vector_field
 				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const
+				 std::vector<Vector<double> >               &computed_quantities) const override
 			{
 				AssertDimension (input_data.solution_gradients.size(),
 							 	 computed_quantities.size());
@@ -5918,7 +5961,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			virtual void
 			evaluate_vector_field
 				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const
+				 std::vector<Vector<double> >               &computed_quantities) const override
 			{
 				AssertDimension (input_data.solution_gradients.size(),
 								 computed_quantities.size());
@@ -5953,7 +5996,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			virtual void
 			evaluate_vector_field
 				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const
+				 std::vector<Vector<double> >               &computed_quantities) const override
 			{
 				AssertDimension (input_data.solution_gradients.size(),
 								 computed_quantities.size());
@@ -5990,7 +6033,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			virtual void
 			evaluate_vector_field
 				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const
+				 std::vector<Vector<double> >               &computed_quantities) const override
 			{
 				AssertDimension (input_data.solution_gradients.size(),
 								 computed_quantities.size());
@@ -6032,7 +6075,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			virtual void
 			evaluate_vector_field
 				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const
+				 std::vector<Vector<double> >               &computed_quantities) const override
 			{
 				AssertDimension (input_data.solution_gradients.size(),
 								 computed_quantities.size());
@@ -6087,7 +6130,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 				}
 			}
 
-			virtual std::vector<std::string> get_names() const
+			virtual std::vector<std::string> get_names() const override
 			{
 				std::vector<std::string> solution_names;
 				solution_names.emplace_back("porous dissipation");
@@ -6095,13 +6138,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 				return solution_names;
 			}
 
-			virtual std::vector<DataComponentInterpretation::DataComponentInterpretation>get_data_component_interpretation() const
+			virtual std::vector<DataComponentInterpretation::DataComponentInterpretation>get_data_component_interpretation() const override
 			{
 				std::vector<DataComponentInterpretation::DataComponentInterpretation> interpretation(2,DataComponentInterpretation::component_is_scalar);
 				return interpretation;
 			}
 
-			virtual UpdateFlags get_needed_update_flags() const
+			virtual UpdateFlags get_needed_update_flags() const override
 			{
 				return (update_values | update_gradients);
 			}
@@ -6621,7 +6664,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         double reaction_torque = 0.0;
         double det_F_min_cells = 1.0;
         double det_F_min_faces = 1.0;
-        double seepage_vec_mean = 0.0;
+        //double seepage_vec_mean = 0.0;
 
         //Auxiliar variables needed for mpi processing
         Tensor<1,dim> sum_reaction_mpi;
@@ -6646,7 +6689,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         std::vector<double> det_F_cells_mpi;
         std::vector<double> det_F_faces_mpi {100};  // Had to put a unsreasonal high value (which does not matter since we search for minima) to avoid segfault in std::min_element
         std::vector<double> seepage_vec_mpi;
-        double seepage_vec_mean_mpi = 0.0;
+        //double seepage_vec_mean_mpi = 0.0;
 
         //Declare an instance of the material class object
         if (parameters.mat_type == "Neo-Hooke")
@@ -6817,7 +6860,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                         const Tensor<2,dim,ADNumberType> F_AD =
                           Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
                         ADNumberType det_F_AD = determinant(F_AD);
-                        double det_F = Tensor<0,dim,double>(det_F_AD);
+                        //double det_F = Tensor<0,dim,double>(det_F_AD);
 
                         const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>>
                             lqph = quadrature_point_history.get_data(cell);
@@ -6834,7 +6877,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                         const SymmetricTensor<2,dim,ADNumberType> sigma_E_base_AD = lqph[f_q_point]->get_Cauchy_E_base(F_AD);
                         const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[f_q_point]->get_Cauchy_E_ext_func(F_AD);
 
-                        double det_F_converged = lqph[f_q_point]->get_converged_det_F();
+                        //double det_F_converged = lqph[f_q_point]->get_converged_det_F();
 
                         for (unsigned int i=0; i<dim; ++i)
                             for (unsigned int j=0; j<dim; ++j) {
@@ -7054,7 +7097,8 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             for (unsigned int d=0; d<(solution_p_vector.size()); ++d)
                 solution_vector[solution_u_vector.size()+d] = solution_p_vector[d];
 
-            Functions::FEFieldFunction<dim,DoFHandler<dim>,Vector<double>>
+            //Functions::FEFieldFunction<dim,DoFHandler<dim>,Vector<double>>
+            Functions::FEFieldFunction<dim,Vector<double>>
             find_solution(dof_handler_ref, solution_vector);
 
             for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
@@ -8011,7 +8055,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           virtual ~VerificationEhlers1999TubeBase () {}
 
         private:
-          virtual void make_grid()
+          virtual void make_grid() override
           {
             GridGenerator::cylinder( this->triangulation,
                                      0.1,
@@ -8028,7 +8072,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             this->triangulation.reset_manifold(0);
           }
 
-          virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+          virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
           {
             tracked_vertices[0][0] = 0.0*this->parameters.scale;
             tracked_vertices[0][1] = 0.0*this->parameters.scale;
@@ -8039,13 +8083,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             tracked_vertices[1][2] = -0.5*this->parameters.scale;
           }
 
-          virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
           {
             if (this->time->get_timestep() < 2)
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        2,
-                                                       ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                       Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                                                        constraints,
                                                        (this->fe.component_mask(this->pressure)));
             }
@@ -8053,21 +8097,21 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        2,
-                                                       ZeroFunction<dim>(this->n_components),
+                                                       Functions::ZeroFunction<dim>(this->n_components),
                                                        constraints,
                                                        (this->fe.component_mask(this->pressure)));
             }
 
             VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                       0,
-                                                      ZeroFunction<dim>(this->n_components),
+                                                      Functions::ZeroFunction<dim>(this->n_components),
                                                       constraints,
                                                       (this->fe.component_mask(this->x_displacement)|
                                                        this->fe.component_mask(this->y_displacement)  ) );
 
             VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                       1,
-                                                      ZeroFunction<dim>(this->n_components),
+                                                      Functions::ZeroFunction<dim>(this->n_components),
                                                       constraints,
                                                       (this->fe.component_mask(this->x_displacement) |
                                                        this->fe.component_mask(this->y_displacement) |
@@ -8076,7 +8120,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
           virtual double
           get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
-                                     const Point<dim>         &pt) const
+                                     const Point<dim>         &pt) const override
           {
               (void)pt;
               (void)boundary_id;
@@ -8084,20 +8128,20 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           }
 
           virtual types::boundary_id
-          get_reaction_boundary_id_for_output() const
+          get_reaction_boundary_id_for_output() const override
           {
               return 2;
           }
 
           virtual  std::pair<types::boundary_id,types::boundary_id>
-          get_drained_boundary_id_for_output() const
+          get_drained_boundary_id_for_output() const override
           {
               return std::make_pair(2,2);
           }
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction) const override
           {
               std::vector<double> displ_incr(dim, 0.0);
               (void)boundary_id;
@@ -8124,7 +8168,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             virtual Tensor<1,dim>
             get_neumann_traction (const types::boundary_id &boundary_id,
                                   const Point<dim>         &pt,
-                                  const Tensor<1,dim>      &N) const
+                                  const Tensor<1,dim>      &N) const override
             {
               if (this->parameters.load_type == "pressure")
               {
@@ -8156,7 +8200,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             virtual Tensor<1,dim>
             get_neumann_traction (const types::boundary_id &boundary_id,
                                   const Point<dim>         &pt,
-                                  const Tensor<1,dim>      &N) const
+                                  const Tensor<1,dim>      &N) const override
             {
               if (this->parameters.load_type == "pressure")
               {
@@ -8192,7 +8236,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         private:
           virtual void
-          make_grid()
+          make_grid() override
           {
              GridGenerator::hyper_rectangle(this->triangulation,
                                             Point<dim>(0.0, 0.0, 0.0),
@@ -8220,7 +8264,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           }
 
           virtual void
-          define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+          define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
           {
             tracked_vertices[0][0] = 0.0*this->parameters.scale;
             tracked_vertices[0][1] = 0.0*this->parameters.scale;
@@ -8232,13 +8276,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints) override
           {
             if (this->time->get_timestep() < 2)
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        101,
-                                                       ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                       Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                                                        constraints,
                                                        (this->fe.component_mask(this->pressure)));
             }
@@ -8246,38 +8290,38 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        101,
-                                                       ZeroFunction<dim>(this->n_components),
+                                                       Functions::ZeroFunction<dim>(this->n_components),
                                                        constraints,
                                                        (this->fe.component_mask(this->pressure)));
             }
 
             VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                       0,
-                                                      ZeroFunction<dim>(this->n_components),
+                                                      Functions::ZeroFunction<dim>(this->n_components),
                                                       constraints,
                                                       this->fe.component_mask(this->x_displacement));
 
             VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                       1,
-                                                      ZeroFunction<dim>(this->n_components),
+                                                      Functions::ZeroFunction<dim>(this->n_components),
                                                       constraints,
                                                       this->fe.component_mask(this->x_displacement));
 
             VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                       2,
-                                                      ZeroFunction<dim>(this->n_components),
+                                                      Functions::ZeroFunction<dim>(this->n_components),
                                                       constraints,
                                                       this->fe.component_mask(this->y_displacement));
 
             VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                       3,
-                                                      ZeroFunction<dim>(this->n_components),
+                                                      Functions::ZeroFunction<dim>(this->n_components),
                                                       constraints,
                                                       this->fe.component_mask(this->y_displacement));
 
             VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                       4,
-                                                      ZeroFunction<dim>(this->n_components),
+                                                      Functions::ZeroFunction<dim>(this->n_components),
                                                       constraints,
                                                       ( this->fe.component_mask(this->x_displacement) |
                                                         this->fe.component_mask(this->y_displacement) |
@@ -8287,7 +8331,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           virtual Tensor<1,dim>
           get_neumann_traction (const types::boundary_id &boundary_id,
                                 const Point<dim>         &pt,
-                                const Tensor<1,dim>      &N) const
+                                const Tensor<1,dim>      &N) const override
           {
             if (this->parameters.load_type == "pressure")
             {
@@ -8304,7 +8348,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
           virtual double
           get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
-                                     const Point<dim>         &pt) const
+                                     const Point<dim>         &pt) const override
           {
               (void)pt;
               (void)boundary_id;
@@ -8312,20 +8356,20 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           }
 
           virtual types::boundary_id
-          get_reaction_boundary_id_for_output() const
+          get_reaction_boundary_id_for_output() const override
           {
               return 100;
           }
 
           virtual  std::pair<types::boundary_id,types::boundary_id>
-          get_drained_boundary_id_for_output() const
+          get_drained_boundary_id_for_output() const override
           {
               return std::make_pair(101,101);
           }
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction) const override
           {
               std::vector<double> displ_incr(dim, 0.0);
               (void)boundary_id;
@@ -8349,7 +8393,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           virtual ~Franceschini2006Consolidation () {}
 
         private:
-          virtual void make_grid()
+          virtual void make_grid() override
           {
             const Point<dim-1> mesh_center(0.0, 0.0);
             const double radius = 0.5;
@@ -8396,7 +8440,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
           }
 
-          virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+          virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
           {
             tracked_vertices[0][0] = 0.0*this->parameters.scale;
             tracked_vertices[0][1] = 0.0*this->parameters.scale;
@@ -8408,19 +8452,19 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             tracked_vertices[1][2] = 0.0*this->parameters.scale;
           }
 
-          virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
           {
             if (this->time->get_timestep() < 2)
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        1,
-                                                       ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                       Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                                                        constraints,
                                                        (this->fe.component_mask(this->pressure)));
 
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        2,
-                                                       ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                       Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                                                        constraints,
                                                        (this->fe.component_mask(this->pressure)));
             }
@@ -8428,27 +8472,27 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        1,
-                                                       ZeroFunction<dim>(this->n_components),
+                                                       Functions::ZeroFunction<dim>(this->n_components),
                                                        constraints,
                                                        (this->fe.component_mask(this->pressure)));
 
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        2,
-                                                       ZeroFunction<dim>(this->n_components),
+                                                       Functions::ZeroFunction<dim>(this->n_components),
                                                        constraints,
                                                        (this->fe.component_mask(this->pressure)));
             }
 
             VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                       0,
-                                                      ZeroFunction<dim>(this->n_components),
+                                                      Functions::ZeroFunction<dim>(this->n_components),
                                                       constraints,
                                                       (this->fe.component_mask(this->x_displacement)|
                                                        this->fe.component_mask(this->y_displacement)  ) );
 
             VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                       1,
-                                                      ZeroFunction<dim>(this->n_components),
+                                                      Functions::ZeroFunction<dim>(this->n_components),
                                                       constraints,
                                                       (this->fe.component_mask(this->x_displacement) |
                                                        this->fe.component_mask(this->y_displacement) |
@@ -8456,7 +8500,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
             VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                       2,
-                                                      ZeroFunction<dim>(this->n_components),
+                                                      Functions::ZeroFunction<dim>(this->n_components),
                                                       constraints,
                                                       (this->fe.component_mask(this->x_displacement) |
                                                        this->fe.component_mask(this->y_displacement) ));
@@ -8464,7 +8508,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
           virtual double
           get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
-                                     const Point<dim>         &pt) const
+                                     const Point<dim>         &pt) const override
           {
               (void)pt;
               (void)boundary_id;
@@ -8472,20 +8516,20 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           }
 
           virtual types::boundary_id
-          get_reaction_boundary_id_for_output() const
+          get_reaction_boundary_id_for_output() const override
           {
               return 2;
           }
 
           virtual  std::pair<types::boundary_id,types::boundary_id>
-          get_drained_boundary_id_for_output() const
+          get_drained_boundary_id_for_output() const override
           {
               return std::make_pair(1,2);
           }
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction) const override
           {
               std::vector<double> displ_incr(dim, 0.0);
               (void)boundary_id;
@@ -8498,7 +8542,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           virtual Tensor<1,dim>
           get_neumann_traction (const types::boundary_id &boundary_id,
                                 const Point<dim>         &pt,
-                                const Tensor<1,dim>      &N) const
+                                const Tensor<1,dim>      &N) const override
           {
             if (this->parameters.load_type == "pressure")
             {
@@ -8545,7 +8589,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         private:
           virtual void
-          make_grid()
+          make_grid() override
           {
             GridGenerator::hyper_cube(this->triangulation,
                                       0.0,
@@ -8571,18 +8615,19 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
           }
 
-          virtual double
-          get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
-                                     const Point<dim>         &pt) const
-          {
-              (void)pt;
-              (void)boundary_id;
-              return 0.0;
-          }
+          // virtual double
+          // get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
+          //                            const Point<dim>         &pt) const override
+          // {
+          //     (void)pt;
+          //     (void)boundary_id;
+          //     return 0.0;
+          // }
 
           virtual  std::pair<types::boundary_id,types::boundary_id>
-          get_drained_boundary_id_for_output() const
+          get_drained_boundary_id_for_output() const override
           {
+              //return std::make_pair(100,100);
               return std::make_pair(100,100);
           }
     };
@@ -8601,7 +8646,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         private:
           virtual void
-          define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+          define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
           {
             tracked_vertices[0][0] = 0.5*this->parameters.scale;
             tracked_vertices[0][1] = 0.5*this->parameters.scale;
@@ -8613,13 +8658,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints) override
           {
               if (this->time->get_timestep() < 2)
               {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                            100,
-                                                           ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                           Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                                                            constraints,
                                                            (this->fe.component_mask(this->pressure)));
               }
@@ -8627,13 +8672,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
               {
                   VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                             100,
-                                                            ZeroFunction<dim>(this->n_components),
+                                                            Functions::ZeroFunction<dim>(this->n_components),
                                                             constraints,
                                                             (this->fe.component_mask(this->pressure)));
               }
               VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                         4,
-                                                        ZeroFunction<dim>(this->n_components),
+                                                        Functions::ZeroFunction<dim>(this->n_components),
                                                         constraints,
                                                         this->fe.component_mask(this->z_displacement) );
 
@@ -8660,7 +8705,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
                 VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                            5,
-                                                           ConstantFunction<dim>(value[2],this->n_components),
+                                                           Functions::ConstantFunction<dim>(value[2],this->n_components),
                                                            constraints,
                                                            this->fe.component_mask(direction));
             }
@@ -8669,7 +8714,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           virtual Tensor<1,dim>
           get_neumann_traction (const types::boundary_id &boundary_id,
                                 const Point<dim>         &pt,
-                                const Tensor<1,dim>      &N) const
+                                const Tensor<1,dim>      &N) const override
           {
               if (this->parameters.load_type == "pressure")
               {
@@ -8690,14 +8735,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             }
 
           virtual types::boundary_id
-          get_reaction_boundary_id_for_output() const
+          get_reaction_boundary_id_for_output() const override
           {
               return 5;
           }
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction) const override
           {
                 std::vector<double> displ_incr(dim,0.0);
 
@@ -8741,6 +8786,15 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                 }
                 return displ_incr;
           }
+
+          virtual double
+          get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
+                                     const Point<dim>         &pt) const override
+          {
+              (void)pt;
+              (void)boundary_id;
+              return 0.0;
+          }
     };
 
     //@sect4{Derived class: No lateral displacement in loading surfaces}
@@ -8757,7 +8811,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         private:
           virtual void
-          define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+          define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
           {
             tracked_vertices[0][0] = 0.5*this->parameters.scale;
             tracked_vertices[0][1] = 0.5*this->parameters.scale;
@@ -8769,13 +8823,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints) override
           {
               if (this->time->get_timestep() < 2)
               {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                            100,
-                                                           ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                           Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                                                            constraints,
                                                            (this->fe.component_mask(this->pressure)));
               }
@@ -8783,14 +8837,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
               {
                   VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                             100,
-                                                            ZeroFunction<dim>(this->n_components),
+                                                            Functions::ZeroFunction<dim>(this->n_components),
                                                             constraints,
                                                             (this->fe.component_mask(this->pressure)));
               }
 
               VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                         4,
-                                                        ZeroFunction<dim>(this->n_components),
+                                                        Functions::ZeroFunction<dim>(this->n_components),
                                                         constraints,
                                                       (this->fe.component_mask(this->x_displacement) |
                                                        this->fe.component_mask(this->y_displacement) |
@@ -8805,13 +8859,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
                 VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                            5,
-                                                           ConstantFunction<dim>(value[2],this->n_components),
+                                                           Functions::ConstantFunction<dim>(value[2],this->n_components),
                                                            constraints,
                                                            this->fe.component_mask(direction) );
 
                VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                           5,
-                                                          ZeroFunction<dim>(this->n_components),
+                                                          Functions::ZeroFunction<dim>(this->n_components),
                                                           constraints,
                                                           (this->fe.component_mask(this->x_displacement) |
                                                            this->fe.component_mask(this->y_displacement) ));
@@ -8821,7 +8875,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           virtual Tensor<1,dim>
           get_neumann_traction (const types::boundary_id &boundary_id,
                                 const Point<dim>         &pt,
-                                const Tensor<1,dim>      &N) const
+                                const Tensor<1,dim>      &N) const override
           {
               if (this->parameters.load_type == "pressure")
               {
@@ -8842,14 +8896,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             }
 
           virtual types::boundary_id
-          get_reaction_boundary_id_for_output() const
+          get_reaction_boundary_id_for_output() const override
           {
               return 5;
           }
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction) const override
           {
                 std::vector<double> displ_incr(dim,0.0);
 
@@ -8891,6 +8945,15 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                 }
                 return displ_incr;
           }
+
+          virtual double
+          get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
+                                     const Point<dim>         &pt) const override
+          {
+              (void)pt;
+              (void)boundary_id;
+              return 0.0;
+          }
     };
 
     //@sect4{Derived class: No lateral or vertical displacement in loading surface}
@@ -8907,7 +8970,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         private:
           virtual void
-          define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+          define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
           {
             tracked_vertices[0][0] = 0.75*this->parameters.scale;
             tracked_vertices[0][1] = 0.5*this->parameters.scale;
@@ -8919,13 +8982,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints) override
           {
               if (this->time->get_timestep() < 2)
               {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                            100,
-                                                           ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                           Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                                                            constraints,
                                                            (this->fe.component_mask(this->pressure)));
               }
@@ -8933,14 +8996,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
               {
                   VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                             100,
-                                                            ZeroFunction<dim>(this->n_components),
+                                                            Functions::ZeroFunction<dim>(this->n_components),
                                                             constraints,
                                                             (this->fe.component_mask(this->pressure)));
               }
 
               VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                         5,
-                                                        ZeroFunction<dim>(this->n_components),
+                                                        Functions::ZeroFunction<dim>(this->n_components),
                                                         constraints,
                                                       (this->fe.component_mask(this->x_displacement) |
                                                        this->fe.component_mask(this->y_displacement) |
@@ -8955,13 +9018,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
                 VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                            4,
-                                                           ConstantFunction<dim>(value[0],this->n_components),
+                                                           Functions::ConstantFunction<dim>(value[0],this->n_components),
                                                            constraints,
                                                            this->fe.component_mask(direction));
 
                VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                           4,
-                                                          ZeroFunction<dim>(this->n_components),
+                                                          Functions::ZeroFunction<dim>(this->n_components),
                                                           constraints,
                                                           (this->fe.component_mask(this->y_displacement) |
                                                            this->fe.component_mask(this->z_displacement) ));
@@ -8971,7 +9034,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           virtual Tensor<1,dim>
           get_neumann_traction (const types::boundary_id &boundary_id,
                                 const Point<dim>         &pt,
-                                const Tensor<1,dim>      &N) const
+                                const Tensor<1,dim>      &N) const override
           {
               if (this->parameters.load_type == "pressure")
               {
@@ -8995,14 +9058,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             }
 
           virtual types::boundary_id
-          get_reaction_boundary_id_for_output() const
+          get_reaction_boundary_id_for_output() const override
           {
               return 4;
           }
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction) const override
           {
                 std::vector<double> displ_incr (dim, 0.0);
 
@@ -9029,6 +9092,15 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                 }
                 return displ_incr;
           }
+
+          virtual double
+          get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
+                                     const Point<dim>         &pt) const override
+          {
+              (void)pt;
+              (void)boundary_id;
+              return 0.0;
+          }
     };
 
     //@sect4{Derived class: consolidation test}
@@ -9045,7 +9117,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         private:
           virtual void
-          define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+          define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
           {
             tracked_vertices[0][0] = 0.5*this->parameters.scale;
             tracked_vertices[0][1] = 0.5*this->parameters.scale;
@@ -9057,19 +9129,19 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           }
 
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints) override
           {
               if (this->time->get_timestep() < 2)
               {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                            4,
-                                                           ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                           Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                                                            constraints,
                                                            (this->fe.component_mask(this->pressure)));
 
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                            5,
-                                                           ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                           Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                                                            constraints,
                                                            (this->fe.component_mask(this->pressure)));
               }
@@ -9077,27 +9149,27 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
               {
                   VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                             4,
-                                                            ZeroFunction<dim>(this->n_components),
+                                                            Functions::ZeroFunction<dim>(this->n_components),
                                                             constraints,
                                                             (this->fe.component_mask(this->pressure)));
 
                   VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                             5,
-                                                            ZeroFunction<dim>(this->n_components),
+                                                            Functions::ZeroFunction<dim>(this->n_components),
                                                             constraints,
                                                             (this->fe.component_mask(this->pressure)));
               }
 
                VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                          100,
-                                                         ZeroFunction<dim>(this->n_components),
+                                                         Functions::ZeroFunction<dim>(this->n_components),
                                                          constraints,
                                                        (this->fe.component_mask(this->x_displacement) |
                                                         this->fe.component_mask(this->y_displacement) ));
 
                 VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                           4,
-                                                          ZeroFunction<dim>(this->n_components),
+                                                          Functions::ZeroFunction<dim>(this->n_components),
                                                           constraints,
                                                         (this->fe.component_mask(this->x_displacement) |
                                                          this->fe.component_mask(this->y_displacement) |
@@ -9110,13 +9182,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
                 VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                            5,
-                                                           ConstantFunction<dim>(value[2],this->n_components),
+                                                           Functions::ConstantFunction<dim>(value[2],this->n_components),
                                                            constraints,
                                                            this->fe.component_mask(direction) );
 
                VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                           5,
-                                                          ZeroFunction<dim>(this->n_components),
+                                                          Functions::ZeroFunction<dim>(this->n_components),
                                                           constraints,
                                                           (this->fe.component_mask(this->x_displacement) |
                                                            this->fe.component_mask(this->y_displacement) ));
@@ -9126,7 +9198,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           virtual Tensor<1,dim>
           get_neumann_traction (const types::boundary_id &boundary_id,
                                 const Point<dim>         &pt,
-                                const Tensor<1,dim>      &N) const
+                                const Tensor<1,dim>      &N) const override
           {
               if (this->parameters.load_type == "pressure")
               {
@@ -9141,14 +9213,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             }
 
           virtual types::boundary_id
-          get_reaction_boundary_id_for_output() const
+          get_reaction_boundary_id_for_output() const override
           {
               return 5;
           }
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction) const override
           {
                 std::vector<double> displ_incr(dim,0.0);
                 const double current_time = this->time->get_current();
@@ -9160,6 +9232,163 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                     displ_incr[2] = this->parameters.load;
                 }
                 return displ_incr;
+          }
+
+          virtual double
+          get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
+                                     const Point<dim>         &pt) const override
+          {
+              (void)pt;
+              (void)boundary_id;
+              return 0.0;
+          }
+    };
+
+
+        //@sect4{Derived class: Uniaxial boundary conditions}
+    template <int dim>
+    class AucklandCube : public BrainBudday2017BaseCube<dim>
+    {
+        public:
+          AucklandCube (const Parameters::AllParameters &parameters)
+            : BrainBudday2017BaseCube<dim> (parameters)
+          {}
+
+          virtual ~AucklandCube () {}
+
+        private:
+          virtual void
+          define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
+          {
+            tracked_vertices[0][0] = 0.5*this->parameters.scale;
+            tracked_vertices[0][1] = 0.5*this->parameters.scale;
+            tracked_vertices[0][2] = 1.0*this->parameters.scale; // center of top surface
+
+            tracked_vertices[1][0] = 1.0*this->parameters.scale;
+            tracked_vertices[1][1] = 0.5*this->parameters.scale;
+            tracked_vertices[1][2] = 0.5*this->parameters.scale; // center of lateral face in x-direction
+          }
+
+          virtual void
+          make_dirichlet_constraints(AffineConstraints<double> &constraints) override
+          {
+              // if (this->time->get_timestep() < 2)
+              // {
+              //     VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+              //                                              100,
+              //                                              Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+              //                                              constraints,
+              //                                              (this->fe.component_mask(this->pressure)));
+              // }
+              // else
+              // {
+                  const std::vector<double> value = get_dirichlet_load(100,2);
+				          VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+						                                              100,
+						                                              Functions::ConstantFunction<dim>(value[2],this->n_components),
+                                                          //Functions::ConstantFunction<dim>(this->parameters.load,this->n_components),
+						                                              constraints,
+						                                              this->fe.component_mask(this->pressure));
+              //}
+              // bottom face fixed in space
+              VectorTools::interpolate_boundary_values( this->dof_handler_ref,
+                                                        4,
+                                                        Functions::ZeroFunction<dim>(this->n_components),
+                                                        constraints,
+                                                        (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)) );
+                                                      
+              // top face fixed in space
+              VectorTools::interpolate_boundary_values( this->dof_handler_ref,
+                                                        5,
+                                                        Functions::ZeroFunction<dim>(this->n_components),
+                                                        constraints,
+                                                        (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)) );
+          }
+
+          virtual Tensor<1,dim>
+          get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
+          {
+              if (this->parameters.load_type == "pressure")
+              {
+                if (boundary_id ==  100)
+                {
+                  const double final_load = this->parameters.load;
+					        const double final_time = this->parameters.end_load_time;
+					        const double current_time = this->time->get_current();
+					        double load;
+
+					        //linear increasing load
+					        if (current_time <= final_time) {
+						        load = final_load * (current_time/final_time);
+					        } else {
+					        	load = final_load;
+					        }
+					        return load * N;
+                  //return this->parameters.load * N;
+                }
+              }
+
+              (void)pt;
+              return Tensor<1,dim>();
+          }
+
+
+          virtual types::boundary_id
+          get_reaction_boundary_id_for_output() const override
+          {
+              return 5;
+          }
+
+          virtual std::vector<double>
+          get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
+          {
+            std::vector<double> pressure_incr(dim, 0.0); // vector of length dim with zero entries
+            if (this->parameters.load_type == "pressure")
+            {
+              if ((boundary_id == 100) && (direction == 2))
+              {
+                const double final_pressure = std::abs(this->parameters.load);
+                const double final_load_time = this->parameters.end_load_time;
+                const double current_time = this->time->get_current();
+                const double delta_time = this->time->get_delta_t();
+
+                double current_pressure = 0.0;
+                double previous_pressure = 0.0;
+
+                if (current_time <= final_load_time)
+                {
+                  current_pressure = (current_time / final_load_time) * final_pressure;
+
+                  if (current_time > delta_time)
+                    previous_pressure = ((current_time - delta_time) / final_load_time) * final_pressure;
+
+                  pressure_incr[2] = current_pressure - previous_pressure;
+                }
+                else
+                  pressure_incr[2] = 0.0;
+              }
+            }
+            return pressure_incr;
+          }
+
+          virtual double
+          get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
+                                     const Point<dim>         &pt) const override
+          {
+            double current_time = this->time->get_current();
+            double end_load_time = this->parameters.end_load_time;
+
+            if (boundary_id == 5 && current_time > end_load_time) {
+              double max_flow = this->parameters.fluid_flow;
+              double flow;
+              flow  = max_flow * (std::sin(2 * numbers::PI * (current_time - end_load_time)));
+              return flow;
+              //return this->parameters.fluid_flow;
+            }
+          
+            (void)pt;
+            (void)boundary_id;
+            return 0.0;
           }
     };
 
@@ -9181,7 +9410,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         private:
           virtual void
-          make_grid()
+          make_grid() override
           {  const Point<dim-1> mesh_center(0.0, 0.0);
             const double radius = this->parameters.radius;
             const double height = this->parameters.height;
@@ -9225,7 +9454,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
           }
 
-          virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+          virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
           {
             tracked_vertices[0][0] = 4.0*this->parameters.scale;
             tracked_vertices[0][1] = 0.0*this->parameters.scale;
@@ -9239,7 +9468,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           virtual Tensor<1,dim>
           get_neumann_traction (const types::boundary_id &boundary_id,
                                 const Point<dim>         &pt,
-                                const Tensor<1,dim>      &N) const
+                                const Tensor<1,dim>      &N) const override
           {
               if (this->parameters.load_type == "pressure")
               {
@@ -9253,7 +9482,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           }
 
           virtual types::boundary_id
-          get_reaction_boundary_id_for_output() const
+          get_reaction_boundary_id_for_output() const override
           {
               return 2;
           }
@@ -9261,7 +9490,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
           virtual double
           get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
-                                     const Point<dim>         &pt) const
+                                     const Point<dim>         &pt) const override
           {
               (void)pt;
               (void)boundary_id;
@@ -9269,7 +9498,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           }
 
           virtual  std::pair<types::boundary_id,types::boundary_id>
-          get_drained_boundary_id_for_output() const
+          get_drained_boundary_id_for_output() const override
           {
         	  if (this->parameters.lateral_drained == "drained" && this->parameters.bottom_drained == "drained") {
         		  return std::make_pair(0,1);
@@ -9299,7 +9528,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
       {}
 
       void vector_value(const Point<dim> &pt,
-                        Vector<double>   &values) const
+                        Vector<double>   &values) const override
         {
           Assert (values.size() == (dim+1),
                   ExcDimensionMismatch (values.size(), (dim)));
@@ -9313,7 +9542,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         }
 
       void vector_value_list(const std::vector<Point<dim>>  &points,
-                             std::vector<Vector<double>>    &value_list) const
+                             std::vector<Vector<double>>    &value_list) const override
        {
          const unsigned int n_points = points.size();
          Assert (value_list.size() == n_points,
@@ -9344,13 +9573,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         private:
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints) override
           {
             if (this->time->get_timestep() < 2)
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        0,
-                                                       ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                       Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                                                        constraints,
                                                        (this->fe.component_mask(this->pressure)));
             }
@@ -9358,14 +9587,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        0,
-                                                       ZeroFunction<dim>(this->n_components),
+                                                       Functions::ZeroFunction<dim>(this->n_components),
                                                        constraints,
                                                        (this->fe.component_mask(this->pressure)));
             }
 
             VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                       1,
-                                                      ZeroFunction<dim>(this->n_components),
+                                                      Functions::ZeroFunction<dim>(this->n_components),
                                                       constraints,
                                                       (this->fe.component_mask(this->x_displacement) |
                                                        this->fe.component_mask(this->y_displacement) |
@@ -9387,7 +9616,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction) const override
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -9431,20 +9660,20 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           	virtual ~BrainRheometerLTMShearRelaxationLateralDrained () {}
 
         private:
-          	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
           	{
           		if (this->time->get_timestep() < 2) {
           			VectorTools::interpolate_boundary_values(
           					this->dof_handler_ref,
                             0,
-                            ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                            Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                             constraints,
                             this->fe.component_mask(this->pressure));
           		} else {
           			VectorTools::interpolate_boundary_values(
           					this->dof_handler_ref,
                             0,
-                            ZeroFunction<dim>(this->n_components),
+                            Functions::ZeroFunction<dim>(this->n_components),
                             constraints,
                             this->fe.component_mask(this->pressure));
           		}
@@ -9452,7 +9681,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           		VectorTools::interpolate_boundary_values(
           				this->dof_handler_ref,
                         1,
-                        ZeroFunction<dim>(this->n_components),
+                        Functions::ZeroFunction<dim>(this->n_components),
                         constraints,
                         (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
@@ -9468,7 +9697,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           	}
 
 
-          	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+          	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
         	{
           		std::vector<double> displ_incr (dim,0.0);
 
@@ -9514,21 +9743,21 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     		virtual ~BrainRheometerLTMCyclicTensionCompression () {}
 
         private:
-    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
     		{
     			// Cylinder hull is drained
     			if (this->time->get_timestep() < 2) {
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							0,
-							ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+							Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
 							constraints,
 							this->fe.component_mask(this->pressure));
     			} else {
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							0,
-							ZeroFunction<dim>(this->n_components),
+							Functions::ZeroFunction<dim>(this->n_components),
 							constraints,
 							this->fe.component_mask(this->pressure));
     			}
@@ -9536,7 +9765,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     			VectorTools::interpolate_boundary_values(
     					this->dof_handler_ref,
 						1,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 						constraints,
 						(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
@@ -9547,19 +9776,19 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							2,
-							ConstantFunction<dim>(value[2],this->n_components),
+							Functions::ConstantFunction<dim>(value[2],this->n_components),
 							constraints,
 							this->fe.component_mask(this->z_displacement));
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							2,
-							ZeroFunction<dim>(this->n_components),
+							Functions::ZeroFunction<dim>(this->n_components),
 							constraints,
 							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
     			}
     		}
 
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
         	{
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -9621,21 +9850,21 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     	}
 
     private:
-    	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+    	virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
     	{
     		// Cylinder hull is drained
     		if (this->time->get_timestep() < 2) {
     			VectorTools::interpolate_boundary_values(
     					this->dof_handler_ref,
 						0,
-						ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+						Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
 						constraints,
 						this->fe.component_mask(this->pressure));
     		} else {
     			VectorTools::interpolate_boundary_values(
     					this->dof_handler_ref,
 						0,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 						constraints,
 						this->fe.component_mask(this->pressure));
     		}
@@ -9643,7 +9872,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     		VectorTools::interpolate_boundary_values(
     				this->dof_handler_ref,
 					1,
-					ZeroFunction<dim>(this->n_components),
+					Functions::ZeroFunction<dim>(this->n_components),
 					constraints,
 					(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
@@ -9654,19 +9883,19 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     			VectorTools::interpolate_boundary_values(
     					this->dof_handler_ref,
 						2,
-						ConstantFunction<dim>(value[2],this->n_components),
+						Functions::ConstantFunction<dim>(value[2],this->n_components),
 						constraints,
 						this->fe.component_mask(this->z_displacement));
     			VectorTools::interpolate_boundary_values(
     					this->dof_handler_ref,
 						2,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 						constraints,
 						(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
     		}
     	}
 
-    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
         {
     		std::vector<double> displ_incr (dim,0.0);
 
@@ -9694,21 +9923,21 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         		virtual ~BrainRheometerLTMCyclicTrapezoidalTensionCompression () {}
 
             private:
-        		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+        		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
         		{
         			// Cylinder hull is drained
         			if (this->time->get_timestep() < 2) {
         				VectorTools::interpolate_boundary_values(
         						this->dof_handler_ref,
     							0,
-    							ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+    							Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
     							constraints,
     							this->fe.component_mask(this->pressure));
         			} else {
         				VectorTools::interpolate_boundary_values(
         						this->dof_handler_ref,
     							0,
-    							ZeroFunction<dim>(this->n_components),
+    							Functions::ZeroFunction<dim>(this->n_components),
     							constraints,
     							this->fe.component_mask(this->pressure));
         			}
@@ -9716,7 +9945,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         			VectorTools::interpolate_boundary_values(
         					this->dof_handler_ref,
     						1,
-    						ZeroFunction<dim>(this->n_components),
+    						Functions::ZeroFunction<dim>(this->n_components),
     						constraints,
     						(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
@@ -9727,19 +9956,19 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         				VectorTools::interpolate_boundary_values(
         						this->dof_handler_ref,
     							2,
-    							ConstantFunction<dim>(value[2],this->n_components),
+    							Functions::ConstantFunction<dim>(value[2],this->n_components),
     							constraints,
     							this->fe.component_mask(this->z_displacement));
         				VectorTools::interpolate_boundary_values(
         						this->dof_handler_ref,
     							2,
-    							ZeroFunction<dim>(this->n_components),
+    							Functions::ZeroFunction<dim>(this->n_components),
     							constraints,
     							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
         			}
         		}
 
-                virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+                virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
                 {
                       std::vector<double> displ_incr (dim,0.0);
 
@@ -9794,7 +10023,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             virtual ~BrainRheometerLTMRelaxationTensionCompression () {}
 
         private:
-            virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+            virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
             {
             	// Cylinder hull is drained
             	if (this->parameters.lateral_drained == "drained") {
@@ -9802,14 +10031,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             			VectorTools::interpolate_boundary_values(
             					this->dof_handler_ref,
         						0,
-        						ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+        						Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
         						constraints,
         						this->fe.component_mask(this->pressure));
             		} else {
             			VectorTools::interpolate_boundary_values(
             					this->dof_handler_ref,
         						0,
-        						ZeroFunction<dim>(this->n_components),
+        						Functions::ZeroFunction<dim>(this->n_components),
         						constraints,
         						this->fe.component_mask(this->pressure));
             		}
@@ -9821,14 +10050,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             	    	VectorTools::interpolate_boundary_values(
             	    			this->dof_handler_ref,
             	    			1,
-            	    			ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+            	    			Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
             	    			constraints,
             	    			this->fe.component_mask(this->pressure));
             	    } else {
             	    	VectorTools::interpolate_boundary_values(
             	    			this->dof_handler_ref,
             	    			1,
-            	    			ZeroFunction<dim>(this->n_components),
+            	    			Functions::ZeroFunction<dim>(this->n_components),
             	    			constraints,
             	    			this->fe.component_mask(this->pressure));
             	    }
@@ -9838,7 +10067,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             	VectorTools::interpolate_boundary_values(
             			this->dof_handler_ref,
         				1,
-        				ZeroFunction<dim>(this->n_components),
+        				Functions::ZeroFunction<dim>(this->n_components),
         				constraints,
         				(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
@@ -9849,13 +10078,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             		VectorTools::interpolate_boundary_values(
             				this->dof_handler_ref,
         					2,
-        					ConstantFunction<dim>(value[2],this->n_components),
+        					Functions::ConstantFunction<dim>(value[2],this->n_components),
         					constraints,
         					this->fe.component_mask(this->z_displacement));
             		VectorTools::interpolate_boundary_values(
             				this->dof_handler_ref,
         					2,
-        					ZeroFunction<dim>(this->n_components),
+        					Functions::ZeroFunction<dim>(this->n_components),
         					constraints,
         					(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
             	}
@@ -9865,13 +10094,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							0,
-							ZeroFunction<dim>(this->n_components),
+							Functions::ZeroFunction<dim>(this->n_components),
 							constraints,
 							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
     			}
             }
 
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
 			{
     			std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
 
@@ -9908,7 +10137,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             virtual ~BrainRheometerLTMBaseQuarter () {}
 
         private:
-            virtual void make_grid()
+            virtual void make_grid() override
             {
             	const Point<dim-1> mesh_center(0.0, 0.0);
             	//const Point<dim> mesh_center2(0.0, 0.0, 0.0);
@@ -9932,10 +10161,10 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             		triangulation_in.refine_global(1);
             	if (this->parameters.radius == 16)
             	    triangulation_in.refine_global(1);
-
+std::cout << "here1" << std::endl;
             	GridGenerator::extrude_triangulation(triangulation_in, 3, height, this->triangulation);
             	//GridGenerator::extrude_triangulation(final_tria, 3, height, this->triangulation);
-
+std::cout << "here2" << std::endl;
             	// Assign a cylindrical manifold to the geometry
             	const CylindricalManifold<dim> cylinder_3d(2);
             	const types::manifold_id cylinder_id = 0;
@@ -9966,6 +10195,10 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
             	GridTools::scale(this->parameters.scale, this->triangulation);
             	this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
+
+                //std::ofstream mesh_out(this->parameters.output_directory + "/" + "grid-very-fine.msh");
+                //GridOut       grid_out;
+                //grid_out.write_msh(this->triangulation, mesh_out);
 
 //				for (const auto &cell : this->triangulation.active_cell_iterators()) {
 //					if ((cell->center()[2] < 0.125*this->parameters.height || cell->center()[2] > 0.875*this->parameters.height) && std::sqrt((cell->center()[0])*(cell->center()[0]) + (cell->center()[1])*(cell->center()[1])) > 0.8*this->parameters.radius)
@@ -10007,7 +10240,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             	}
             }
 
-            virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+            virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
             {
             	tracked_vertices[0][0] = 0.0*this->parameters.scale;
             	tracked_vertices[0][1] = 0.0*this->parameters.scale;
@@ -10018,7 +10251,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             	tracked_vertices[1][2] = this->parameters.height/2*this->parameters.scale;
             }
 
-    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
     		{
     			if (this->parameters.load_type == "displacement") {
     				std::vector<bool> dof_touched(this->dof_handler_ref.n_dofs(), false);
@@ -10096,14 +10329,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							0,
-    							ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+    							Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
     							constraints,
     							this->fe.component_mask(this->pressure));
     				} else {
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							0,
-    							ZeroFunction<dim>(this->n_components),
+    							Functions::ZeroFunction<dim>(this->n_components),
     							constraints,
     							this->fe.component_mask(this->pressure));
     				}
@@ -10115,8 +10348,8 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							0,
-								ZeroFunction<dim>(this->n_components),
-    							//ConstantFunction<dim>((this->time->get_timestep()-1)*10,this->n_components),
+								Functions::ZeroFunction<dim>(this->n_components),
+    							//Functions::ConstantFunction<dim>((this->time->get_timestep()-1)*10,this->n_components),
     							constraints,
     							this->fe.component_mask(this->pressure));
     				}
@@ -10128,14 +10361,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							1,
-    							ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+    							Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
     							constraints,
     							this->fe.component_mask(this->pressure));
     				} else {
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							1,
-    							ZeroFunction<dim>(this->n_components),
+    							Functions::ZeroFunction<dim>(this->n_components),
     							constraints,
     							this->fe.component_mask(this->pressure));
     				}
@@ -10147,14 +10380,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     					VectorTools::interpolate_boundary_values(
     							this->dof_handler_ref,
 								2,
-								ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+								Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
 								constraints,
 								this->fe.component_mask(this->pressure));
     				} else {
     					VectorTools::interpolate_boundary_values(
     							this->dof_handler_ref,
 								2,
-								ZeroFunction<dim>(this->n_components),
+								Functions::ZeroFunction<dim>(this->n_components),
 								constraints,
 								this->fe.component_mask(this->pressure));
     				}
@@ -10165,7 +10398,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     			VectorTools::interpolate_boundary_values(
     					this->dof_handler_ref,
 						1,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 						constraints,
 						(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
@@ -10177,14 +10410,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							2,
-							ConstantFunction<dim>(value[2],this->n_components),
+							Functions::ConstantFunction<dim>(value[2],this->n_components),
 							constraints,
 							this->fe.component_mask(this->z_displacement));
     			}
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							2,
-							ZeroFunction<dim>(this->n_components),
+							Functions::ZeroFunction<dim>(this->n_components),
 							constraints,
 							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
     			}
@@ -10194,13 +10427,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			    VectorTools::interpolate_boundary_values(
 			    		this->dof_handler_ref,
 			            3,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 			            constraints,
 			            this->fe.component_mask(this->x_displacement));
 			    VectorTools::interpolate_boundary_values(
 			    		this->dof_handler_ref,
 			            4,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 			            constraints,
 			            this->fe.component_mask(this->y_displacement));
 
@@ -10209,13 +10442,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							0,
-							ZeroFunction<dim>(this->n_components),
+							Functions::ZeroFunction<dim>(this->n_components),
 							constraints,
 							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
     			}
     		}
 
-            virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const
+            virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
         	{
             	if (this->parameters.load_type == "pressure")
             		//AssertThrow(false, ExcMessage("Pressure loading not implemented for rheometer examples."));
@@ -10226,19 +10459,19 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             	return Tensor<1,dim>();
         	}
 
-            virtual types::boundary_id get_reaction_boundary_id_for_output() const
+            virtual types::boundary_id get_reaction_boundary_id_for_output() const override
             {
             	return 2;
             }
 
-            virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const
+            virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const override
             {
             	(void)pt;
             	(void)boundary_id;
             	return 0.0;
             }
 
-            virtual std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const
+            virtual std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const override
 			{
             	if (this->parameters.lateral_drained == "drained" && this->parameters.bottom_drained == "drained") {
 		        	return std::make_pair(0,1);
@@ -10250,7 +10483,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 		    }
 
     		// Define Dirichlet load, definition in derived classes
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override = 0;
     	};
 
 
@@ -10264,7 +10497,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         private:
 
-          virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+          virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -10325,7 +10558,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     	}
 
     private:
-    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
         {
     		std::vector<double> displ_incr (dim,0.0);
 
@@ -10351,7 +10584,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 		virtual ~BrainRheometerLTMCyclicCompressionQuarter () {}
 
 	   private:
-		 virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+		 virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
 		 {
 			   std::vector<double> displ_incr (dim,0.0);
 
@@ -10392,7 +10625,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
   	   private:
 
-  		 virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+  		 virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
   		 {
   			   std::vector<double> displ_incr (dim,0.0);
 
@@ -10431,7 +10664,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         private:
 
-          virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+          virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -10486,7 +10719,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     		virtual ~BrainRheometerLTMRelaxationTensionCompressionQuarter () {}
 
         private:
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
 			{
     			std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
     			if (this->parameters.load_type == "displacement") {
@@ -10537,7 +10770,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     			return displ_incr;
 			}
 
-    		virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const
+    		virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
 			{
     			if (this->parameters.load_type == "pressure") {
     				if (boundary_id == 2) {
@@ -10590,7 +10823,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
       {}
         
       void vector_value(const Point<dim> &pt,
-                        Vector<double>   &values) const
+                        Vector<double>   &values) const override
         {
           Assert (values.size() == (dim+1),
                   ExcDimensionMismatch (values.size(), (dim)));
@@ -10623,7 +10856,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         }
 
       void vector_value_list(const std::vector<Point<dim>>  &points,
-                             std::vector<Vector<double>>    &value_list) const
+                             std::vector<Vector<double>>    &value_list) const override
        {
          const unsigned int n_points = points.size();
          Assert (value_list.size() == n_points,
@@ -10654,7 +10887,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         private:
           virtual void
-          make_grid()
+          make_grid() override
           {
             //Read external mesh
             GridIn<dim> gridin;
@@ -10716,7 +10949,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                 this->triangulation.refine_global(this->parameters.global_refinement);
           }
 
-          virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+          virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
           {
             tracked_vertices[0][0] = 0.0*this->parameters.scale;
             tracked_vertices[0][1] = 0.0*this->parameters.scale;
@@ -10728,14 +10961,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           }
         
           virtual void
-          make_dirichlet_constraints(AffineConstraints<double> &constraints)
+          make_dirichlet_constraints(AffineConstraints<double> &constraints) override
           {
             // Top (unloaded) surface is drained
             if (this->time->get_timestep() < 2)
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                        1,
-                                                       ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                       Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                                                        constraints,
                                                        this->fe.component_mask(this->pressure));
             }
@@ -10743,7 +10976,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             {
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                      1,
-                                                     ZeroFunction<dim>(this->n_components),
+                                                     Functions::ZeroFunction<dim>(this->n_components),
                                                      constraints,
                                                      this->fe.component_mask(this->pressure));
             }
@@ -10751,18 +10984,18 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
            // Define symmetry BCs for lateral surfaces
            VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                    2,
-                                                   ZeroFunction<dim>(this->n_components),
+                                                   Functions::ZeroFunction<dim>(this->n_components),
                                                    constraints,
                                                    this->fe.component_mask(this->y_displacement));
            VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                     3,
-                                                    ZeroFunction<dim>(this->n_components),
+                                                    Functions::ZeroFunction<dim>(this->n_components),
                                                     constraints,
                                                     this->fe.component_mask(this->x_displacement));
             // Fully fix bottom surface
             VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                      0,
-                                                     ZeroFunction<dim>(this->n_components),
+                                                     Functions::ZeroFunction<dim>(this->n_components),
                                                      constraints,
                                                      (this->fe.component_mask(this->x_displacement) |
                                                       this->fe.component_mask(this->y_displacement) |
@@ -10785,7 +11018,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                      VectorTools::interpolate_boundary_values(
                               this->dof_handler_ref,
                               5,
-                              ZeroFunction<dim>(this->n_components),
+                              Functions::ZeroFunction<dim>(this->n_components),
                               constraints,
                               this->fe.component_mask(this->z_displacement) );
                 }
@@ -10795,7 +11028,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         virtual Tensor<1,dim>
         get_neumann_traction (const types::boundary_id &boundary_id,
                               const Point<dim>         &pt,
-                              const Tensor<1,dim>      &N) const
+                              const Tensor<1,dim>      &N) const override
         {
             if (this->parameters.load_type == "pressure")
             {
@@ -10809,14 +11042,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         }
 
         virtual types::boundary_id
-        get_reaction_boundary_id_for_output() const
+        get_reaction_boundary_id_for_output() const override
         {
             return 5;
         }
 
         virtual double
         get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
-                                   const Point<dim>         &pt) const
+                                   const Point<dim>         &pt) const override
         {
               (void)pt;
               (void)boundary_id;
@@ -10824,14 +11057,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         }
 
         virtual  std::pair<types::boundary_id,types::boundary_id>
-        get_drained_boundary_id_for_output() const
+        get_drained_boundary_id_for_output() const override
         {
               return std::make_pair(1,4);
         }
         
         virtual std::vector<double>
         get_dirichlet_load(const types::boundary_id   &boundary_id,
-                           const int                  &direction) const = 0;
+                           const int                  &direction) const override = 0;
     };
 
     //@sect4{Derived class: One cycle of load and unload}
@@ -10849,7 +11082,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         private:
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction) const override
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -10895,7 +11128,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         private:
           virtual std::vector<double>
           get_dirichlet_load(const types::boundary_id   &boundary_id,
-                             const int                  &direction) const
+                             const int                  &direction) const override
           {
                 std::vector<double> displ_incr (dim,0.0);
 
@@ -10941,7 +11174,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     		virtual ~BrainNanoFlatPunchBase () {}
 
     	private:
-    		virtual void make_grid()
+    		virtual void make_grid() override
     		{
     			// Use a subdivided_hyper_rectangle and make use of symmetry, unit [mm]
     			// Define the diagonally opposite corner points, the origin of the coordinate system is the front, lower left corner
@@ -11096,7 +11329,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     		}
 
     		// Define tracked vertices for post-processing
-    		virtual void define_tracked_vertices(std::vector<Point<dim>> &tracked_vertices)
+    		virtual void define_tracked_vertices(std::vector<Point<dim>> &tracked_vertices) override
     		{
     			tracked_vertices[0][0] = 0.0*this->parameters.scale;
     			tracked_vertices[0][1] = 0.0*this->parameters.scale;
@@ -11108,33 +11341,33 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     		}
 
     		// Apply Dirichlet constraints
-    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
     		{
     			// Top (unloaded) surface is drained
     			if (this->time->get_timestep() < 2) {
     				VectorTools::interpolate_boundary_values(
     				    	this->dof_handler_ref,
     						5,
-    						ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
+    						Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
     						constraints,
     						this->fe.component_mask(this->pressure));
        				VectorTools::interpolate_boundary_values(
         				    this->dof_handler_ref,
         					1,
-        					ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
+        					Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
         					constraints,
         					this->fe.component_mask(this->pressure));
     			} else {
     				VectorTools::interpolate_boundary_values(
     				    	this->dof_handler_ref,
     						5,
-    						ZeroFunction<dim>(this->n_components),
+    						Functions::ZeroFunction<dim>(this->n_components),
     						constraints,
     						this->fe.component_mask(this->pressure));
        				VectorTools::interpolate_boundary_values(
         				    this->dof_handler_ref,
         					1,
-        					ZeroFunction<dim>(this->n_components),
+        					Functions::ZeroFunction<dim>(this->n_components),
         					constraints,
         					this->fe.component_mask(this->pressure));
     			}
@@ -11143,7 +11376,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     			VectorTools::interpolate_boundary_values(
     					this->dof_handler_ref,
 						4,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 						constraints,
 						(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
@@ -11151,13 +11384,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			    VectorTools::interpolate_boundary_values(
 			    		this->dof_handler_ref,
 			            0,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 			            constraints,
 			            this->fe.component_mask(this->x_displacement));
 			    VectorTools::interpolate_boundary_values(
 			    		this->dof_handler_ref,
 			            2,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 			            constraints,
 			            this->fe.component_mask(this->y_displacement));
 
@@ -11168,13 +11401,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     			    VectorTools::interpolate_boundary_values(
     			    		this->dof_handler_ref,
     			            100,
-    			            ConstantFunction<dim>(-value[2],this->n_components), //TODO: dont use minus sign, work with sign function in get_dirichlet_load
+    			            Functions::ConstantFunction<dim>(-value[2],this->n_components), //TODO: dont use minus sign, work with sign function in get_dirichlet_load
     			            constraints,
     			            this->fe.component_mask(this->z_displacement));
     			}
     		}
 
-    		virtual Tensor<1,dim> get_neumann_traction(const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const
+    		virtual Tensor<1,dim> get_neumann_traction(const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
 			{
     			if (this->parameters.load_type == "pressure") {
     				AssertThrow(false, ExcMessage("Pressure loading not implemented for nanoindenter examples."));
@@ -11186,25 +11419,25 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     			return Tensor<1,dim>();
 			}
 
-    		virtual types::boundary_id get_reaction_boundary_id_for_output() const
+    		virtual types::boundary_id get_reaction_boundary_id_for_output() const override
     		{
     			return 100;
     		}
 
-    		virtual double get_prescribed_fluid_flow(const types::boundary_id &boundary_id, const Point<dim> &pt) const
+    		virtual double get_prescribed_fluid_flow(const types::boundary_id &boundary_id, const Point<dim> &pt) const override
     		{
     			(void)pt;
     			(void)boundary_id;
     			return 0.0;
     		}
 
-    		virtual std::pair<types::boundary_id, types::boundary_id> get_drained_boundary_id_for_output() const
+    		virtual std::pair<types::boundary_id, types::boundary_id> get_drained_boundary_id_for_output() const override
 			{
     			return std::make_pair(5,5);
 			}
 
     		// Define Dirichlet load, definition in derived classes
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override = 0;
     };
 
     // Derived class to apply a ramp load and maintain
@@ -11215,7 +11448,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     		virtual ~BrainNanoFlatPunchRampLoad () {}
 
 		private:
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
 			{
     			std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
 
@@ -11263,7 +11496,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             virtual ~HydroNanoGrazBaseQuarter () {}
 
         private:
-            virtual void make_grid()
+            virtual void make_grid() override
             {
             	const Point<dim-1> mesh_center(0.0, 0.0);
             	const double radius = this->parameters.radius; //20.0;
@@ -11386,7 +11619,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             	}
             }
 
-            virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+            virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
             {
             	tracked_vertices[0][0] = 0.0*this->parameters.scale;
             	tracked_vertices[0][1] = 0.0*this->parameters.scale;
@@ -11397,7 +11630,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             	tracked_vertices[1][2] = 0.0*this->parameters.scale;
             }
 
-    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+    		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
     		{
     			// Cylinder hull is drained
     			if (this->parameters.lateral_drained == "drained") {
@@ -11405,14 +11638,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							0,
-    							ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+    							Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
     							constraints,
     							this->fe.component_mask(this->pressure));
     				} else {
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							0,
-    							ZeroFunction<dim>(this->n_components),
+    							Functions::ZeroFunction<dim>(this->n_components),
     							constraints,
     							this->fe.component_mask(this->pressure));
     				}
@@ -11424,14 +11657,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							1,
-    							ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+    							Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
     							constraints,
     							this->fe.component_mask(this->pressure));
     				} else {
     				    VectorTools::interpolate_boundary_values(
     				    		this->dof_handler_ref,
     							1,
-    							ZeroFunction<dim>(this->n_components),
+    							Functions::ZeroFunction<dim>(this->n_components),
     							constraints,
     							this->fe.component_mask(this->pressure));
     				}
@@ -11443,14 +11676,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     					VectorTools::interpolate_boundary_values(
     							this->dof_handler_ref,
 								2,
-								ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+								Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
 								constraints,
 								this->fe.component_mask(this->pressure));
     				} else {
     					VectorTools::interpolate_boundary_values(
     							this->dof_handler_ref,
 								2,
-								ZeroFunction<dim>(this->n_components),
+								Functions::ZeroFunction<dim>(this->n_components),
 								constraints,
 								this->fe.component_mask(this->pressure));
     				}
@@ -11460,7 +11693,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     			VectorTools::interpolate_boundary_values(
     					this->dof_handler_ref,
 						1,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 						constraints,
 						(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
@@ -11471,13 +11704,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							100,
-							ConstantFunction<dim>(value[2],this->n_components),
+							Functions::ConstantFunction<dim>(value[2],this->n_components),
 							constraints,
 							this->fe.component_mask(this->z_displacement));
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							100,
-							ZeroFunction<dim>(this->n_components),
+							Functions::ZeroFunction<dim>(this->n_components),
 							constraints,
 							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));*/
 
@@ -11486,13 +11719,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							101,
-							ConstantFunction<dim>(value2[2],this->n_components),
+							Functions::ConstantFunction<dim>(value2[2],this->n_components),
 							constraints,
 							this->fe.component_mask(this->z_displacement));
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							101,
-							ZeroFunction<dim>(this->n_components),
+							Functions::ZeroFunction<dim>(this->n_components),
 							constraints,
 							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
     			}
@@ -11501,13 +11734,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			    VectorTools::interpolate_boundary_values(
 			    		this->dof_handler_ref,
 			            3,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 			            constraints,
 			            this->fe.component_mask(this->x_displacement));
 			    VectorTools::interpolate_boundary_values(
 			    		this->dof_handler_ref,
 			            4,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 			            constraints,
 			            this->fe.component_mask(this->y_displacement));
 
@@ -11516,13 +11749,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     				VectorTools::interpolate_boundary_values(
     						this->dof_handler_ref,
 							0,
-							ZeroFunction<dim>(this->n_components),
+							Functions::ZeroFunction<dim>(this->n_components),
 							constraints,
 							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
     			}
     		}
 
-            virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const
+            virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
         	{
             	if (this->parameters.load_type == "pressure")
             		AssertThrow(false, ExcMessage("Pressure loading not implemented for rheometer examples."));
@@ -11533,19 +11766,19 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             	return Tensor<1,dim>();
         	}
 
-            virtual types::boundary_id get_reaction_boundary_id_for_output() const
+            virtual types::boundary_id get_reaction_boundary_id_for_output() const override
             {
             	return 101;
             }
 
-            virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const
+            virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const override
             {
             	(void)pt;
             	(void)boundary_id;
             	return 0.0;
             }
 
-            virtual  std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const
+            virtual  std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const override
 			{
             	if (this->parameters.lateral_drained == "drained" && this->parameters.bottom_drained == "drained") {
 		        	return std::make_pair(0,1);
@@ -11557,7 +11790,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 		    }
 
     		// Define Dirichlet load, definition in derived classes
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override = 0;
     };
 
 
@@ -11570,7 +11803,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     		virtual ~HydroNanoGrazRelaxationCompressionQuarter () {}
 
         private:
-    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
 			{
     			std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
 
@@ -11598,7 +11831,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     			return displ_incr;
 			}
 
-    		virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const
+    		virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
 			{
     			if (this->parameters.load_type == "pressure") {
     				if (boundary_id == 2) {
@@ -11648,7 +11881,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     	}
 
     private:
-    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+    	virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
 		{
     		std::vector<double> displ_incr (dim,0.0);
 
@@ -11746,7 +11979,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			virtual ~HydroNanoGrazBaseQuarterSphere () {}
 
 		private:
-			virtual void make_grid()
+			virtual void make_grid() override
 			{
 				const Point<dim-1> mesh_center(0.0, 0.0);
 				const double radius = this->parameters.radius; 	// specimen radius
@@ -11864,7 +12097,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
 				this->triangulation.execute_coarsening_and_refinement();
 
-				/*for (const auto &cell : this->triangulation.active_cell_iterators()) {
+				for (const auto &cell : this->triangulation.active_cell_iterators()) {
 					if (displ_center.distance(cell->center()) < 1.9 && cell->center()[2] > (height - 0.1))
 						cell->set_refine_flag();
 				}
@@ -11905,7 +12138,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 				this->pcout << "bottom = " << bottom << ", top = " << top << ", left = " << left << ", front = " << front << ", lateral = " << lateral << std::endl;
 			}
 
-			virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+			virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
 			{
 				tracked_vertices[0][0] = 0.0*this->parameters.scale;
 				tracked_vertices[0][1] = 0.0*this->parameters.scale;
@@ -11916,7 +12149,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 				tracked_vertices[1][2] = 0.0*this->parameters.scale;
 			}
 
-			virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+			virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
 			{
 				if (true) {// Update boundary conditions
 				// loaded surface cell counter
@@ -12163,14 +12396,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 						VectorTools::interpolate_boundary_values(
 								this->dof_handler_ref,
 								0,
-								ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+								Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
 								constraints,
 								this->fe.component_mask(this->pressure));
 					} else {
 						VectorTools::interpolate_boundary_values(
 								this->dof_handler_ref,
 								0,
-								ZeroFunction<dim>(this->n_components),
+								Functions::ZeroFunction<dim>(this->n_components),
 								constraints,
 								this->fe.component_mask(this->pressure));
 					}
@@ -12182,14 +12415,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 						VectorTools::interpolate_boundary_values(
 								this->dof_handler_ref,
 								1,
-								ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+								Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
 								constraints,
 								this->fe.component_mask(this->pressure));
 					} else {
 						VectorTools::interpolate_boundary_values(
 								this->dof_handler_ref,
 								1,
-								ZeroFunction<dim>(this->n_components),
+								Functions::ZeroFunction<dim>(this->n_components),
 								constraints,
 								this->fe.component_mask(this->pressure));
 					}
@@ -12201,14 +12434,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 						VectorTools::interpolate_boundary_values(
 								this->dof_handler_ref,
 								2,
-								ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+								Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
 								constraints,
 								this->fe.component_mask(this->pressure));
 					} else {
 						VectorTools::interpolate_boundary_values(
 								this->dof_handler_ref,
 								2,
-								ZeroFunction<dim>(this->n_components),
+								Functions::ZeroFunction<dim>(this->n_components),
 								constraints,
 								this->fe.component_mask(this->pressure));
 					}
@@ -12218,13 +12451,13 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 				VectorTools::interpolate_boundary_values(
 						this->dof_handler_ref,
 						3,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 						constraints,
 						this->fe.component_mask(this->x_displacement));
 				VectorTools::interpolate_boundary_values(
 						this->dof_handler_ref,
 						4,
-						ZeroFunction<dim>(this->n_components),
+						Functions::ZeroFunction<dim>(this->n_components),
 						constraints,
 						this->fe.component_mask(this->y_displacement));
 
@@ -12233,7 +12466,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 					VectorTools::interpolate_boundary_values(
 							this->dof_handler_ref,
 							0,
-							ZeroFunction<dim>(this->n_components),
+							Functions::ZeroFunction<dim>(this->n_components),
 							constraints,
 							(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
 				}
@@ -12242,7 +12475,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			    VectorTools::interpolate_boundary_values(
 				 	    this->dof_handler_ref,
 					    1,
-					    ZeroFunction<dim>(this->n_components),
+					    Functions::ZeroFunction<dim>(this->n_components),
 					    constraints,
 					    (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
@@ -12255,21 +12488,21 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 						VectorTools::interpolate_boundary_values(
 								 this->dof_handler_ref,
 								 2,
-								 ConstantFunction<dim>(displ,this->n_components),
+								 Functions::ConstantFunction<dim>(displ,this->n_components),
 								 constraints,
 								 this->fe.component_mask(this->z_displacement));
 
 						VectorTools::interpolate_boundary_values(
 								 this->dof_handler_ref,
 								 2,
-								 ZeroFunction<dim>(this->n_components),
+								 Functions::ZeroFunction<dim>(this->n_components),
 								 constraints,
 								 (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
 					//}
 				}*/
 			}
 
-			virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const
+			virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
 			{
 				if (this->parameters.load_type == "pressure") {
 				  AssertThrow(false, ExcMessage("Pressure loading not implemented for nanometer examples."));
@@ -12281,24 +12514,24 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 				return Tensor<1,dim>();
 			}
 
-			virtual types::boundary_id get_reaction_boundary_id_for_output() const
+			virtual types::boundary_id get_reaction_boundary_id_for_output() const override
 			{
 				return 2;
 			}
 
-			virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const
+			virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const override
 			{
 				  (void)pt;
 				  (void)boundary_id;
 				  return 0.0;
 			}
 
-			virtual  std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const
+			virtual  std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const override
 			{
 				  return std::make_pair(1,2);
 			}
 
-			virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
+			virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override = 0;
 	};
 
 
@@ -12313,7 +12546,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         private:
 			virtual std::vector<double>
-			get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+			get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
 			{
                 std::vector<double> displ_incr (dim+1,0.0);
 
@@ -12359,7 +12592,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 		virtual ~OdeometerGraz () {}
 
 	private:
-		virtual void make_grid()
+		virtual void make_grid() override
 		{
 			const Point<dim-1> mesh_center(0.0, 0.0);
 			const double radius = this->parameters.radius;
@@ -12400,7 +12633,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
 		}
 
-		virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+		virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
 		{
 			tracked_vertices[0][0] = 0.0*this->parameters.scale;
 			tracked_vertices[0][1] = 0.0*this->parameters.scale;
@@ -12408,18 +12641,114 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
 			tracked_vertices[1][0] = this->parameters.radius*this->parameters.scale;
 			tracked_vertices[1][1] = 0.0*this->parameters.scale;
-			tracked_vertices[1][2] = this->parameters.height*this->parameters.scale;
+			tracked_vertices[1][2] = this->parameters.height/2*this->parameters.scale;
 		}
 
-		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints)
+		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
 		{
-			// Fluid pressure load on cylinder top
 			if (this->parameters.load_type == "pressure") {
+				std::vector<bool> dof_touched(this->dof_handler_ref.n_dofs(), false);
+
+				Quadrature<dim - 1> face_quadrature(this->fe.get_unit_face_support_points());
+				FEFaceValues<dim> fe_values_face(this->mapping, this->fe, face_quadrature, update_quadrature_points);
+
+				const unsigned int dofs_per_face = this->fe.dofs_per_face;
+				const unsigned int n_face_q_points = face_quadrature.size();
+
+				std::vector<types::global_dof_index> dof_indices(dofs_per_face);
+
+				for (const auto &cell : this->dof_handler_ref.active_cell_iterators()) {
+					if (!cell->is_artificial()) {
+						for (const auto &face : cell->face_iterators()) {
+							if (face->at_boundary() && (face->boundary_id() == 1 || face->boundary_id() == 2 || face->boundary_id() == 0)) {
+
+								fe_values_face.reinit(cell, face);
+								face->get_dof_indices(dof_indices);
+
+								for (unsigned int q_point = 0; q_point < n_face_q_points; ++q_point) {
+									const unsigned int component = this->fe.face_system_to_component_index(q_point).first;
+									const unsigned int index_z = dof_indices[q_point];
+
+									if (component == 2 && dof_touched[index_z] == false) {
+										dof_touched[index_z] = true;
+										Point<dim> this_support_point = fe_values_face.quadrature_point(q_point);
+
+										Tensor<1,dim> solution_here;
+										unsigned int index_x = 0;
+										unsigned int index_y = 0;
+										unsigned int index_p = 0;
+
+										for (unsigned int q_point = 0; q_point < n_face_q_points; ++q_point) {
+											const Point<dim> this_support_point_2 = fe_values_face.quadrature_point(q_point);
+											if (this_support_point == this_support_point_2) {
+												const unsigned int component = this->fe.face_system_to_component_index(q_point).first;
+												const unsigned int index = dof_indices[q_point];
+												if (component == 0 && dof_touched[index] == false) {
+													dof_touched[index] = true;
+													solution_here[0] = this->solution_n(index);
+													index_x = index;
+												} else if (component == 1 && dof_touched[index] == false) {
+													dof_touched[index] = true;
+													solution_here[1] = this->solution_n(index);
+													index_y = index;
+												} else if (component == 3 && dof_touched[index] == false) {
+													dof_touched[index] = true;
+													index_p = index;
+												}
+											}
+										}
+
+										solution_here[2] = this->solution_n(index_z);
+
+										if (this_support_point[2] == 0) {
+											constraints.add_line(index_z);
+											constraints.set_inhomogeneity(index_z, 0);
+										}
+
+										if (std::sqrt(this_support_point[0]*this_support_point[0]+this_support_point[1]*this_support_point[1]) < 0.98*this->parameters.radius) {
+											constraints.add_line(index_x);
+											constraints.set_inhomogeneity(index_x, 0);
+											constraints.add_line(index_y);
+											constraints.set_inhomogeneity(index_y, 0);
+										}
+										// compute new admissible radius, slightly larger than the original radius
+										double radius_new = 1.001 * this->parameters.radius;
+										// compute angle of this support point
+										double alpha = std::atan(this_support_point[1]/this_support_point[0]);
+										// compute new admissible components of this support point
+										Point<dim> final_location;
+										final_location[0] = radius_new * std::cos(alpha);
+										final_location[1] = radius_new * std::sin(alpha);
+										final_location[2] = this_support_point[2];
+										// compute current position of this support point
+										this_support_point = this_support_point + solution_here;
+										// check if the support point is outside the admissible domain
+										if ((std::sqrt(this_support_point[0]*this_support_point[0]+this_support_point[1]*this_support_point[1]) > radius_new) ||
+												(std::sqrt(std::pow(this_support_point[0]-final_location[0],2)+std::pow(this_support_point[1]-final_location[1],2)) < 1e-6)) {
+											constraints.add_line(index_x);
+											constraints.set_inhomogeneity(index_x, final_location[0]-this_support_point[0]);
+											constraints.add_line(index_y);
+											constraints.set_inhomogeneity(index_y, final_location[1]-this_support_point[1]);
+										}
+
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+			// Fluid pressure load on cylinder top
+			// The parameter lateral_confined refers here to the top surface, so unconfined leads to a drained top
+			// surface with a certain pressure load that corresponds to the surface tractions. Confined leads to
+			// a undrained top surface, i.e., confined compression setup.
+			if (this->parameters.lateral_confined == "unconfined") {
 				const std::vector<double> value = get_dirichlet_load(2,2);
 				VectorTools::interpolate_boundary_values(
 						this->dof_handler_ref,
 						2,
-						ConstantFunction<dim>(value[2],this->n_components),
+						Functions::ConstantFunction<dim>(value[2],this->n_components),
 						constraints,
 						this->fe.component_mask(this->pressure));
 			}
@@ -12430,76 +12759,77 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 					VectorTools::interpolate_boundary_values(
 							this->dof_handler_ref,
 							1,
-							ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+							Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
 							constraints,
 							this->fe.component_mask(this->pressure));
 				} else {
 					VectorTools::interpolate_boundary_values(
 							this->dof_handler_ref,
 							1,
-							ZeroFunction<dim>(this->n_components),
+							Functions::ZeroFunction<dim>(this->n_components),
 							constraints,
 							this->fe.component_mask(this->pressure));
 				}
 			}
 
-			// Cylinder bottom is fully fixed in space (glued)
-			VectorTools::interpolate_boundary_values(
-					this->dof_handler_ref,
-					1,
-					ZeroFunction<dim>(this->n_components),
-					constraints,
-					(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
+//			// Cylinder bottom is fully fixed in space (glued)
+//			VectorTools::interpolate_boundary_values(
+//					this->dof_handler_ref,
+//					1,
+//					Functions::ZeroFunction<dim>(this->n_components),
+//					constraints,
+//					(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
 
 			// Define symmetry boundary conditions for lateral surfaces
 			VectorTools::interpolate_boundary_values(
 					this->dof_handler_ref,
 					3,
-					ZeroFunction<dim>(this->n_components),
+					Functions::ZeroFunction<dim>(this->n_components),
 					constraints,
 					this->fe.component_mask(this->x_displacement));
 			VectorTools::interpolate_boundary_values(
 					this->dof_handler_ref,
 					4,
-					ZeroFunction<dim>(this->n_components),
+					Functions::ZeroFunction<dim>(this->n_components),
 					constraints,
 					this->fe.component_mask(this->y_displacement));
 
-			// Cylinder hull confined
-			if (this->parameters.lateral_confined == "confined") {
-				VectorTools::interpolate_boundary_values(
-						this->dof_handler_ref,
-						0,
-						ZeroFunction<dim>(this->n_components),
-						constraints,
-						(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
-			}
+//			// Cylinder hull confined
+//			if (this->parameters.lateral_confined == "confined") {
+//				VectorTools::interpolate_boundary_values(
+//						this->dof_handler_ref,
+//						0,
+//						Functions::ZeroFunction<dim>(this->n_components),
+//						constraints,
+//						(this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
+//			}
 		}
 
-		virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const
-	        			{
+		virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
+		{
 			if (this->parameters.load_type == "pressure")
 				//AssertThrow(false, ExcMessage("Pressure loading not implemented for rheometer examples."));
 
-				(void)boundary_id;
+			(void)boundary_id;
 			(void)pt;
 			(void)N;
 			return Tensor<1,dim>();
-	        			}
-
-		virtual types::boundary_id get_reaction_boundary_id_for_output() const
-		{
-			return 1;
 		}
 
-		virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const
+
+		virtual types::boundary_id get_reaction_boundary_id_for_output() const override
+		{
+			return 2;
+		}
+
+		virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const override
 		{
 			(void)pt;
 			(void)boundary_id;
 			return 0.0;
 		}
 
-		virtual std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const {
+		virtual std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const override {
 			if (this->parameters.lateral_drained == "drained" && this->parameters.bottom_drained == "drained") {
 				return std::make_pair(0,1);
 			} else if (this->parameters.lateral_drained == "drained") {
@@ -12510,7 +12840,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 		}
 
 		// Define Dirichlet load, definition in derived classes
-		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const = 0;
+		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override = 0;
 	};
 
 	//@sect4{Derived class: Tension and Compression Relaxation}
@@ -12522,39 +12852,37 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 		virtual ~OdeometerGrazConstant () {}
 
 	private:
-		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const
+		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
 		{
-			std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
+			std::vector<double> pressure_incr (dim, 0.0); //vector of length dim with zero entries
 			if (this->parameters.load_type == "pressure") {
 				if ((boundary_id == 2) && (direction == 2)) {
-					const double final_displ = std::abs(this->parameters.load);
+					const double final_pressure = std::abs(this->parameters.load);
 					const double final_load_time = this->parameters.end_load_time;
 					const double current_time = this->time->get_current();
 					const double delta_time = this->time->get_delta_t();
 
-					double current_displ = 0.0;
-					double previous_displ = 0.0;
+					double current_pressure = 0.0;
+					double previous_pressure = 0.0;
 
 					if (current_time <= final_load_time) {
-						current_displ = (current_time/final_load_time) * final_displ;
+						current_pressure = (current_time/final_load_time) * final_pressure;
 
 						if (current_time > delta_time)
-							previous_displ = ((current_time-delta_time)/final_load_time) * final_displ;
+							previous_pressure = ((current_time-delta_time)/final_load_time) * final_pressure;
 
-						displ_incr[2] = current_displ - previous_displ;
+						pressure_incr[2] = current_pressure - previous_pressure;
 					} else
-						displ_incr[2] = 0.0;
+						pressure_incr[2] = 0.0;
 				}
 			}
-			return displ_incr;
+			return pressure_incr;
 		}
 
-		virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const
+		virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
 		{
 			if (this->parameters.load_type == "pressure") {
 				if (boundary_id == 2) {
-					//return this->parameters.load * N;
-
 					const double final_load = this->parameters.load;
 					const double final_time = this->parameters.end_load_time;
 					const double current_time = this->time->get_current();
@@ -12634,6 +12962,11 @@ int main (int argc, char *argv[])
       else if (parameters.geom_type == "Budday_cube_consolidation")
       {
         BrainBudday2017CubeConsolidation<3> solid_3d(parameters);
+        solid_3d.run();
+      }
+      else if (parameters.geom_type == "Budday_cube_Auckland")
+      {
+        AucklandCube<3> solid_3d(parameters);
         solid_3d.run();
       }
       else if (parameters.geom_type == "brain_rheometer_shear_lateral_drained")
