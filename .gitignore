@@ -1,1 +1,8 @@
 /build
+/test
+/CMakeFiles
+nonlinear-poro-viscoelasticity
+.project
+.cproject
+.vscode
+compile_commands.json

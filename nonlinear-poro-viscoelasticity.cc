@@ -110,6 +110,7 @@
 #include <iomanip>
 #include <string>
 #include <chrono>
+#include <functional>
 
 
 //EFI
@@ -432,7 +433,7 @@ namespace io {
                                 err.set_file_name(file_name);
                                 throw err;
                         }
-                        return std::unique_ptr<ByteSourceBase>(new detail::OwningStdIOByteSourceBase(file));
+                        return std::unique_ptr<ByteSourceBase>(new efi::io::detail::OwningStdIOByteSourceBase(file));
                 }
 
                 void init(std::unique_ptr<ByteSourceBase>byte_source){
@@ -1643,7 +1644,8 @@ namespace NonLinearPoroViscoElasticity
           	  	  	  	  	  	  	  	  	  	 "|hydro_nano_graz_compression_relax"
                             		 	 	 	 "|hydro_nano_graz_compression_exp_relax"
                             		 	 	 	 "|hydro_nano_graz_compression_relax_sphere"
-                            		 	 	 	 "|odeometer_graz"),
+                            		 	 	 	 "|odeometer_graz"
+                                       "|sliding_indenter"),
                                 "Type of geometry used. "
                                 "For Ehlers verification examples see Ehlers and Eipper (1999). "
                                 "For Franceschini brain consolidation see Franceschini et al. (2006)"
@@ -2285,7 +2287,7 @@ namespace NonLinearPoroViscoElasticity
           {
         	  (void) det_F_min;
               Assert (this->timestep < this->time_points.size(),
-                    ExcMessage("timestep exceeds vector length"))
+                    ExcMessage("timestep exceeds vector length"));
               this->timestep++;
           }
 
@@ -2374,7 +2376,12 @@ namespace NonLinearPoroViscoElasticity
           void increment_time (double det_F_min) override
           {
             if (true) {
-              dt = delta_t;
+              if (time_current < time_end_load)
+                dt = delta_t;
+              else if (time_current >= 3*time_end_load)
+                dt = 12*delta_t;
+              else if (time_current >= time_end_load)
+                dt = 4*delta_t;
             } //remove
         	  //double dt_min = 0.1;
         	  // based on change in det(F)
@@ -2382,8 +2389,9 @@ namespace NonLinearPoroViscoElasticity
         		  if (time_current < time_end_load || std::abs(time_current-time_end_load) < 1e-6) {
 					  if (time_current < delta_t)
 						  dt = delta_t - time_current;
-					  else if (det_F_min > 0.1) {// && dt > dt_min) { //0.02
-						  dt = 0.5*dt;
+					  //else if (det_F_min > 0.1) {// && dt > dt_min) { //0.02
+						else if (det_F_min > 0.1 && dt > 0.01) {
+              dt = 0.5*dt;
 						  dt_old = dt;
 					  	  if (time_current+dt > time_end_load)
 					  		  dt = time_end_load-time_current;
@@ -2394,20 +2402,21 @@ namespace NonLinearPoroViscoElasticity
 						  dt_old = dt;
 						  dt = time_end_load-time_current;
 					  }
-					  else if (det_F_min < 0.05 && dt < delta_t) { //0.005
+					  else if (det_F_min < 0.005 && dt < delta_t) { //0.005
 						  dt = 2*dt;
 						  dt_old = dt;
 						  if (time_current+dt > time_end_load)
 						      dt = time_end_load-time_current;
 					  }
         		  } else {
-        			  if (det_F_min > 0.1)
+        			  //if (det_F_min > 0.1)
+                if (det_F_min > 0.1 && dt > 0.01) 
         				  dt = 0.5*dt;
         			  else if (std::abs(time_current-time_end) < 1e-6)
         				  dt = delta_t;
         			  else if (time_current+dt > time_end)
         				  dt = time_end-time_current;
-        			  else if (det_F_min < 0.05 && dt < time_end/50)
+        			  else if (det_F_min < 0.05 && dt < time_end/20)
         				  dt = 2*dt;
         		  }
         	  }
@@ -2451,6 +2460,245 @@ namespace NonLinearPoroViscoElasticity
           double dt_old;
           double cycle_time;
     };
+
+
+
+/// 'Less than' comparison. Checks if one @p dealii::Point is less than another.
+template <int dim>
+struct dealii_point_less
+{
+    /// Return true if v < w.
+    bool
+    operator()(const dealii::Point<dim,double> &v,
+               const dealii::Point<dim,double> &w) const;
+
+    /// Units in the last place (defines the precision of the comparison).
+    static const unsigned int ulp = 4;
+};
+
+
+template <int dim>
+bool
+dealii_point_less<dim>::
+operator()(const dealii::Point<dim, double> &v,
+           const dealii::Point<dim, double> &w) const
+{
+    for (unsigned int d = 0; d < dim; ++d)
+    {
+        // TODO What happens with very small/large values. Does this tolerance
+        // always work?
+        const double tol = 1e-12; //FIXME
+//                std::max(std::numeric_limits<double>::epsilon()
+//                            * std::fabs(v[d]+w[d]) * ulp,
+//                         std::numeric_limits<double>::min());
+        if (v[d] < (w[d] - tol))
+        {
+            return true;
+        }
+        else if (v[d] > (w[d] + tol))
+        {
+            return false;
+        }
+    }
+
+    return false;
+}
+
+
+// Return a map of support points for the locally relevant degrees of freedom,
+// which are selected by the component mask and are handled by this DoF handler object.
+// This function, of course, only works if the finite elements,
+// whose components are selected by the component mask, provide support points, i.e. no edge
+// elements or Raviart-Thomas elements. The components represented by
+// these elements cannot be selected. Otherwise, an exception is thrown.
+template <int dim, int spacedim>
+void
+map_dofs_to_support_points (const dealii::Mapping<dim, spacedim>                               &mapping,
+                            const dealii::DoFHandler<dim, spacedim>                            &dof_handler,
+                            const dealii::ComponentMask                                        &component_mask,
+                            std::map<dealii::types::global_dof_index, dealii::Point<spacedim>> &support_points)
+{
+    support_points.clear();
+
+    const dealii::FiniteElement<dim,spacedim> &fe = dof_handler.get_fe ();
+
+    if (component_mask.represents_the_all_selected_mask ())
+    { 
+        Assert(fe.has_support_points(),
+               typename dealii::FiniteElement<dim>::ExcFEHasNoSupportPoints());
+    }
+    else
+    {
+        // check if mask is valid, i.e. all corresponding base elements have support points.
+        for (unsigned int c = 0; c < component_mask.size(); ++c)
+            if (component_mask[c])
+                Assert(fe.base_element(fe.component_to_base_index(c).first).has_support_points (),
+                       typename dealii::FiniteElement<dim>::ExcFEHasNoSupportPoints());
+    }
+
+    std::vector<bool> active_system_indices (fe.n_dofs_per_cell(), false);
+    std::vector<dealii::Point<dim> > q_points (fe.n_dofs_per_cell());
+
+    for (unsigned int i = 0; i < fe.n_dofs_per_cell(); ++i) 
+        if (fe.base_element(fe.system_to_base_index (i).first.first).is_primitive()
+         && fe.base_element(fe.system_to_base_index (i).first.first).has_support_points())
+        {
+          //std::cout << "i = " << i << ", " << fe.system_to_base_index(i).first.first << ", " << fe.system_to_base_index(i).first.second << ", " << fe.system_to_base_index(i).second
+          //          << "component_i = " << i << ", " << fe.system_to_component_index(i).first<< ", " << fe.system_to_component_index(i).second << std::endl;
+            active_system_indices[i] = component_mask[fe.system_to_component_index(i).first];
+            q_points[i] = fe.unit_support_point(i);
+        }
+
+    dealii::Quadrature<dim> q_dummy (q_points);
+
+    // Now loop over all cells and enquire the support points on each
+    // of these. we use dummy quadrature formulas where the quadrature
+    // points are located at the unit support points to enquire the
+    // location of the support points in real space.
+    //
+    // The weights of the quadrature rule have been set to invalid
+    // values by the used constructor.
+    dealii::FEValues<dim, spacedim> fe_values(mapping, fe, q_dummy, dealii::update_quadrature_points);
+
+    typename dealii::DoFHandler<dim,spacedim>::active_cell_iterator cell = dof_handler.begin_active(),
+                                                                    endc = dof_handler.end();
+
+    std::vector<dealii::types::global_dof_index> local_dof_indices;
+    for (; cell != endc; ++cell)
+        // only work on locally relevant cells
+        if (!cell->is_artificial())
+        {
+            fe_values.reinit(cell);
+
+            local_dof_indices.resize(cell->get_fe().dofs_per_cell);
+            cell->get_dof_indices(local_dof_indices);
+
+            const std::vector<dealii::Point<spacedim>> &points = fe_values.get_quadrature_points();
+
+            for (unsigned int i = 0; i < cell->get_fe().dofs_per_cell; ++i)
+                // insert the values into the map
+                if (active_system_indices[i]) 
+                    support_points[local_dof_indices[i]] = points[i];
+        }
+}
+
+
+/// Take a map (dofs to support points) and create a multimap, which maps
+/// support points to a list of dofs.
+template <int dim,int spacedim>
+void
+map_support_points_to_dofs(
+    const dealii::Mapping<dim, spacedim>                               &mapping,
+    const dealii::DoFHandler<dim, spacedim>                            &dof_handler,
+    const dealii::ComponentMask                                        &component_mask,
+    std::multimap<dealii::Point<dim>, dealii::types::global_dof_index,/*comparison*/ dealii_point_less<dim>>  &support_points_to_dofs)
+{
+    // Map the locally relevant dofs to the support points.
+    std::map<dealii::types::global_dof_index, dealii::Point<dim,double>> dofs_to_support_points;
+
+    map_dofs_to_support_points (mapping, dof_handler,
+    component_mask, dofs_to_support_points);
+
+    dealii::types::global_dof_index dof;
+    dealii::Point<dim> point;
+    for (const auto dof_point_pair : dofs_to_support_points)
+    {
+        std::tie(dof,point) = dof_point_pair;
+        support_points_to_dofs.insert(std::make_pair(point, dof));
+    }
+}
+
+
+template<int dim,int spacedim>
+void
+map_support_points_to_dof_from_boundary_id(
+    const dealii::Mapping<dim, spacedim>     &mapping,
+    const dealii::DoFHandler<dim, spacedim>  &dof_handler,
+    const dealii::ComponentMask              &component_mask,
+    const dealii::types::boundary_id         boundary_id,
+    std::map<dealii::Point<dim>,
+        std::vector<dealii::types::global_dof_index>,
+        dealii_point_less<dim>> &point_to_component_dofs
+)
+{
+
+    point_to_component_dofs.clear();
+
+    Assert(component_mask.represents_n_components(
+            dof_handler.get_fe(0).n_components()),
+        dealii::ExcMessage("The number of components in the mask has to be either "
+                   "zero or equal to the number of components in the finite "
+                   "element."));
+    //const unsigned int n_comp = dof_handler.get_fe(0).n_components();
+    //std::cout << "get_fe(0).n_components" << n_comp << std::endl;
+    //std::cout << component_mask[0] << component_mask[1] << component_mask[2] << component_mask[3] << std::endl;
+
+    const unsigned int n_components =
+            dof_handler.get_fe_collection()[0].n_components();
+            
+
+    const unsigned int n_selected_components =
+        component_mask.n_selected_components();
+    //std::cout << "n_components" << n_components << ", n_selected_components" << n_selected_components << std::endl;
+
+   
+    // Sort the dof indices by component.
+    dealii::IndexSet boundary_dofs;
+
+    boundary_dofs = dealii::DoFTools::extract_boundary_dofs(
+        dof_handler,
+        component_mask,    
+        std::set({boundary_id}));
+    //const unsigned int n_elements = boundary_dofs.n_elements();
+    //std::cout << "n_elements = " << n_elements << std::endl;
+
+    if (boundary_dofs.is_empty()){
+        std::cout << "map_support_points_to_dof_from_boundary_id"
+        " found no dofs for boundary id:" << boundary_id << std::endl;
+        return;
+    }
+
+    for (unsigned int c=0, n=0; n < n_components;++n)    {
+        if (!component_mask[n]) continue;
+        dealii::ComponentMask mask (n_components,false);
+        mask.set(n,true);
+
+        std::map<dealii::types::global_dof_index,dealii::Point<dim>> tmp_map;
+
+        using point_to_dof_map =  std::multimap<dealii::Point<dim>,
+            dealii::types::global_dof_index, /*comparison*/ dealii_point_less<dim>>;
+       
+        point_to_dof_map support_points_to_dofs_map;
+        
+        map_support_points_to_dofs(mapping,dof_handler,
+            mask,support_points_to_dofs_map);
+
+        auto it = support_points_to_dofs_map.begin();
+        while(it!= support_points_to_dofs_map.end()){
+            if(boundary_dofs.is_element(it->second)){
+                if(c==0){
+                    point_to_component_dofs.try_emplace(
+                        it->first,n_selected_components,dealii::numbers::invalid_dof_index);
+                    //Assert(success,dealii::ExcMessage("error inserting to point_to_component_dofs"));
+                }
+                //Assert(point_to_component_dofs[it->first][c] == dealii::numbers::invalid_dof_index,
+                //    dealii::ExcMessage(string_format("point_to_component_dofs already contains"
+                //        "dof entries for component %d",c)));
+                point_to_component_dofs[it->first][c] = it->second;
+            }
+            it++;
+        }
+        c++;
+    }
+    // Assert(boundary_dofs.n_elements() / point_to_component_dofs.size() == n_selected_components,
+    //     dealii::ExcMessage(string_format("wrong number of elements!"
+    //     "points_to_dofs_map contains %d elements and boundary_dofs %d elements",
+    //     point_to_component_dofs.size(),boundary_dofs.n_elements() )));
+
+}
+
+
+
 
 // @sect3{Constitutive equation for the solid component of the biphasic material}
 
@@ -2542,8 +2790,13 @@ class Material_Hyperelastic
 			//Assert(det_F > n_OS, ExcInternalError());
 
 			static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
+      static const double gamma = 1;
 
+      // logarithmic function by Ehlers
 			return  ( NumberType(lambda * (1.0-n_OS)*(1.0-n_OS) * (det_F/(1.0-n_OS) - det_F/(det_F-n_OS))) * I );
+      
+      // power law function by Markert
+      //return  ( NumberType((det_F * lambda) / (gamma - 1 + (gamma+1)/std::pow(1-n_OS,2)) * (std::pow(det_F,gamma-1) - std::pow(1-n_OS,gamma)/std::pow(det_F-n_OS,gamma+1) + n_OS/(1-n_OS))) * I );
 		}
 
 		virtual SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const = 0;
@@ -2876,33 +3129,33 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 			return beta;
 		}
 
-//		// Add a volumetric contribution (see Holzapfel eq. 6.138)
-//		SymmetricTensor<2, dim, NumberType> get_tau_E_vol(NumberType det_F_AD) const
-//		{
-//			static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
-//			const double mu_classic = 0.5 * (mu_infty[0] * alpha_infty[0] + mu_infty[1] * alpha_infty[1] + mu_infty[2] * alpha_infty[2]);
-//			const double kappa = (2*mu_classic*(1+nu))/(3*(1-2*nu));
-//
-//			SymmetricTensor<2, dim, NumberType> tau_vol = NumberType(kappa/2 * (det_F_AD*det_F_AD - 1)) * I;
-//
-//			return tau_vol;
-//		}
-
-		// Add a volumetric contribution (see Nedjar, 2016 eq. 28)
+		// Add a volumetric contribution (see Holzapfel eq. 6.138)
 		SymmetricTensor<2, dim, NumberType> get_tau_E_vol(NumberType det_F_AD) const
 		{
 			static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
-			SymmetricTensor<2, dim, NumberType> tau_vol;
+			const double mu_classic = 0.5 * (mu_infty[0] * alpha_infty[0] + mu_infty[1] * alpha_infty[1] + mu_infty[2] * alpha_infty[2]);
+			const double kappa = (2*mu_classic*(1+nu))/(3*(1-2*nu));
 
-			for (unsigned int i = 0; i < 3; ++i) // corresponds to 3rd-order Ogden model
-			{
-				// here nu is the ratio between reference bulk and shear modulus
-				// nu = 2/3 should render an apparent Poisson's ratio of zero
-				tau_vol += NumberType((nu * mu_infty[i] / 2) * (std::pow(det_F_AD,2*alpha_infty[i]/3) - std::pow(det_F_AD,-alpha_infty[i]/3))) * I;
-			}
+			SymmetricTensor<2, dim, NumberType> tau_vol = NumberType(kappa/2 * (det_F_AD*det_F_AD - 1)) * I;
 
 			return tau_vol;
 		}
+
+		// // Add a volumetric contribution (see Nedjar, 2016 eq. 28)
+		// SymmetricTensor<2, dim, NumberType> get_tau_E_vol(NumberType det_F_AD) const
+		// {
+		// 	static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
+		// 	SymmetricTensor<2, dim, NumberType> tau_vol;
+
+		// 	for (unsigned int i = 0; i < 3; ++i) // corresponds to 3rd-order Ogden model
+		// 	{
+		// 		// here nu is the ratio between reference bulk and shear modulus
+		// 		// nu = 2/3 should render an apparent Poisson's ratio of zero
+		// 		tau_vol += NumberType((nu * mu_infty[i] / 2) * (std::pow(det_F_AD,2*alpha_infty[i]/3) - std::pow(det_F_AD,-alpha_infty[i]/3))) * I;
+		// 	}
+
+		// 	return tau_vol;
+		// }
 };
 
 
@@ -3977,6 +4230,9 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             //Set up the finite element system to be solved:
             void system_setup(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT);
 
+            //initialize DoF maps
+            //virtual void initialize() = 0;
+
             //Extract sub-blocks from the global matrix
             void determine_component_extractors();
 
@@ -4231,7 +4487,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         degree_pore(parameters.poly_degree_pore),
         fe( FE_Q<dim>(parameters.poly_degree_displ), dim,
             FE_Q<dim>(parameters.poly_degree_pore), 1 ),
-		mapping(1),
+		    mapping(1),
         dof_handler_ref(triangulation),
         dofs_per_cell (fe.dofs_per_cell),
         u_fe(first_u_component),
@@ -4283,10 +4539,9 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
           //Generate mesh
           make_grid();
-std::cout << "here3" << std::endl;
           //Assign DOFs and create the stiffness and right-hand-side force vector
           system_setup(solution_delta);
-std::cout << "here4" << std::endl;
+          //initialize();
           //Define points for post-processing
           std::vector<Point<dim> > tracked_vertices (2);
           define_tracked_vertices(tracked_vertices);
@@ -4576,47 +4831,14 @@ std::cout << "here4" << std::endl;
 
         const bool apply_dirichlet_bc = (it_nr_IN == 0);
 
-        if (apply_dirichlet_bc)
-        {
-        	//////////////////////// TEST /////////////////////////
-        	const UpdateFlags uf_cell(update_quadrature_points | update_normal_vectors |
-        	                                          update_values | update_JxW_values );
-        	FEValues<dim> fe_values_ref(mapping, fe, qf_cell, uf_cell);
-        	//////////////////////// TEST /////////////////////////
-
-        	for (auto cell : this->triangulation.active_cell_iterators())
-            {
-        		//////////////////////// TEST /////////////////////////
-        		fe_values_ref.reinit(cell);
-        		//////////////////////// TEST /////////////////////////
-
-                const UpdateFlags uf_face(update_quadrature_points | update_normal_vectors |
-                                          update_values | update_JxW_values );
-                FEFaceValues<dim> fe_face_values_ref(mapping, fe, qf_face, uf_face);
-
-                //Start loop over faces in element
-                for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
-                {
-                  if (cell->face(face)->at_boundary() == true)
-                  {
-                      fe_face_values_ref.reinit(cell, face);
-                  }
-                }
-
-            }
+        if (apply_dirichlet_bc) {
           constraints.clear();
-          make_dirichlet_constraints(constraints);
-        }
-        else
-        {
-        	//AffineConstraints<double> homogeneous_constraints(constraints); //remove
+          make_dirichlet_constraints(constraints);  
+        } else {
         	for (unsigned int i=0; i<dof_handler_ref.n_dofs(); ++i)
-        		if (constraints.is_inhomogeneously_constrained(i) == true) //remove: homogeneous_
-        			constraints.set_inhomogeneity(i,0.0); //remove: homogeneous_
-        	//constraints.clear(); //remove
-        	//constraints.copy_from(homogeneous_constraints); //remove
+        		if (constraints.is_inhomogeneously_constrained(i) == true) 
+        			constraints.set_inhomogeneity(i,0.0); 
         }
-
         constraints.close();
         dirichlet_wins = AffineConstraints<double>::MergeConflictBehavior::left_object_wins;
         constraints.merge(hanging_node_constraints,dirichlet_wins);
@@ -4951,6 +5173,7 @@ std::cout << "here4" << std::endl;
 //            }
 
             //Solve the linearized system
+            //constraints.distribute(newton_update);
             solve_linear_system(newton_update);
             constraints.distribute(newton_update);
 
@@ -5127,8 +5350,6 @@ std::cout << "here4" << std::endl;
     template <int dim>
     void Solid<dim>::assemble_system( const TrilinosWrappers::MPI::BlockVector &solution_delta )
     {
-        double start = MPI_Wtime();
-
         timerconsole.enter_subsection("Assemble system");
         timerfile.enter_subsection("Assemble system");
         pcout     << " ASM_SYS " << std::flush;
@@ -5179,16 +5400,6 @@ std::cout << "here4" << std::endl;
 	
         timerconsole.leave_subsection();
         timerfile.leave_subsection();
-        double end = MPI_Wtime();
-
-        if (this_mpi_process == 0) {
-        	std::ofstream assemble_system_time;
-        	assemble_system_time.open(parameters.output_directory + "/assemble_system_time", std::ofstream::app);
-        	assemble_system_time << std::setprecision(6) << std::scientific;
-        	assemble_system_time << std::setw(16) << this->time->get_current() << ","
-        			<< std::setw(16) << end - start << std::endl;
-        	assemble_system_time.close();
-        }
     }
 
     //Add the local elemental contribution to the global stiffness tensor
@@ -5709,14 +5920,14 @@ std::cout << "here4" << std::endl;
            timerconsole.leave_subsection();
            timerfile.leave_subsection();
 
-           if (this_mpi_process == 0) {
-        	   std::ofstream solve_linear_system_time;
-        	   solve_linear_system_time.open(parameters.output_directory + "/solve_linear_system_time", std::ofstream::app);
-        	   solve_linear_system_time << std::setprecision(6) << std::scientific;
-        	   solve_linear_system_time << std::setw(16) << this->time->get_current() << ","
-        			   << std::setw(16) << end - start << std::endl;
-        	   solve_linear_system_time.close();
-           }
+          //  if (this_mpi_process == 0) {
+        	//    std::ofstream solve_linear_system_time;
+        	//    solve_linear_system_time.open(parameters.output_directory + "/solve_linear_system_time", std::ofstream::app);
+        	//    solve_linear_system_time << std::setprecision(6) << std::scientific;
+        	//    solve_linear_system_time << std::setw(16) << this->time->get_current() << ","
+        	// 		   << std::setw(16) << end - start << std::endl;
+        	//    solve_linear_system_time.close();
+          //  }
      }
 
 
@@ -5727,7 +5938,7 @@ std::cout << "here4" << std::endl;
 		public:
 			PressGradPostproc (const unsigned int p_fluid_component)
 			:
-			DataPostprocessorVector<dim> ("pressure gradient",
+			DataPostprocessorVector<dim> ("pressure_gradient",
 										  update_gradients),
 			p_fluid_component (p_fluid_component)
 			{}
@@ -5850,26 +6061,27 @@ std::cout << "here4" << std::endl;
 			virtual std::vector<std::string> get_names() const override
 			{
 				std::vector<std::string> solution_names;
-				solution_names.emplace_back("total cauchy stress xx");
-				solution_names.emplace_back("total cauchy stress yy");
-				solution_names.emplace_back("total cauchy stress zz");
-				solution_names.emplace_back("total cauchy stress xy");
-				solution_names.emplace_back("total cauchy stress xz");
-				solution_names.emplace_back("total cauchy stress yz");
+				solution_names.emplace_back("total_cauchy_stress_xx");
+				solution_names.emplace_back("total_cauchy_stress_yy");
+				solution_names.emplace_back("total_cauchy_stress_zz");
+				solution_names.emplace_back("total_cauchy_stress_xy");
+				solution_names.emplace_back("total_cauchy_stress_xz");
+				solution_names.emplace_back("total_cauchy_stress_yz");
 
-				solution_names.emplace_back("extra cauchy stress xx");
-				solution_names.emplace_back("extra cauchy stress yy");
-				solution_names.emplace_back("extra cauchy stress zz");
-				solution_names.emplace_back("extra cauchy stress xy");
-				solution_names.emplace_back("extra cauchy stress xz");
-				solution_names.emplace_back("extra cauchy stress yz");
+				solution_names.emplace_back("extra_cauchy_stress_xx");
+				solution_names.emplace_back("extra_cauchy_stress_yy");
+				solution_names.emplace_back("extra_cauchy_stress_zz");
+				solution_names.emplace_back("extra_cauchy_stress_xy");
+				solution_names.emplace_back("extra_cauchy_stress_xz");
+				solution_names.emplace_back("extra_cauchy_stress_yz");
 
-				solution_names.emplace_back("volumetric cauchy stress xx");
-				solution_names.emplace_back("volumetric cauchy stress yy");
-				solution_names.emplace_back("volumetric cauchy stress zz");
-				solution_names.emplace_back("volumetric cauchy stress xy");
-				solution_names.emplace_back("volumetric cauchy stress xz");
-				solution_names.emplace_back("volumetric cauchy stress yz");
+        // this is actually the fluid stress, not the solid volumetric stress
+				solution_names.emplace_back("volumetric_cauchy_stress_xx");
+				solution_names.emplace_back("volumetric_cauchy_stress_yy");
+				solution_names.emplace_back("volumetric_cauchy_stress_zz");
+				solution_names.emplace_back("volumetric_cauchy_stress_xy");
+				solution_names.emplace_back("volumetric_cauchy_stress_xz");
+				solution_names.emplace_back("volumetric_cauchy_stress_yz");
 				return solution_names;
 			}
 
@@ -5898,7 +6110,7 @@ std::cout << "here4" << std::endl;
 			SeepageVelPostproc (const Parameters::AllParameters &parameters,
 								const unsigned int              p_fluid_component)
 			:
-			DataPostprocessorVector<dim> ("seepage velocity",
+			DataPostprocessorVector<dim> ("seepage_velocity",
 										  update_gradients),
 			parameters(parameters),
 			p_fluid_component(p_fluid_component)
@@ -5986,7 +6198,7 @@ std::cout << "here4" << std::endl;
 		public:
 			SolidVolFracPostproc (double n_0s)
 			:
-			DataPostprocessorScalar<dim> ("solid volume fraction",
+			DataPostprocessorScalar<dim> ("solid_volume_fraction",
 										  update_gradients),
 			n_0s(n_0s)
 			{}
@@ -6133,8 +6345,8 @@ std::cout << "here4" << std::endl;
 			virtual std::vector<std::string> get_names() const override
 			{
 				std::vector<std::string> solution_names;
-				solution_names.emplace_back("porous dissipation");
-				solution_names.emplace_back("viscous dissipation");
+				solution_names.emplace_back("porous_dissipation");
+				solution_names.emplace_back("viscous_dissipation");
 				return solution_names;
 			}
 
@@ -6196,7 +6408,7 @@ std::cout << "here4" << std::endl;
     	GridTools::get_subdomain_association(triangulation, partition_int);
 
     	std::vector<std::string> solution_name(dim, "displacement");
-    	solution_name.push_back("pore pressure");
+    	solution_name.push_back("pore_pressure");
 
     	data_out.attach_dof_handler(dof_handler_ref);
     	data_out.add_data_vector(solution_total,
@@ -6208,7 +6420,7 @@ std::cout << "here4" << std::endl;
     									  partition_int.end());
 
 		data_out.add_data_vector(partitioning, "partitioning");
-		data_out.add_data_vector(material_id, "material id");
+		data_out.add_data_vector(material_id, "material_id");
 
 		PressGradPostproc<dim> pres_grad(p_fluid_component);
 		data_out.add_data_vector(solution_total,pres_grad);
@@ -6773,8 +6985,8 @@ std::cout << "here4" << std::endl;
                 for (unsigned int i=0; i<dim; ++i)
                 	seepage[i] = Tensor<0,dim,double>(seepage_vel_AD[i]);
 
-                /*//test
-                SymmetricTensor<2,dim> sigma_E_ext_func;
+                //test
+/*                 SymmetricTensor<2,dim> sigma_E_ext_func;
                 const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[q_point]->get_Cauchy_E_ext_func(F_AD);
 
                 double det_F_converged = lqph[q_point]->get_converged_det_F();
@@ -6787,18 +6999,18 @@ std::cout << "here4" << std::endl;
                 const Point<dim> gauss_coord2 = fe_values_ref.quadrature_point(q_point);
                 std::ofstream sigma_ext_func_cells;
                 sigma_ext_func_cells.open("sigma_ext_func_cells", std::ofstream::app);
-                sigma_ext_func_cells << std::setprecision(8) << std::scientific;
-                sigma_ext_func_cells << std::setw(16) << this->time->get_current() << ","
-                		<< std::setw(16) << gauss_coord2[0] << ","
-						<< std::setw(16) << gauss_coord2[1] << ","
-						<< std::setw(16) << gauss_coord2[2] << ","
-						<< std::setw(16) << JxW << ","
-						<< std::setw(16) << det_F << ","
-						<< std::setw(16) << det_F_converged << ","
-						<< std::setw(16) << sigma_E_ext_func[0][0] << ","
-						<< std::setw(16) << sigma_E_ext_func[1][1] << ","
-						<< std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
-                sigma_ext_func_cells.close();
+                sigma_ext_func_cells  << std::setprecision(8) << std::scientific;
+                sigma_ext_func_cells  << std::setw(16) << this->time->get_current() << ","
+                		                  << std::setw(16) << gauss_coord2[0] << ","
+						                          << std::setw(16) << gauss_coord2[1] << ","
+						                          << std::setw(16) << gauss_coord2[2] << ","
+						                          << std::setw(16) << JxW << ","
+						                          << std::setw(16) << det_F << ","
+						                          << std::setw(16) << det_F_converged << ","
+						                          << std::setw(16) << sigma_E_ext_func[0][0] << ","
+						                          << std::setw(16) << sigma_E_ext_func[1][1] << ","
+						                          << std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
+                sigma_ext_func_cells.close(); */
 
                 //if (seepage[2]>0)
                 //	std::cout << seepage[2] << " cell loop" << std::endl;
@@ -6807,7 +7019,7 @@ std::cout << "here4" << std::endl;
                 //if (gauss_coord[2] < 0.1) {
                 //	seepage_vec_mpi.push_back (seepage[2]);
                 	//std::cout << seepage[2] << std::endl;
-                //}*/
+                //}
 
                 //Dissipations
                 const double porous_dissipation =
@@ -6849,6 +7061,49 @@ std::cout << "here4" << std::endl;
                                                (solution_total,
                                                 solution_values_p_fluid_total_f);
 
+                    // vector to store compute the mean volumetric stress
+                    std::vector<double> sigma_vol_qp;
+                    double sigma_vol_f_mean = 0;
+                    int cnt = 0;
+                    std::vector<double> J_qp;
+                    double J_mean = 0;
+                    double n_OS = this->parameters.solid_vol_frac;
+                    double lambda = this->parameters.lambda;
+
+                    // loop over gp on faces to check if J>n_0S
+                    for (unsigned int f_q_point=0; f_q_point<n_q_points_f; ++f_q_point)
+                    {
+                        // compute deformation gradient from displacements gradient (present configuration)
+                        const Tensor<2,dim,ADNumberType> F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
+                        // compute Jacobian
+                        double J = Tensor<0,dim,double>(determinant(F_AD));
+                        J_qp.push_back(J);
+
+                        const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>> lqph = quadrature_point_history.get_data(cell);
+                        Assert(lqph.size() == n_q_points, ExcInternalError());
+
+                        if (J > this->parameters.solid_vol_frac) {
+                            const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[f_q_point]->get_Cauchy_E_ext_func(F_AD);
+                            // since the volumetric stress is simply a multiple of the unit tensor, we extract one diagonal entry
+                            double sigma_E_ext_func = Tensor<0,dim,double>(sigma_E_ext_func_AD[1][1]);
+                            sigma_vol_qp.push_back(sigma_E_ext_func);
+                        } else {
+                          cnt++;
+                        }
+                    } 
+
+                    // check if there were qp with J<n_0S and if so, compute the mean volumetric stress on this face
+                    // if (sigma_vol_qp.size() < n_q_points_f) {
+                    //     sigma_vol_f_mean = std::reduce(sigma_vol_qp.begin(), sigma_vol_qp.end()) / sigma_vol_qp.size();
+                    // }
+                    J_mean = std::reduce(J_qp.begin(), J_qp.end()) / J_qp.size();
+                    // logarithmic function by Ehlers
+			              sigma_vol_f_mean = lambda * (1.0-n_OS)*(1.0-n_OS) * (J_mean/(1.0-n_OS) - J_mean/(J_mean-n_OS));
+
+
+                    //std::cout << cnt << " of " << n_q_points_f << " mean " << sigma_vol_f_mean << " of remaining " << sigma_vol_qp.size() << " J_mean " << J_mean << std::endl;
+
+                    
                     //start gauss points on faces loop
                     for (unsigned int f_q_point=0; f_q_point<n_q_points_f; ++f_q_point)
                     {
@@ -6860,7 +7115,7 @@ std::cout << "here4" << std::endl;
                         const Tensor<2,dim,ADNumberType> F_AD =
                           Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
                         ADNumberType det_F_AD = determinant(F_AD);
-                        //double det_F = Tensor<0,dim,double>(det_F_AD);
+                        double det_F = Tensor<0,dim,double>(det_F_AD);
 
                         const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>>
                             lqph = quadrature_point_history.get_data(cell);
@@ -6872,23 +7127,38 @@ std::cout << "here4" << std::endl;
                         static const SymmetricTensor<2,dim,double> I (Physics::Elasticity::StandardTensors<dim>::I);
                         SymmetricTensor<2,dim> sigma_E;
                         SymmetricTensor<2,dim> sigma_E_base;
-                        SymmetricTensor<2,dim> sigma_E_ext_func;
+                        SymmetricTensor<2,dim> sigma_E_ext_func = sigma_vol_f_mean * I;
                         const SymmetricTensor<2,dim,ADNumberType> sigma_E_AD = lqph[f_q_point]->get_Cauchy_E(F_AD);
                         const SymmetricTensor<2,dim,ADNumberType> sigma_E_base_AD = lqph[f_q_point]->get_Cauchy_E_base(F_AD);
-                        const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[f_q_point]->get_Cauchy_E_ext_func(F_AD);
+                        SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD;
+
+                        // if (det_F > this->parameters.solid_vol_frac) {
+                        //     sigma_E_ext_func_AD = lqph[f_q_point]->get_Cauchy_E_ext_func(F_AD);
+                        // } else {
+                        //     sigma_E_ext_func_AD = sigma_vol_f_mean * I;
+                        // }
+
+                        // // Check if fqp is on the corner cell
+                        // const Point<dim> f_q_point_coord = fe_face_values_ref.quadrature_point(f_q_point);
+                        // const double f_q_point_radius = std::sqrt(f_q_point_coord[0]*f_q_point_coord[0] + f_q_point_coord[1]*f_q_point_coord[1]);
+                        // //std::cout << f_q_point_radius << std::endl;
+                        // if (f_q_point_radius < 3.75)
+                        //     sigma_E_ext_func_AD = lqph[f_q_point]->get_Cauchy_E_ext_func(F_AD);
 
                         //double det_F_converged = lqph[f_q_point]->get_converged_det_F();
 
                         for (unsigned int i=0; i<dim; ++i)
                             for (unsigned int j=0; j<dim; ++j) {
-                               sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
+                               //sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
                                sigma_E_base[i][j] = Tensor<0,dim,double>(sigma_E_base_AD[i][j]);
-                               sigma_E_ext_func[i][j] = Tensor<0,dim,double>(sigma_E_ext_func_AD[i][j]);
+                               //sigma_E_ext_func[i][j] = Tensor<0,dim,double>(sigma_E_ext_func_AD[i][j]);
                             }
 
                         SymmetricTensor<2,dim> sigma_fluid_vol(I);
                         sigma_fluid_vol *= -1.0*p_fluid;
-                        const SymmetricTensor<2,dim> sigma = sigma_E+sigma_fluid_vol;
+
+                        sigma_E = sigma_E_base + sigma_E_ext_func;
+                        const SymmetricTensor<2,dim> sigma = sigma_E + sigma_fluid_vol;
                         sum_reaction_mpi += sigma * N * JxW_f;
                         sum_reaction_pressure_mpi += sigma_fluid_vol * N * JxW_f;
                         sum_reaction_extra_mpi += sigma_E * N * JxW_f;
@@ -8013,7 +8283,6 @@ std::cout << "here4" << std::endl;
     {
            //Copy "parameters" file at end of output file.
            std::ifstream infile(parameters.output_directory+"parameters.prm");
-           std::cout << "here11" << std::endl;
            std::string content = "";
            int i;
 
@@ -8023,12 +8292,10 @@ std::cout << "here4" << std::endl;
                content += aux;
                if(aux=='\n') content += '#';
            }
-           std::cout << "here12" << std::endl;
+
            i--;
            content.erase(content.end()-1);
-           std::cout << "here13" << std::endl;
            infile.close();
-           std::cout << "here14" << std::endl;
 
            plotpointfile << "#"<< std::endl
                          << "#"<< std::endl
@@ -8037,7 +8304,7 @@ std::cout << "here4" << std::endl;
                          << content;
     }
 
-
+/**/
     // @sect3{Verification examples from Ehlers and Eipper 1999}
     // We group the definition of the geometry, boundary and loading conditions specific to
     // the verification examples from Ehlers and Eipper 1999 into specific classes.
@@ -10161,10 +10428,9 @@ std::cout << "here4" << std::endl;
             		triangulation_in.refine_global(1);
             	if (this->parameters.radius == 16)
             	    triangulation_in.refine_global(1);
-std::cout << "here1" << std::endl;
+
             	GridGenerator::extrude_triangulation(triangulation_in, 3, height, this->triangulation);
             	//GridGenerator::extrude_triangulation(final_tria, 3, height, this->triangulation);
-std::cout << "here2" << std::endl;
             	// Assign a cylindrical manifold to the geometry
             	const CylindricalManifold<dim> cylinder_3d(2);
             	const types::manifold_id cylinder_id = 0;
@@ -10200,17 +10466,17 @@ std::cout << "here2" << std::endl;
                 //GridOut       grid_out;
                 //grid_out.write_msh(this->triangulation, mesh_out);
 
-//				for (const auto &cell : this->triangulation.active_cell_iterators()) {
-//					if ((cell->center()[2] < 0.125*this->parameters.height || cell->center()[2] > 0.875*this->parameters.height) && std::sqrt((cell->center()[0])*(cell->center()[0]) + (cell->center()[1])*(cell->center()[1])) > 0.8*this->parameters.radius)
-//						cell->set_refine_flag();
-//				}
-//				this->triangulation.execute_coarsening_and_refinement();
-//
-//				for (const auto &cell : this->triangulation.active_cell_iterators()) {
-//					if ((cell->center()[2] < 0.1*this->parameters.height || cell->center()[2] > 0.9*this->parameters.height) && std::sqrt((cell->center()[0])*(cell->center()[0]) + (cell->center()[1])*(cell->center()[1])) > 0.9*this->parameters.radius)
-//						cell->set_refine_flag();
-//				}
-//				this->triangulation.execute_coarsening_and_refinement();
+				// for (const auto &cell : this->triangulation.active_cell_iterators()) {
+				// 	if ((cell->center()[2] < 0.125*this->parameters.height || cell->center()[2] > 0.875*this->parameters.height) && std::sqrt((cell->center()[0])*(cell->center()[0]) + (cell->center()[1])*(cell->center()[1])) > 0.8*this->parameters.radius)
+				// 		cell->set_refine_flag();
+				// }
+				// this->triangulation.execute_coarsening_and_refinement();
+
+				// for (const auto &cell : this->triangulation.active_cell_iterators()) {
+				// 	if ((cell->center()[2] < 0.1*this->parameters.height || cell->center()[2] > 0.9*this->parameters.height) && std::sqrt((cell->center()[0])*(cell->center()[0]) + (cell->center()[1])*(cell->center()[1])) > 0.9*this->parameters.radius)
+				// 		cell->set_refine_flag();
+				// }
+				// this->triangulation.execute_coarsening_and_refinement();
 //
 //				for (const auto &cell : this->triangulation.active_cell_iterators()) {
 //					if ((cell->center()[2] < 0.05*this->parameters.height || cell->center()[2] > 0.95*this->parameters.height) && std::sqrt((cell->center()[0])*(cell->center()[0]) + (cell->center()[1])*(cell->center()[1])) > 0.95*this->parameters.radius)
@@ -10253,7 +10519,7 @@ std::cout << "here2" << std::endl;
 
     		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
     		{
-    			if (this->parameters.load_type == "displacement") {
+    			if (false && this->parameters.load_type == "displacement") {
     				std::vector<bool> dof_touched(this->dof_handler_ref.n_dofs(), false);
 
     				Quadrature<dim - 1> face_quadrature(this->fe.get_unit_face_support_points());
@@ -10308,7 +10574,7 @@ std::cout << "here2" << std::endl;
     										    constraints.set_inhomogeneity(index_z, 0);
     										if (face->boundary_id() == 2 )
     											constraints.set_inhomogeneity(index_z, displ_incr[2]);
-    										if (std::sqrt(this_support_point[0]*this_support_point[0]+this_support_point[1]*this_support_point[1]) < 0.98*this->parameters.radius) {
+    										if (std::sqrt(this_support_point[0]*this_support_point[0]+this_support_point[1]*this_support_point[1]) < 0.98*this->parameters.radius) { //0.98
     											constraints.add_line(index_x);
     											constraints.set_inhomogeneity(index_x, 0);
     											constraints.add_line(index_y);
@@ -10393,7 +10659,7 @@ std::cout << "here2" << std::endl;
     				}
     			}*/
 
-    			if (this->parameters.load_type == "pressure") {
+    			if (this->parameters.load_type == "displacement") { //displacement
     			// Cylinder bottom is fully fixed in space (glued)
     			VectorTools::interpolate_boundary_values(
     					this->dof_handler_ref,
@@ -12286,11 +12552,11 @@ std::cout << "here2" << std::endl;
 										//const double obstacle_value = obstacle->value(this_support_point, 2);  // TODO
 										std::vector<double> obstacle_value = get_dirichlet_load(100,2);
 										solution_here[2] = this->solution_n(index_z);  // TODO Block vector???
-										//this_support_point = this_support_point + solution_here; //remove comment
+										this_support_point = this_support_point + solution_here; //remove comment
 										//this->pcout << "x = " << this_support_point[0] << ", y = " << this_support_point[1] << ", z = " << this_support_point[2] << std::endl;
 										//this->pcout << "idx = " << index_x << ", idy = " << index_y << ", idz = " << index_z << std::endl;
 
-										/*const double z_0 = this->parameters.height + obstacle_value[2] + obstacle_value[0]; 	// current z-position of center of spherical indenter (d_c is negative)
+										const double z_0 = this->parameters.height + obstacle_value[2] + obstacle_value[0]; 	// current z-position of center of spherical indenter (d_c is negative)
 										const Point<dim> indent_center(0,0,z_0);
 										const double pt_z_c = z_0 - std::sqrt((obstacle_value[2]*obstacle_value[2]) - (this_support_point[0]*this_support_point[0]) - (this_support_point[1]*this_support_point[1])); 	// current z-position of a point on the indenter surface
 
@@ -12314,7 +12580,7 @@ std::cout << "here2" << std::endl;
 										} else {
 											constraints.add_line(index_p);
 											constraints.set_inhomogeneity(index_p, 0);
-										}*/
+										}
 
 
 										/*// flat-punch
@@ -12339,7 +12605,7 @@ std::cout << "here2" << std::endl;
 											this->active_set.add_index(index_z);
 										}*/
 
-										// whole surface
+										/* // whole surface
 										//const double undeformed_gap = this->parameters.height + obstacle_value[0] - this_support_point[2];
 										const double undeformed_gap = obstacle_value[0]-obstacle_value[1];
 										constraints.add_line(index_z);
@@ -12359,7 +12625,7 @@ std::cout << "here2" << std::endl;
 												<< std::setw(16) << undeformed_gap << std::endl;
 										z_displ.close();
 										this->distributed_solution(index_z) = undeformed_gap;
-										this->active_set.add_index(index_z);
+										this->active_set .add_index(index_z);*/
 
 
 
@@ -12902,9 +13168,467 @@ std::cout << "here2" << std::endl;
 		}
 	};
 
+
+
+
+    //@sect4{Base class: Quarter Sample geometry}
+    template <int dim>
+    class SlidingIndenterBaseQuarter : public Solid<dim>
+    {
+        public:
+            SlidingIndenterBaseQuarter (const Parameters::AllParameters &parameters) : Solid<dim> (parameters) {}
+            virtual ~SlidingIndenterBaseQuarter () {}
+
+        private:
+
+            double relative_tolerance = 0.001;
+            double radius = 2.0; // indenter radius
+            const double z_center = this->parameters.height + radius;
+            double displacement;
+            double displacement_incr;
+
+            dealii::Point<dim> center;
+            dealii::Point<dim> center_initial;
+
+            std::array<std::set<dealii::types::global_dof_index>,dim> obs_comp_dofs;
+
+            std::set<dealii::types::global_dof_index> constr_dofs;
+
+            std::vector<std::pair<dealii::Point<dim>,
+                std::vector<dealii::types::global_dof_index>>> point_dofs_vector;
+            std::vector<std::pair<dealii::Point<dim>,
+                std::vector<dealii::types::global_dof_index>>> def_point_dofs_vector;
+                
+
+            // std::array<std::map<dealii::types::global_dof_index,dealii::Point<dim>>,dim> support_point_to_comp_dof_map;
+            // std::array<std::map<dealii::types::global_dof_index,dealii::Point<dim>>,dim> def_support_point_to_comp_dof_map;
+
+            std::map<dealii::types::global_dof_index,double> dof_disp_map;
+
+
+            virtual void make_grid() override
+            {
+            	const Point<dim-1> mesh_center(0.0, 0.0);
+            	const double radius = this->parameters.radius;
+            	const double height = this->parameters.height;
+              const Point<dim> displ_center(0.0, 0.0, height);
+
+            	// Create a quarter_hyper_ball in 2d, i.e. a quarter-circle and extrude it to obtain a quarter cylinder
+            	Triangulation<dim-1> triangulation_in;
+            	GridGenerator::quarter_hyper_ball(triangulation_in, mesh_center, radius);
+            	GridGenerator::extrude_triangulation(triangulation_in, 3, height, this->triangulation);
+
+            	// Assign a cylindrical manifold to the geometry
+            	const CylindricalManifold<dim> cylinder_3d(2);
+            	const types::manifold_id cylinder_id = 0;
+            	this->triangulation.set_manifold(cylinder_id, cylinder_3d);
+
+
+            	// Assign proper boundary ids
+            	for (auto cell : this->triangulation.active_cell_iterators()) {
+            		for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
+            			if (cell->face(face)->at_boundary() == true) {
+            				if (cell->face(face)->center()[2] == 0.0)
+            					cell->face(face)->set_boundary_id(1); //bottom
+            				else if (cell->face(face)->center()[2] == height)
+            					cell->face(face)->set_boundary_id(2); //top
+            				else if (cell->face(face)->center()[0] == 0.0) //-4.0
+            					cell->face(face)->set_boundary_id(3); //left
+            				else if (cell->face(face)->center()[1] == 0.0)
+            					cell->face(face)->set_boundary_id(4); //front
+            				else {
+            					cell->face(face)->set_boundary_id(0);
+            					cell->face(face)->set_all_manifold_ids(cylinder_id);
+            				}
+            			}
+            		}
+            	}
+
+            	GridTools::scale(this->parameters.scale, this->triangulation);
+            	this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
+
+              for (auto cell : this->triangulation.active_cell_iterators()) {
+            		for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
+            			if (cell->face(face)->at_boundary() == true) 
+            				if (cell->face(face)->center()[2] == height)
+						          cell->set_refine_flag();
+                }      
+				      }
+
+				      this->triangulation.execute_coarsening_and_refinement();
+
+              for (auto cell : this->triangulation.active_cell_iterators()) {
+            		for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
+            			if (cell->face(face)->at_boundary() == true) 
+            				if (cell->face(face)->center()[2] == height && displ_center.distance(cell->face(face)->center()) < 0.5*radius)
+						          cell->set_refine_flag();
+                }      
+				      }
+
+				      this->triangulation.execute_coarsening_and_refinement();
+
+              // for (auto cell : this->triangulation.active_cell_iterators()) {
+            	// 	for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
+            	// 		if (cell->face(face)->at_boundary() == true) 
+            	// 			if (cell->face(face)->center()[2] == height && displ_center.distance(cell->face(face)->center()) < 0.5*radius)
+						  //         cell->set_refine_flag();
+              //   }      
+				      // }
+
+				      // this->triangulation.execute_coarsening_and_refinement();
+
+
+            	// Assign proper boundary ids
+            	for (auto cell : this->triangulation.active_cell_iterators()) {
+            		for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
+            			if (cell->face(face)->at_boundary() == true) {
+            				if (cell->face(face)->center()[2] == 0.0)
+            					cell->face(face)->set_boundary_id(1); //bottom
+            					else if (cell->face(face)->center()[2] == height)
+            						cell->face(face)->set_boundary_id(2); //top
+            					else if (cell->face(face)->center()[0] < 1e-12) //-4.0
+            						cell->face(face)->set_boundary_id(3); //left
+            					else if (cell->face(face)->center()[1] < 1e-12)
+            						cell->face(face)->set_boundary_id(4); //front
+            					else {
+            						cell->face(face)->set_boundary_id(0);
+            						cell->face(face)->set_all_manifold_ids(cylinder_id);
+            					}
+            			}
+            		}
+            	}
+            }
+
+            virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
+            {
+            	tracked_vertices[0][0] = 0.0*this->parameters.scale;
+            	tracked_vertices[0][1] = 0.0*this->parameters.scale;
+            	tracked_vertices[0][2] = this->parameters.height*this->parameters.scale;
+
+            	tracked_vertices[1][0] = this->parameters.radius*this->parameters.scale;
+            	tracked_vertices[1][1] = 0.0*this->parameters.scale;
+            	tracked_vertices[1][2] = this->parameters.height/2*this->parameters.scale;
+              
+              initialize();
+            }
+
+
+            void
+            initialize() 
+            {
+                auto u_mask  = (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement));
+                //auto u_mask  = this->fe.component_mask(this->u_fe);
+
+              std::map<dealii::Point<dim>,
+                    std::vector<dealii::types::global_dof_index>,
+                    dealii_point_less<dim>> point_to_component_dofs;
+                map_support_points_to_dof_from_boundary_id(
+                    this->mapping,
+                    this->dof_handler_ref,
+                    u_mask,
+                    2,
+                    point_to_component_dofs
+                );
+
+                for(auto const &entry: point_to_component_dofs)
+                {
+                    dealii::Point<dim> p = entry.first;
+                    std::vector<dealii::types::global_dof_index> component_dofs = entry.second;
+                    //std::cout << p[0] << ", " << p[1] << ", " << p[2] << ", " << component_dofs[0] << ", " << component_dofs[1] << ", " << component_dofs[2] << std::endl;
+                    //std::tie(p,component_dofs) = entry;
+                    //bool edge_case = false;
+                    Assert(component_dofs[0] != dealii::numbers::invalid_dof_index &&
+                        component_dofs[1] != dealii::numbers::invalid_dof_index,
+                        dealii::ExcMessage("invalid dof index in component_dofs"));
+                    this->point_dofs_vector.emplace_back(p,component_dofs);
+                }
+            }
+
+            virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
+            {
+              //initialize();
+              //double displacement_inc = displacement - this->displacement;
+              const std::vector<double> value = get_dirichlet_load(2,-1);
+              //std::cout << "value = " << value[0] << std::endl;
+              this->displacement = -value[0];  // absolute displacement of center of indenter
+              this->displacement_incr = value[2];
+              this->center_initial[2] = this->z_center;
+              this->center[2] = this->center_initial[2] - this->displacement;
+              //std::cout << "Tip center at:"
+              //                          << this->center
+              //                          << std::endl;
+
+              double r_indent = std::sqrt(std::pow(this->radius,2) - 
+                  std::pow(this->radius-this->displacement,2));
+
+              //this->constrained_points.clear();
+              this->dof_disp_map.clear();
+              std::set<dealii::types::global_dof_index> constr_dofs_old = this->constr_dofs;
+              this->constr_dofs.clear();
+
+              this->def_point_dofs_vector = this->point_dofs_vector;
+              
+              for(unsigned int i=0; i < this->point_dofs_vector.size(); i++)
+              {
+                  dealii::Point<dim> p;
+                  std::vector<dealii::types::global_dof_index> component_dofs;
+                  std::tie(p,component_dofs) = this->point_dofs_vector[i];
+                  //bool edge_case = false;
+                  Assert(component_dofs[0] != dealii::numbers::invalid_dof_index &&
+                      component_dofs[1] != dealii::numbers::invalid_dof_index,
+                      dealii::ExcMessage("invalid dof index in component_dofs"));
+                  for(int c = 0; c < dim; c++)
+                  {
+                      dealii::types::global_dof_index dof = component_dofs[c];
+                      this->def_point_dofs_vector[i].first[c] =
+                          this->point_dofs_vector[i].first[c] + this->solution_n[dof];
+                  }
+                  // std::cout << this->def_point_dofs_vector[i].first[0] << ", " 
+                  //           << this->def_point_dofs_vector[i].first[1] << ", " 
+                  //           << this->def_point_dofs_vector[i].first[2] << ", " 
+                  //           << this->def_point_dofs_vector[i].second[0] << ", " 
+                  //           << this->def_point_dofs_vector[i].second[1] << ", " 
+                  //           << this->def_point_dofs_vector[i].second[2] << std::endl;
+              }
+
+              for(int i = 0; i<dim; i++){
+                  this->obs_comp_dofs[i].clear();
+              }
+
+              for(unsigned int i=0; i < this->def_point_dofs_vector.size(); i++)
+              {
+                  dealii::Point<dim> p_def =  this->def_point_dofs_vector[i].first;
+                  std::vector<dealii::types::global_dof_index> component_dofs =  this->def_point_dofs_vector[i].second;
+                  //std::tie(p_def,component_dofs) = this->def_point_dofs_vector[i];
+                  dealii::Point<dim> p = this->point_dofs_vector[i].first;
+
+                  dealii::Tensor<1,dim> def_dist = p_def - this->center;
+                  
+                  double abs_dist = def_dist.norm();
+                  //Check if node already in contact (first dof in constrained dofs)
+                  double distance_tolerance = 0.;
+                  if (auto search = constr_dofs_old.find(component_dofs[2]); search != constr_dofs_old.end()){
+                      distance_tolerance = this->radius*this->relative_tolerance;
+                  }else{
+                      distance_tolerance = 0.;
+                  }
+                  //std::cout << abs_dist << ", " << distance_tolerance << std::endl;
+
+                  if ((this->radius + distance_tolerance) >= abs_dist) 
+                  {
+                      //what happens here? don't get that...
+                      //dealii::Tensor<1,dim> dist = p - this->center;
+                      //double dist_plane = std::sqrt(std::pow(dist[0],2)+std::pow(dist[1],2));
+                      //double x    = std::sqrt(std::pow(this->radius,2)-std::pow(dist_plane,2));
+                      //double disp = -1*(x - this->radius + std::abs(this->displacement));
+                      // efilog(Verbosity::verbose) << "p inside indent radius:" << p
+                      //                     << "displacement: " << disp
+                      //                     << std::endl;
+                      //only constrain the first axis
+
+                      //try differently
+                      dealii::Tensor<1,dim> dist = p_def - this->center;
+                      //dealii::Tensor<1,dim> dist = p - this->center;
+                      double dist_plane = std::sqrt(std::pow(dist[0],2)+std::pow(dist[1],2));
+                      double x_soll    = std::sqrt(std::pow(this->radius,2)-std::pow(dist_plane,2));
+                      double x_ist = std::abs(def_dist[2]);
+                      double disp = -(x_soll-x_ist);
+                      std::cout << x_soll << ", " << x_ist << ", " << disp << std::endl;
+
+                      std::vector<std::pair<
+                          dealii::types::global_dof_index,double>> dof_weights;
+                      //for(int c=1; c < dim; c++){
+                      for(int c=0; c < dim-1; c++){
+                          double weight = def_dist[c]/def_dist[2];
+                          dof_weights.emplace_back(component_dofs[c],weight);
+                      }
+                      Assert(this->constr_dofs.find(component_dofs[2]) == this->constr_dofs.end(),
+                          dealii::ExcMessage("DOF already in constrained points"));
+                      this->constr_dofs.insert(component_dofs[2]);
+                      this->dof_disp_map.insert({component_dofs[2],disp});
+                      //this->constrained_points.emplace_back(component_dofs[0],
+                       //   disp,
+                       //   dof_weights);
+                      constraints.add_line(component_dofs[2]);
+                      constraints.add_entries(component_dofs[2],dof_weights);
+                      constraints.set_inhomogeneity(component_dofs[2],disp); 
+                      
+                      for(int c=0; c< dim; c++){
+                          this->obs_comp_dofs[c].insert(component_dofs[c]);
+                      }
+                  }
+              }
+
+              // Cylinder hull is drained
+              if (this->parameters.lateral_drained == "drained") {
+                if (this->time->get_timestep() < 2) {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          0,
+                                                          Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+                } else {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          0,
+                                                          Functions::ZeroFunction<dim>(this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+                }
+              }
+
+              // Bottom drained
+              if (this->parameters.bottom_drained == "drained") {
+                if (this->time->get_timestep() < 2) {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          1,
+                                                          Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+                } else {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          1,
+                                                          Functions::ZeroFunction<dim>(this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+                }
+              }
+
+              // Top drained
+              if (this->parameters.bottom_drained == "drained") {
+                if (this->time->get_timestep() < 2) {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          2,
+                                                          Functions::ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+                } else {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          2,
+                                                          Functions::ZeroFunction<dim>(this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+                }
+              }
+
+              // Cylinder bottom is fully fixed in space (glued)
+              VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                       1,
+                                                       Functions::ZeroFunction<dim>(this->n_components),
+                                                       constraints,
+                                                       (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
+
+              // Define symmetry boundary conditions for lateral surfaces
+              VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                       3,
+                                                       Functions::ZeroFunction<dim>(this->n_components),
+                                                       constraints,
+                                                       this->fe.component_mask(this->x_displacement));
+              VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                       4,
+                                                       Functions::ZeroFunction<dim>(this->n_components),
+                                                       constraints,
+                                                       this->fe.component_mask(this->y_displacement));
+
+              // Cylinder hull confined
+              if (this->parameters.lateral_confined == "confined") {
+                VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                         0,
+                                                         Functions::ZeroFunction<dim>(this->n_components),
+                                                         constraints,
+                                                         (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement)));
+              }
+            }
+
+            virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
+        	  {
+            	if (this->parameters.load_type == "pressure")
+            		//AssertThrow(false, ExcMessage("Pressure loading not implemented for rheometer examples."));
+
+            	(void)boundary_id;
+            	(void)pt;
+            	(void)N;
+            	return Tensor<1,dim>();
+        	  }
+
+            virtual types::boundary_id get_reaction_boundary_id_for_output() const override
+            {
+            	return 2;
+            }
+
+            virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const override
+            {
+            	(void)pt;
+            	(void)boundary_id;
+            	return 0.0;
+            }
+
+            virtual std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const override
+			      {
+            	if (this->parameters.lateral_drained == "drained" && this->parameters.bottom_drained == "drained") {
+		        	return std::make_pair(0,1);
+		        } else if (this->parameters.lateral_drained == "drained") {
+		        	return std::make_pair(0,0);
+		        } else {
+		        	return std::make_pair(1,1);
+		        }
+		        }
+
+    		// Define Dirichlet load, definition in derived classes
+    		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override = 0;
+    	};
+
+     //@sect4{Derived class: Ramp load and maintain}
+    template <int dim>
+    class SlidingIndenterRampLoad
+          : public  SlidingIndenterBaseQuarter<dim>
+    {
+        public:
+          SlidingIndenterRampLoad (const Parameters::AllParameters &parameters)
+            : SlidingIndenterBaseQuarter<dim> (parameters)
+          {}
+
+          virtual ~SlidingIndenterRampLoad () {}
+
+        private:
+          virtual std::vector<double>
+          get_dirichlet_load(const types::boundary_id   &boundary_id,
+                             const int                  &direction) const override
+          {
+                std::vector<double> displ_incr (dim,0.0);
+
+                if ( (boundary_id == 2) && (direction == -1) ) //Nanoindentation experiments
+                {
+                    const double indenter_radius = std::abs(this->parameters.load);
+                    const double max_indent_dist = this->parameters.load; //final max indentation is 10% of radius
+                    const double final_load_time = this->parameters.end_load_time;
+                    const double current_time    = this->time->get_current();
+                    const double delta_time      = this->time->get_delta_t();
+                    
+                    double current_displ = 0.0;
+                    double previous_displ = 0.0;
+                    
+                    if (current_time<=final_load_time) {
+                        current_displ  = (current_time/final_load_time)
+                                          * max_indent_dist;
+
+                        if (current_time > delta_time)
+                            previous_displ = ((current_time-delta_time)/final_load_time)
+                                          * max_indent_dist;
+                    } else {
+                      current_displ = max_indent_dist;
+                    }
+                    
+                    displ_incr[0] = current_displ;     //max displ (% radius) in current time
+                    displ_incr[1] = previous_displ;    //max displ (% radius) in previous time
+                    //displ_incr[2] = indenter_radius;   //indenter radius
+                    displ_incr[2] = current_displ - previous_displ; //displacement increment
+                }
+                
+                return displ_incr;
+          }
+    };
+
 }
-
-
 
 // @sect3{Main function}
 // Lastly we provide the main driver function which is similar to the other tutorials.
@@ -13062,6 +13786,11 @@ int main (int argc, char *argv[])
       else if (parameters.geom_type == "odeometer_graz")
       {
         OdeometerGrazConstant<3> solid_3d(parameters);
+        solid_3d.run();
+      }
+      else if (parameters.geom_type == "sliding_indenter")
+      {
+        SlidingIndenterRampLoad<3> solid_3d(parameters);
         solid_3d.run();
       }
       else
