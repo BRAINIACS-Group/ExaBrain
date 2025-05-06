@@ -1770,6 +1770,7 @@ namespace NonLinearPoroViscoElasticity
         double viscosity_mode_2;
         std::string  fluid_type;
         double solid_vol_frac;
+        double compaction_point;
         double kappa_darcy;
         double init_intrinsic_perm;
         double viscosity_FR;
@@ -1903,6 +1904,10 @@ namespace NonLinearPoroViscoElasticity
                             Patterns::Double(0.001,0.999),
                             "Initial porosity (solid volume fraction, 0 < n_0s < 1)");
 
+          prm.declare_entry("compaction point", "0.67",
+                            Patterns::Double(0.001,0.999),
+                            "Compaction point (might differ from n_0S)");
+
           prm.declare_entry("kappa", "0.0",
                             Patterns::Double(0,100),
                             "Deformation-dependency control parameter for specific permeability (kappa >= 0)");
@@ -1978,6 +1983,7 @@ namespace NonLinearPoroViscoElasticity
           //Fluid
           fluid_type = prm.get("seepage definition");
           solid_vol_frac = prm.get_double("initial solid volume fraction");
+          compaction_point = prm.get_double("compaction point");
           kappa_darcy = prm.get_double("kappa");
           init_intrinsic_perm = prm.get_double("initial intrinsic permeability");
           viscosity_FR = prm.get_double("fluid viscosity");
@@ -2208,7 +2214,7 @@ namespace NonLinearPoroViscoElasticity
       void AllParameters::parse_parameters(ParameterHandler &prm)
       {
         Global::parse_parameters(prm);
-    	FESystem::parse_parameters(prm);
+    	  FESystem::parse_parameters(prm);
         Geometry::parse_parameters(prm);
         Materials::parse_parameters(prm);
         NonlinearSolver::parse_parameters(prm);
@@ -2727,7 +2733,8 @@ class Material_Hyperelastic
 		time(time),
 		det_F (1.0),
 		det_F_converged (1.0),
-		eigen_solver (parameters.eigen_solver)
+		eigen_solver (parameters.eigen_solver),
+    J_cp (parameters.compaction_point)
 		{}
 		virtual ~Material_Hyperelastic()
 		{}
@@ -2781,6 +2788,7 @@ class Material_Hyperelastic
 		double det_F;
 		double det_F_converged;
 		const enum SymmetricTensorEigenvectorMethod eigen_solver;
+    const double J_cp;
 
 	protected:
 		SymmetricTensor<2, dim, NumberType> get_tau_E_ext_func(const Tensor<2,dim, NumberType> &F) const
@@ -2793,7 +2801,8 @@ class Material_Hyperelastic
       static const double gamma = 1;
 
       // logarithmic function by Ehlers
-			return  ( NumberType(lambda * (1.0-n_OS)*(1.0-n_OS) * (det_F/(1.0-n_OS) - det_F/(det_F-n_OS))) * I );
+			//return  ( NumberType(lambda * (1.0-n_OS)*(1.0-n_OS) * (det_F/(1.0-n_OS) - det_F/(det_F-n_OS))) * I );
+      return  ( NumberType(lambda * (1.0-J_cp)*(1.0-J_cp) * (det_F/(1.0-J_cp) - det_F/(det_F-J_cp))) * I );
       
       // power law function by Markert
       //return  ( NumberType((det_F * lambda) / (gamma - 1 + (gamma+1)/std::pow(1-n_OS,2)) * (std::pow(det_F,gamma-1) - std::pow(1-n_OS,gamma)/std::pow(det_F-n_OS,gamma+1) + n_OS/(1-n_OS))) * I );
