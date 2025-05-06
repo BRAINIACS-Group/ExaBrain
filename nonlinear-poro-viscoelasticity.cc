@@ -7078,6 +7078,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                     double J_mean = 0;
                     double n_OS = this->parameters.solid_vol_frac;
                     double lambda = this->parameters.lambda;
+                    double J_cp = this->parameters.compaction_point;
 
                     // loop over gp on faces to check if J>n_0S
                     for (unsigned int f_q_point=0; f_q_point<n_q_points_f; ++f_q_point)
@@ -7107,7 +7108,8 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                     // }
                     J_mean = std::reduce(J_qp.begin(), J_qp.end()) / J_qp.size();
                     // logarithmic function by Ehlers
-			              sigma_vol_f_mean = lambda * (1.0-n_OS)*(1.0-n_OS) * (J_mean/(1.0-n_OS) - J_mean/(J_mean-n_OS));
+			              //sigma_vol_f_mean = lambda * (1.0-n_OS)*(1.0-n_OS) * (J_mean/(1.0-n_OS) - J_mean/(J_mean-n_OS));
+                    sigma_vol_f_mean = lambda * (1.0-J_cp)*(1.0-J_cp) * (J_mean/(1.0-J_cp) - J_mean/(J_mean-J_cp));
 
 
                     //std::cout << cnt << " of " << n_q_points_f << " mean " << sigma_vol_f_mean << " of remaining " << sigma_vol_qp.size() << " J_mean " << J_mean << std::endl;
@@ -10528,7 +10530,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
     		virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
     		{
-    			if (false && this->parameters.load_type == "displacement") {
+    			if (false && this->parameters.load_type == "displacement") { 
     				std::vector<bool> dof_touched(this->dof_handler_ref.n_dofs(), false);
 
     				Quadrature<dim - 1> face_quadrature(this->fe.get_unit_face_support_points());
