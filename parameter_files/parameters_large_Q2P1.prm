@@ -187,7 +187,7 @@ subsection Material properties
 
   # Initial porosity (solid volume fraction)
   set initial solid volume fraction    = 0.75
-  #set compaction point                 = 0.437
+  set compaction point                 = 0.75
 
   # Deformation-dependency control parameter for specific permeability [kappa >= 0]
   set kappa                            = 1
