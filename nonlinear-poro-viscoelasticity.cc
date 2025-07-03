@@ -90,6 +90,7 @@
 #include <deal.II/lac/trilinos_sparsity_pattern.h>
 #include <deal.II/lac/trilinos_solver.h>
 #include <deal.II/lac/trilinos_vector.h>
+#include <deal.II/lac/sparse_direct.h>
 
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/lac/vector.h>
@@ -1494,7 +1495,7 @@ private:
 
 
 
-
+static constexpr bool PREFER_TRILINOS_OVER_MUMPS = true;
 
 // We create a namespace for everything that relates to
 // the nonlinear poro-viscoelastic formulation,
@@ -6089,13 +6090,19 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
            TrilinosWrappers::MPI::Vector newton_update_nb;
            newton_update_nb.reinit(locally_owned_dofs, mpi_communicator);
 
-           SolverControl solver_control (tangent_matrix_nb.m(),					// (maximum number of iterations, tolerance)
-                                         1.0e-8 * system_rhs_nb.l2_norm());
-           TrilinosWrappers::SolverDirect::AdditionalData additional_data;		// select solver type
-           additional_data.solver_type = "Amesos_Superludist";						// default: Amesos_Klu Superludist
-           TrilinosWrappers::SolverDirect solver (solver_control, additional_data);
-
-           solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb);	// linear system (A, x, b)
+if constexpr (PREFER_TRILINOS_OVER_MUMPS){
+                  SolverControl solver_control (tangent_matrix_nb.m(),					// (maximum number of iterations, tolerance)
+                  1.0e-8 * system_rhs_nb.l2_norm());
+                  TrilinosWrappers::SolverDirect::AdditionalData additional_data;		// select solver type
+                  additional_data.solver_type = "Amesos_Superludist";						// default: Amesos_Klu Superludist
+                  TrilinosWrappers::SolverDirect solver (solver_control, additional_data);
+                  solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb);	// linear system (A, x, b) 
+          } else {
+                  SparseDirectMUMPS::AdditionalData data_mumps;
+                  SparseDirectMUMPS direct_solver_mumps(data_mumps, mpi_communicator);
+                  direct_solver_mumps.initialize(tangent_matrix_nb);
+                  direct_solver_mumps.vmult(newton_update_nb, system_rhs_nb);
+            }
 
            // Copy the non-block solution back to block system
            for (unsigned int i=0; i<locally_owned_dofs.n_elements(); ++i)
@@ -8505,8 +8512,15 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                                      0.5);
 
             const double rot_angle = 3.0*numbers::PI/2.0;
-            GridTools::rotate( rot_angle, 1, this->triangulation);
-
+            #if DEAL_II_VERSION_GTE(9,6,0)
+            Tensor<1,dim> rotation_axis;
+            rotation_axis[0] = 0.0;
+            rotation_axis[1] = 1.0;
+            rotation_axis[2] = 0.0;
+            GridTools::rotate(rotation_axis, rot_angle, this->triangulation);
+            #else
+            GridTools::rotate(rot_angle, 1, this->triangulation);
+            #endif
             this->triangulation.reset_manifold(0);
             static const CylindricalManifold<dim> manifold_description_3d(2);
             this->triangulation.set_manifold (0, manifold_description_3d);
