@@ -5031,8 +5031,15 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         const bool apply_dirichlet_bc = (it_nr_IN == 0);
 
+      
+        
         if (apply_dirichlet_bc) {
           constraints.clear();
+          
+          const IndexSet& locally_relevant_dofs = 
+                DoFTools::extract_locally_relevant_dofs(dof_handler_ref);
+          constraints.reinit(dof_handler_ref.locally_owned_dofs(),
+                       locally_relevant_dofs);
           make_dirichlet_constraints(constraints);  
         } else {
         	for (unsigned int i=0; i<dof_handler_ref.n_dofs(); ++i)
@@ -5173,6 +5180,9 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                                                     mpi_communicator);
 
         hanging_node_constraints.clear();
+        const IndexSet &locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler_ref);
+        hanging_node_constraints.reinit(dof_handler_ref.locally_owned_dofs(),
+                                                    locally_relevant_dofs);
         DoFTools::make_hanging_node_constraints(dof_handler_ref,hanging_node_constraints);
         hanging_node_constraints.close();
 
