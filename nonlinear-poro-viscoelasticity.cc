@@ -105,6 +105,11 @@
 #include <deal.II/physics/elasticity/kinematics.h>
 #include <deal.II/physics/elasticity/standard_tensors.h>
 
+#include <Amesos.h>
+#include <Teuchos_ParameterList.hpp>
+#include <Epetra_LinearProblem.h>
+#include <Amesos_Mumps.h>
+
 #include <iostream>
 #include <fstream>
 #include <numeric>
@@ -1630,23 +1635,25 @@ namespace NonLinearPoroViscoElasticity
                                                  "|brain_rheometer_shear_lateral_drained"
                                                  "|brain_nanoindentation_sinus"
                                                  "|brain_nanoindentation_ramp"
-                            		 	 	 	 "|brain_nanoindentation_flat_ramp"
-                		 	 	 	 	 	 	 "|brain_rheometer_cyclic_trapezoidal_tension_compression"
-                            		 	 	 	 "|brain_rheometer_relaxation_tension_compression"
-                            		 	 	     "|brain_rheometer_cyclic_tension_compression"
-                            		 	 	 	 "|brain_rheometer_cyclic_tension_compression_quarter"
-                            		 	 	     "|brain_rheometer_cyclic_tension_compression_exp"
-                            		 	 	 	 "|brain_rheometer_cyclic_tension_compression_exp_quarter"
-                            		 	 	 	 "|brain_rheometer_cyclic_compression_quarter"
-                            		 	 	 	 "|brain_rheometer_cyclic_tension_quarter"
-                            		 	 	 	 "|brain_rheometer_cyclic_trapezoidal_tension_compression_quarter"
-                            		 	 	 	 "|brain_rheometer_relaxation_tension_compression_quarter"
+                            		 	 	 	           "|brain_nanoindentation_flat_ramp"
+                		 	 	 	 	 	 	                 "|brain_rheometer_cyclic_trapezoidal_tension_compression"
+                            		 	 	 	           "|brain_rheometer_relaxation_tension_compression"
+                            		 	 	             "|brain_rheometer_cyclic_tension_compression"
+                                                 "|brain_rheometer_cyclic_tension_compression_quarter"
+                                                 "|brain_rheometer_cyclic_tension_compression_exp"
+                                                 "|brain_rheometer_cyclic_tension_compression_exp_quarter"
+                                                 "|brain_rheometer_cyclic_compression_quarter"
+                                                 "|brain_rheometer_cyclic_tension_quarter"
+                                                 "|brain_rheometer_cyclic_trapezoidal_tension_compression_quarter"
+                                                 "|brain_rheometer_relaxation_tension_compression_quarter"
+                                                 "|brain_rheometer_cyclic_relaxation_quarter"
           	  	  	  	  	  	  	  	  	  	 "|brain_rheometer_shear_relaxation_lateral_drained"
           	  	  	  	  	  	  	  	  	  	 "|hydro_nano_graz_compression_relax"
-                            		 	 	 	 "|hydro_nano_graz_compression_exp_relax"
-                            		 	 	 	 "|hydro_nano_graz_compression_relax_sphere"
-                            		 	 	 	 "|odeometer_graz"
-                                       "|sliding_indenter"),
+                                                 "|hydro_nano_graz_compression_exp_relax"
+                                                 "|hydro_nano_graz_compression_relax_sphere"
+                                                 "|odeometer_graz"
+                                                 "|sliding_indenter"
+                                                 "|full_brain_indenter"),
                                 "Type of geometry used. "
                                 "For Ehlers verification examples see Ehlers and Eipper (1999). "
                                 "For Franceschini brain consolidation see Franceschini et al. (2006)"
@@ -2389,6 +2396,16 @@ namespace NonLinearPoroViscoElasticity
                 dt = 12*delta_t;
               else if (time_current >= time_end_load)
                 dt = 4*delta_t;
+            } //remove
+            else if (false) {
+              if (time_current < time_end_load)
+                dt = delta_t;
+              else if (time_current >= time_end_load + 18)
+                dt = 3*delta_t;
+              else if (time_current >= time_end_load + 6)
+                dt = delta_t;
+              else if (time_current >= time_end_load)
+                dt = 0.25*delta_t;
             } //remove
         	  //double dt_min = 0.1;
         	  // based on change in det(F)
@@ -4324,15 +4341,15 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
             SymmetricTensor<2, dim, NumberType>
             get_Cauchy_E_base(const Tensor<2, dim, NumberType> &F) const
-			{
+			      {
             	return solid_material->get_Cauchy_E_base(F);
-			}
+			      }
 
             SymmetricTensor<2, dim, NumberType>
             get_Cauchy_E_ext_func(const Tensor<2, dim, NumberType> &F) const
-			{
+			      {
             	return solid_material->get_Cauchy_E_ext_func(F);
-			}
+			      }
 
             double
             get_converged_det_F() const
@@ -4670,8 +4687,8 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     Solid<dim>::Solid(const Parameters::AllParameters &parameters)
         :
         mpi_communicator(MPI_COMM_WORLD),
-        n_mpi_processes (Utilities::MPI::n_mpi_processes(mpi_communicator)),
-        this_mpi_process (Utilities::MPI::this_mpi_process(mpi_communicator)),
+        n_mpi_processes (dealii::Utilities::MPI::n_mpi_processes(mpi_communicator)),
+        this_mpi_process (dealii::Utilities::MPI::this_mpi_process(mpi_communicator)),
         pcout(std::cout, this_mpi_process == 0),
         parameters(parameters),
         triangulation(mpi_communicator,Triangulation<dim>::maximum_smoothing,false,parallel::shared::Triangulation<dim>::partition_zorder),
@@ -4820,10 +4837,10 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
 
               //det_F_change_mpi = jacobian_on_faces(solution_n);
-              //det_F_change = Utilities::MPI::max(det_F_change_mpi, mpi_communicator);
+              //det_F_change = dealii::Utilities::MPI::max(det_F_change_mpi, mpi_communicator);
               //Store the converged values of the internal variables
               det_F_min_mpi = update_end_timestep();
-              det_F_min = Utilities::MPI::max(det_F_min_mpi, mpi_communicator);
+              det_F_min = dealii::Utilities::MPI::max(det_F_min_mpi, mpi_communicator);
               //det_F_min = std::max(det_F_change, det_F_min);
 
               //Output results
@@ -5055,8 +5072,8 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     template <int dim>
     void Solid<dim>::system_setup(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT)
     {
-        timerconsole.enter_subsection("Setup system");
-        timerfile.enter_subsection("Setup system");
+        TimerOutput::Scope timing_section(timerconsole, "Setup system");
+        TimerOutput::Scope timer_section(timerfile, "Setup system");
 
         //Determine number of components per block
         std::vector<unsigned int> block_component(n_components, u_block);
@@ -5214,9 +5231,6 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         //Set up the quadrature point history
         setup_qph();
-
-        timerconsole.leave_subsection();
-        timerfile.leave_subsection();
     }
 
     //Component extractors: used to extract sub-blocks from the global matrix
@@ -5253,7 +5267,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                                             triangulation.end(), n_q_points);
 
         //Setup the initial quadrature point data using the info stored in parameters
-        FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+        dealii::FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
         cell (IteratorFilters::LocallyOwnedCell(),
               dof_handler_ref.begin_active()),
         endc (IteratorFilters::LocallyOwnedCell(),
@@ -5515,6 +5529,9 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     template <int dim>
     void Solid<dim>::get_error_residual(Errors &error_residual_OUT)
     {
+        //TimerOutput::Scope timing_section(timerconsole, "Get error residual");
+        //TimerOutput::Scope timer_section(timerfile, "Get error residual");
+
         TrilinosWrappers::MPI::BlockVector error_res(system_rhs);
         constraints.set_zero(error_res);
 
@@ -5560,8 +5577,8 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     template <int dim>
     void Solid<dim>::assemble_system( const TrilinosWrappers::MPI::BlockVector &solution_delta )
     {
-        timerconsole.enter_subsection("Assemble system");
-        timerfile.enter_subsection("Assemble system");
+        TimerOutput::Scope timing_section(timerconsole, "Assemble system");
+        TimerOutput::Scope timer_section(timerfile, "Assemble system");
         pcout     << " ASM_SYS " << std::flush;
         outfile   << " ASM_SYS " << std::flush;
 	
@@ -5587,7 +5604,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                                                    qf_face, uf_face,
                                                    solution_total);
 	
-        FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+        dealii::FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
         cell (IteratorFilters::LocallyOwnedCell(),
               dof_handler_ref.begin_active()),
         endc (IteratorFilters::LocallyOwnedCell(),
@@ -5607,9 +5624,6 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 	
         tangent_matrix_nb.compress(VectorOperation::add);
         system_rhs_nb.compress(VectorOperation::add);
-	
-        timerconsole.leave_subsection();
-        timerfile.leave_subsection();
     }
 
     //Add the local elemental contribution to the global stiffness tensor
@@ -5637,6 +5651,8 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
               ScratchData_ASM<ADNumberType>                        &scratch,
               PerTaskData_ASM                                      &data) const
     {
+        //TimerOutput assembly_timer (pcout, TimerOutput::summary,TimerOutput::wall_times);
+
         Assert(cell->is_locally_owned(), ExcInternalError());
 
         data.reset();
@@ -5647,6 +5663,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         // Setup automatic differentiation
         for (unsigned int k = 0; k < dofs_per_cell; ++k)
           {
+            //TimerOutput::Scope timing_section(assembly_timer, "Setup AD");
             // Initialise the dofs for the cell using the current solution.
             scratch.local_dof_values[k] = scratch.solution_total[data.local_dof_indices[k]];
             // Mark this cell DoF as an independent variable
@@ -5657,6 +5674,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         // Compute the values and gradients of the solution in terms of the AD variables
         for (unsigned int q = 0; q < n_q_points; ++q)
           {
+            //TimerOutput::Scope timing_section(assembly_timer, "Update QP solution");
             for (unsigned int k = 0; k < dofs_per_cell; ++k)
               {
                 const unsigned int k_group = fe.system_to_base_index(k).first.first;
@@ -5701,6 +5719,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         //Precalculate the element shape function values and gradients
         for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
           {
+            //TimerOutput::Scope timing_section(assembly_timer, "Precalculate shape function values");
             Tensor<2, dim, ADNumberType> F_AD = scratch.solution_grads_u_total[q_point];
             F_AD += Tensor<2, dim, double>(Physics::Elasticity::StandardTensors<dim>::I);
 
@@ -5734,10 +5753,15 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
               }
           }
 
+        //TimerOutput local_timer (std::cout, TimerOutput::summary, TimerOutput::wall_times);  
         //Assemble the stiffness matrix and rhs vector
         std::vector<ADNumberType> residual_ad (dofs_per_cell, ADNumberType(0.0));
         for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
           {
+            //TimerOutput::Scope timing_section(assembly_timer, "Assemble stiffness matrix and RHS");
+            
+
+            //local_timer.enter_subsection ("1");
             Tensor<2, dim, ADNumberType> F_AD = scratch.solution_grads_u_total[q_point];
             F_AD += Tensor<2, dim,double>(Physics::Elasticity::StandardTensors<dim>::I);
             const ADNumberType det_F_AD = determinant(F_AD);
@@ -5746,22 +5770,27 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             const Tensor<2, dim, ADNumberType> F_inv_AD = invert(F_AD); //inverse of def. gradient tensor
 
             const ADNumberType p_fluid = scratch.solution_values_p_fluid_total[q_point];
+            //local_timer.leave_subsection();
 
+            //local_timer.enter_subsection ("2");
             {
               PointHistory<dim, ADNumberType> *lqph_q_point_nc =
                  const_cast<PointHistory<dim, ADNumberType>*>(lqph[q_point].get());
               lqph_q_point_nc->update_internal_equilibrium(F_AD);
             }
+            //local_timer.leave_subsection();
 
             //Get some info from constitutive model of solid
+            //local_timer.enter_subsection ("3");
             static const SymmetricTensor< 2, dim, double>
                 I (Physics::Elasticity::StandardTensors<dim>::I);
             const SymmetricTensor<2, dim, ADNumberType>
                 tau_E = lqph[q_point]->get_tau_E(F_AD);
             SymmetricTensor<2, dim, ADNumberType> tau_fluid_vol (I);
             tau_fluid_vol *= -1.0 * p_fluid * det_F_AD;
+            //local_timer.leave_subsection();
 
-
+            //local_timer.enter_subsection ("if");
             if (parameters.eigenvalue_analysis) {
             	const Point<dim> q_point_coord = scratch.fe_values_ref.quadrature_point(q_point);
 
@@ -5901,14 +5930,18 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 						<< std::setw(16) << cauchy_E_ext_func[2][2] << "," << std::endl;
             	cauchy_vol.close();
             }
-
+            //local_timer.leave_subsection();
+            
             //Get some info from constitutive model of fluid
+            //local_timer.enter_subsection ("4");
             const ADNumberType det_F_aux =  lqph[q_point]->get_converged_det_F();
             const double det_F_converged = Tensor<0,dim,double>(det_F_aux); //Needs to be double, not AD number
             const Tensor<1, dim, ADNumberType> overall_body_force
                 = lqph[q_point]->get_overall_body_force(F_AD, parameters);
+            //local_timer.leave_subsection();    
 
             // Define some aliases to make the assembly process easier to follow
+            //local_timer.enter_subsection ("5");
             const std::vector<Tensor<1,dim>> &Nu = scratch.Nx[q_point];
             const std::vector<SymmetricTensor<2, dim, ADNumberType>>
                 &symm_grad_Nu = scratch.symm_grad_Nx[q_point];
@@ -5918,7 +5951,12 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             const Tensor<1, dim, ADNumberType> grad_p
                 = scratch.solution_grads_p_fluid_total[q_point]*F_inv_AD;
             const double JxW = scratch.fe_values_ref.JxW(q_point);
+            const Tensor<1, dim, ADNumberType> seepage_vel_current
+                        = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p);
+            const double delta_t = time->get_delta_t();
+            //local_timer.leave_subsection();
 
+            //local_timer.enter_subsection ("6");
             for (unsigned int i = 0; i < dofs_per_cell; ++i)
               {
                 const unsigned int i_group = fe.system_to_base_index(i).first.first;
@@ -5930,20 +5968,23 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                   }
                 else if (i_group == p_fluid_block)
                   {
-                    const Tensor<1, dim, ADNumberType> seepage_vel_current
-                        = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p);
+                    //const Tensor<1, dim, ADNumberType> seepage_vel_current
+                    //    = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p);
                     residual_ad[i] += Np[i] * (det_F_AD - det_F_converged) * JxW;
-                    residual_ad[i] -= time->get_delta_t() * grad_Np[i]
-                                      * seepage_vel_current * JxW;
+                    residual_ad[i] -= delta_t * grad_Np[i] * seepage_vel_current * JxW;
+                    //residual_ad[i] -= time->get_delta_t() * grad_Np[i]
+                    //                  * seepage_vel_current * JxW;
                   }
                 else
                   Assert(i_group <= p_fluid_block, ExcInternalError());
               }
+            //local_timer.leave_subsection();  
           }
 
           // Assemble the Neumann contribution (external force contribution).
           for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) //Loop over faces in element
             {
+              //TimerOutput::Scope timing_section(assembly_timer, "Assemble Neumann contribution");
               if (cell->face(face)->at_boundary() == true)
                 {
                   scratch.fe_face_values_ref.reinit(cell, face);
@@ -5991,6 +6032,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         // Linearise the residual
         for (unsigned int i = 0; i < dofs_per_cell; ++i)
           {
+            //TimerOutput::Scope timing_section(assembly_timer, "Linearize residual");
             const ADNumberType &R_i = residual_ad[i];
 
             data.cell_rhs(i) -= R_i.val();
@@ -6003,7 +6045,10 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     //template <int dim> void Solid<dim>::update_end_timestep()
 	template <int dim> double Solid<dim>::update_end_timestep()
     {
-        FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+        //TimerOutput::Scope timing_section(timerconsole, "Update end timestep");
+        //TimerOutput::Scope timer_section(timerfile, "Update end timestep");
+        
+        dealii::FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
           cell (IteratorFilters::LocallyOwnedCell(),
                 dof_handler_ref.begin_active()),
           endc (IteratorFilters::LocallyOwnedCell(),
@@ -6042,7 +6087,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 														  false);
 		solution_total = solution_IN;
 
-		FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+		dealii::FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
 		  cell (IteratorFilters::LocallyOwnedCell(),
 				dof_handler_ref.begin_active()),
 		  endc (IteratorFilters::LocallyOwnedCell(),
@@ -6092,8 +6137,8 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
      void Solid<dim>::solve_linear_system( TrilinosWrappers::MPI::BlockVector &newton_update_OUT)
      {
 
-           timerconsole.enter_subsection("Linear solver");
-           timerfile.enter_subsection("Linear solver");
+           TimerOutput::Scope timing_section(timerconsole, "Linear solver");
+           TimerOutput::Scope timer_section(timerfile, "Linear solver");
            pcout     << " SLV " << std::flush;
            outfile   << " SLV " << std::flush;
 
@@ -6104,14 +6149,60 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
                   SolverControl solver_control (tangent_matrix_nb.m(),					// (maximum number of iterations, tolerance)
                   1.0e-8 * system_rhs_nb.l2_norm());
                   TrilinosWrappers::SolverDirect::AdditionalData additional_data;		// select solver type
-                  additional_data.solver_type = "Amesos_Superludist";						// default: Amesos_Klu Superludist
+                  additional_data.solver_type = "Amesos_Mumps";						// default: Amesos_Klu Superludist
                   TrilinosWrappers::SolverDirect solver (solver_control, additional_data);
                   solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb);	// linear system (A, x, b) 
+
+                  // GMRES 
+                  // SolverControl solver_control(1000, 1e-12);
+                  // TrilinosWrappers::SolverGMRES::AdditionalData solver_data (false, 30);
+                  //solver_data.gmres_restart_parameter = 30; // Anzahl der Iterationen bis zum Restart
+                  //solver_data.num_temp_vectors = 30;
+                  // TrilinosWrappers::PreconditionILU preconditioner;
+                  // preconditioner.initialize(tangent_matrix_nb);
+
+                  // TrilinosWrappers::SolverGMRES solver(solver_control, solver_data);
+                  // solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb, preconditioner);
+    
+                  // pcout << "GMRES konvergiert nach " << solver_control.last_step() << " Iterationen." << std::endl;
+
           } else {
-                  SparseDirectMUMPS::AdditionalData data_mumps;
-                  SparseDirectMUMPS direct_solver_mumps(data_mumps, mpi_communicator);
-                  direct_solver_mumps.initialize(tangent_matrix_nb);
-                  direct_solver_mumps.vmult(newton_update_nb, system_rhs_nb);
+                  // direct Mumps interface for HPC clusters
+                  // SparseDirectMUMPS::AdditionalData data_mumps;
+                  // SparseDirectMUMPS direct_solver_mumps(data_mumps, mpi_communicator);
+                  // direct_solver_mumps.get_icntl()[13] = 40; // Index 13 entspricht ICNTL(14)
+                  // direct_solver_mumps.initialize(tangent_matrix_nb);
+                  // direct_solver_mumps.vmult(newton_update_nb, system_rhs_nb); // segfault in here
+
+                  // Manual solver setup for Mac M4
+                  Epetra_LinearProblem problem(const_cast<Epetra_CrsMatrix*>(&tangent_matrix_nb.trilinos_matrix()), 
+                                               static_cast<Epetra_MultiVector*>(const_cast<Epetra_FEVector*>(&newton_update_nb.trilinos_vector())), 
+                                               static_cast<Epetra_MultiVector*>(const_cast<Epetra_FEVector*>(&system_rhs_nb.trilinos_vector())));
+                  // 1. Die Factory erstellt den Solver passend zu Ihrer MPI-Matrix
+                  Amesos factory;
+                  Amesos_BaseSolver* solver = factory.Create("Amesos_Mumps", problem);
+                  // Falls MUMPS nicht verfügbar ist, gibt factory.Create nullptr zurück
+                  AssertThrow(solver != nullptr, ExcMessage("Amesos_Mumps nicht verfügbar!"));
+                  // 2. Teuchos ParameterList für MUMPS-spezifische Optionen
+                  Teuchos::ParameterList params;
+                  //params.set("PrintStatus", true);
+                  //params.set("PrintTiming", true);
+                  // WICHTIG: Die Sublist muss "mumps" heißen
+                  params.sublist("mumps").set("ICNTL(14)", 60);
+                  // Matrix parallel verteilen (reduziert Speicherflaschenhals auf einem Kern)
+                  //params.set("Reindex", true);
+                  //params.sublist("mumps").set("ICNTL(18)", 3);
+                  // BLR aktivieren
+                  //params.sublist("mumps").set("ICNTL(35)", 1);
+                  //params.sublist("mumps").set("CNTL(7)", 1e-4);
+                  // Parameter an den Solver übergeben
+                  solver->SetParameters(params);
+                  // 3. Schrittweises Lösen (Amesos Standard-Workflow)
+                  solver->SymbolicFactorization();
+                  solver->NumericFactorization();
+                  solver->Solve();
+                  // Wichtig bei manueller Erstellung: Speicher freigeben
+                  delete solver;
             }
 
            // Copy the non-block solution back to block system
@@ -6122,18 +6213,6 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
                newton_update_OUT(idx_i) = newton_update_nb(idx_i);
              }
            newton_update_OUT.compress(VectorOperation::insert);
-
-           timerconsole.leave_subsection();
-           timerfile.leave_subsection();
-
-          //  if (this_mpi_process == 0) {
-        	//    std::ofstream solve_linear_system_time;
-        	//    solve_linear_system_time.open(parameters.output_directory + "/solve_linear_system_time", std::ofstream::app);
-        	//    solve_linear_system_time << std::setprecision(6) << std::scientific;
-        	//    solve_linear_system_time << std::setw(16) << this->time->get_current() << ","
-        	// 		   << std::setw(16) << end - start << std::endl;
-        	//    solve_linear_system_time.close();
-          //  }
      }
 
 
@@ -6386,6 +6465,7 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
 				AssertDimension (input_data.solution_gradients.size(),
 								 computed_quantities.size());
 				const unsigned int max_points = input_data.solution_gradients.size();
+        double sum_J = 0;
 				for (unsigned int p=0; p<max_points; ++p)
 				{
 					//Compute deformation gradient tensor of the point
@@ -6395,7 +6475,17 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
 
 					const Tensor<2,dim> F = Physics::Elasticity::Kinematics::F(grad_u);
 					computed_quantities[p]= determinant(F);
+
+          sum_J += computed_quantities[p][0];
+          //std::cout << "computed_quantities[" << p << "] = " << computed_quantities[p][0] << std::endl; 
 				}
+         
+        double mean_J = sum_J / computed_quantities.size();
+        for (unsigned int p=0; p<max_points; ++p)
+				{
+        computed_quantities[p] = mean_J;
+        }
+        //std::cout << "sum = " << sum_J << ", mean = " << mean_J << std::endl;
 			}
 	};
 
@@ -6596,7 +6686,7 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
     	std::vector<types::subdomain_id> partition_int(triangulation.n_active_cells());
 
     	//Iterate through elements (cells) to obtain material ID for each
-    	FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+    	dealii::FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
     		cell(IteratorFilters::LocallyOwnedCell(),
     			 dof_handler_ref.begin_active()),
 			endc(IteratorFilters::LocallyOwnedCell(),
@@ -6653,6 +6743,19 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
 		DissipPostproc<dim> dissipations(parameters,time,p_fluid_component);
 		data_out.add_data_vector(solution_total, dissipations);
 
+    Vector<double> b_ids(triangulation.n_active_cells());
+    unsigned int i = 0;
+    for (const auto &cell : triangulation.active_cell_iterators())
+    {
+        double max_b_id = -1.0; // Standardwert für "kein Rand"
+        for (const auto &face : cell->face_iterators())
+            if (face->at_boundary())
+                max_b_id = static_cast<double>(face->boundary_id());
+        
+        b_ids(i++) = max_b_id;
+    }
+    data_out.add_data_vector(b_ids, "ManualBoundaryID", DataOut<dim>::type_cell_data);
+
 		//data_out.build_patches(degree_displ);
 		data_out.build_patches(mapping,
 							   degree_displ,
@@ -6667,9 +6770,9 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
 				std::ostringstream filename_vtu;
 				filename_vtu
 				<< "solution."
-				<< Utilities::int_to_string(process, n_digits)
+				<< dealii::Utilities::int_to_string(process, n_digits)
 				<< "."
-				<< Utilities::int_to_string(timestep, n_digits)
+				<< dealii::Utilities::int_to_string(timestep, n_digits)
 				<< ".vtu";
 				return filename_vtu.str();
 			}
@@ -6680,7 +6783,7 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
 				std::ostringstream filename_vtu;
 				filename_vtu
 				<< "solution."
-				<< Utilities::int_to_string(timestep, n_digits)
+				<< dealii::Utilities::int_to_string(timestep, n_digits)
 				<< ".pvtu";
 				return filename_vtu.str();
 			}
@@ -6803,7 +6906,7 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
            Assert (false, ExcMessage("Material type not implemented"));
 
         //Iterate through elements (cells) and Gauss Points
-        FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+        dealii::FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
           cell(IteratorFilters::LocallyOwnedCell(),
                dof_handler_ref.begin_active()),
           endc(IteratorFilters::LocallyOwnedCell(),
@@ -6894,21 +6997,21 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
         	for (unsigned int d=0; d<(vertex_handler_ref.n_dofs()); ++d)
         	{
         		sum_counter_on_vertices[d] =
-        		              Utilities::MPI::sum(counter_on_vertices_mpi[d],
+        		              dealii::Utilities::MPI::sum(counter_on_vertices_mpi[d],
         		                                  mpi_communicator);
 //        		std::cout << "1: " << sum_counter_on_vertices[d] << std::endl;
         		sum_jacobian_vertex[d] =
-        				Utilities::MPI::sum(jacobian_vertex_mpi[d],
+        				dealii::Utilities::MPI::sum(jacobian_vertex_mpi[d],
         						mpi_communicator);
 //        		std::cout << "2: " << sum_jacobian_vertex[d] << std::endl;
         	}
             for (unsigned int d=0; d<(vertex_vec_handler_ref.n_dofs()); ++d)
             {
               sum_counter_on_vertices_vec[d] =
-                Utilities::MPI::sum(counter_on_vertices_vec_mpi[d],
+                dealii::Utilities::MPI::sum(counter_on_vertices_vec_mpi[d],
                                     mpi_communicator);
               sum_loads_vertex_vec[d] =
-                Utilities::MPI::sum(loads_vertex_vec_mpi[d],
+                dealii::Utilities::MPI::sum(loads_vertex_vec_mpi[d],
                                     mpi_communicator);
             }
 
@@ -6994,9 +7097,9 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
             std::ostringstream filename_face_vtu;
             filename_face_vtu
             << "bcs."
-            << Utilities::int_to_string(process, n_digits)
+            << dealii::Utilities::int_to_string(process, n_digits)
             << "."
-            << Utilities::int_to_string(timestep, n_digits)
+            << dealii::Utilities::int_to_string(timestep, n_digits)
             << ".vtu";
             return filename_face_vtu.str();
           }
@@ -7007,7 +7110,7 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
             std::ostringstream filename_face_vtu;
             filename_face_vtu
             << "bcs."
-            << Utilities::int_to_string(timestep, n_digits)
+            << dealii::Utilities::int_to_string(timestep, n_digits)
             << ".pvtu";
             return filename_face_vtu.str();
           }
@@ -7142,7 +7245,7 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
         FEValues<dim> fe_values_ref (mapping, fe, qf_cell, uf_cell);
 
         //Iterate through elements (cells) and Gauss Points
-        FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+        dealii::FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
           cell(IteratorFilters::LocallyOwnedCell(),
                dof_handler_ref.begin_active()),
           endc(IteratorFilters::LocallyOwnedCell(),
@@ -7509,33 +7612,33 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
         //so, we add all MPI process, one will have the solution and the others will be zero
         for (unsigned int d=0; d<dim; ++d)
         {
-            reaction_force[d] = Utilities::MPI::sum(sum_reaction_mpi[d], mpi_communicator);
-            reaction_force_pressure[d] = Utilities::MPI::sum(sum_reaction_pressure_mpi[d], mpi_communicator);
-            reaction_force_extra[d] = Utilities::MPI::sum(sum_reaction_extra_mpi[d], mpi_communicator);
-            reaction_force_extra_base[d] = Utilities::MPI::sum(sum_reaction_extra_base_mpi[d], mpi_communicator);
-            reaction_force_extra_ext_func[d] = Utilities::MPI::sum(sum_reaction_extra_ext_func_mpi[d], mpi_communicator);
+            reaction_force[d] = dealii::Utilities::MPI::sum(sum_reaction_mpi[d], mpi_communicator);
+            reaction_force_pressure[d] = dealii::Utilities::MPI::sum(sum_reaction_pressure_mpi[d], mpi_communicator);
+            reaction_force_extra[d] = dealii::Utilities::MPI::sum(sum_reaction_extra_mpi[d], mpi_communicator);
+            reaction_force_extra_base[d] = dealii::Utilities::MPI::sum(sum_reaction_extra_base_mpi[d], mpi_communicator);
+            reaction_force_extra_ext_func[d] = dealii::Utilities::MPI::sum(sum_reaction_extra_ext_func_mpi[d], mpi_communicator);
         }
 
         //Same for total fluid flow, and for porous and viscous dissipations
-        total_fluid_flow = Utilities::MPI::sum(sum_total_flow_mpi, mpi_communicator);
-        total_porous_dissipation = Utilities::MPI::sum(sum_porous_dissipation_mpi, mpi_communicator);
-        total_viscous_dissipation = Utilities::MPI::sum(sum_viscous_dissipation_mpi, mpi_communicator);
-        total_solid_vol = Utilities::MPI::sum(sum_solid_vol_mpi, mpi_communicator);
-        total_vol_current = Utilities::MPI::sum(sum_vol_current_mpi, mpi_communicator);
-        total_vol_reference = Utilities::MPI::sum(sum_vol_reference_mpi, mpi_communicator);
-        reaction_torque = Utilities::MPI::sum(sum_torque_mpi, mpi_communicator);
+        total_fluid_flow = dealii::Utilities::MPI::sum(sum_total_flow_mpi, mpi_communicator);
+        total_porous_dissipation = dealii::Utilities::MPI::sum(sum_porous_dissipation_mpi, mpi_communicator);
+        total_viscous_dissipation = dealii::Utilities::MPI::sum(sum_viscous_dissipation_mpi, mpi_communicator);
+        total_solid_vol = dealii::Utilities::MPI::sum(sum_solid_vol_mpi, mpi_communicator);
+        total_vol_current = dealii::Utilities::MPI::sum(sum_vol_current_mpi, mpi_communicator);
+        total_vol_reference = dealii::Utilities::MPI::sum(sum_vol_reference_mpi, mpi_communicator);
+        reaction_torque = dealii::Utilities::MPI::sum(sum_torque_mpi, mpi_communicator);
 
         det_F_min_cells_mpi = *std::min_element(det_F_cells_mpi.begin(),det_F_cells_mpi.end());
-        det_F_min_cells = Utilities::MPI::min(det_F_min_cells_mpi, mpi_communicator);
+        det_F_min_cells = dealii::Utilities::MPI::min(det_F_min_cells_mpi, mpi_communicator);
         det_F_min_faces_mpi = *std::min_element(det_F_faces_mpi.begin(),det_F_faces_mpi.end());
-        det_F_min_faces = Utilities::MPI::min(det_F_min_faces_mpi, mpi_communicator);
+        det_F_min_faces = dealii::Utilities::MPI::min(det_F_min_faces_mpi, mpi_communicator);
 
         //if (seepage_vec_mpi.size()>1) {
         //	seepage_vec_mean_mpi = std::accumulate(seepage_vec_mpi.begin(), seepage_vec_mpi.end(), 0.0) / seepage_vec_mpi.size();
         //	std::cout << seepage_vec_mean_mpi << std::endl;
         //	seepage_vec_mean = seepage_vec_mean_mpi;
         //}
-       // seepage_vec_mean = Utilities::MPI::sum(seepage_vec_mean_mpi, mpi_communicator) / 6;
+       // seepage_vec_mean = dealii::Utilities::MPI::sum(seepage_vec_mean_mpi, mpi_communicator) / 6;
 
       //  Extract solution for tracked vectors
       // Copying an MPI::BlockVector into MPI::Vector is not possible,
@@ -7829,7 +7932,7 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
 //    		FEValues<dim> fe_values_ref (mapping, fe, qf_cell, uf_cell);
 //
 //    		//Iterate through elements (cells) and Gauss Points
-//    		FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+//    		dealii::FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
 //    		cell(IteratorFilters::LocallyOwnedCell(),
 //    			 dof_handler_ref.begin_active()),
 //			endc(IteratorFilters::LocallyOwnedCell(),
@@ -8195,31 +8298,31 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
 //		  //so, we add all MPI process, one will have the solution and the others will be zero
 //		  for (unsigned int d=0; d<dim; ++d)
 //		  {
-//			  reaction_force[d] = Utilities::MPI::sum(sum_reaction_mpi[d], mpi_communicator);
-//			  reaction_force_pressure[d] = Utilities::MPI::sum(sum_reaction_pressure_mpi[d], mpi_communicator);
-//			  reaction_force_extra[d] = Utilities::MPI::sum(sum_reaction_extra_mpi[d], mpi_communicator);
-//			  reaction_force_extra_base[d] = Utilities::MPI::sum(sum_reaction_extra_base_mpi[d], mpi_communicator);
-//			  reaction_force_extra_ext_func[d] = Utilities::MPI::sum(sum_reaction_extra_ext_func_mpi[d], mpi_communicator);
+//			  reaction_force[d] = dealii::Utilities::MPI::sum(sum_reaction_mpi[d], mpi_communicator);
+//			  reaction_force_pressure[d] = dealii::Utilities::MPI::sum(sum_reaction_pressure_mpi[d], mpi_communicator);
+//			  reaction_force_extra[d] = dealii::Utilities::MPI::sum(sum_reaction_extra_mpi[d], mpi_communicator);
+//			  reaction_force_extra_base[d] = dealii::Utilities::MPI::sum(sum_reaction_extra_base_mpi[d], mpi_communicator);
+//			  reaction_force_extra_ext_func[d] = dealii::Utilities::MPI::sum(sum_reaction_extra_ext_func_mpi[d], mpi_communicator);
 //		  }
 //
 //		  //Same for total fluid flow, and for porous and viscous dissipations
-//		  total_fluid_flow = Utilities::MPI::sum(sum_total_flow_mpi, mpi_communicator);
-//		  total_porous_dissipation = Utilities::MPI::sum(sum_porous_dissipation_mpi, mpi_communicator);
-//		  total_viscous_dissipation = Utilities::MPI::sum(sum_viscous_dissipation_mpi, mpi_communicator);
-//		  total_solid_vol = Utilities::MPI::sum(sum_solid_vol_mpi, mpi_communicator);
-//		  total_vol_current = Utilities::MPI::sum(sum_vol_current_mpi, mpi_communicator);
-//		  total_vol_reference = Utilities::MPI::sum(sum_vol_reference_mpi, mpi_communicator);
-//		  reaction_torque = Utilities::MPI::sum(sum_torque_mpi, mpi_communicator);
+//		  total_fluid_flow = dealii::Utilities::MPI::sum(sum_total_flow_mpi, mpi_communicator);
+//		  total_porous_dissipation = dealii::Utilities::MPI::sum(sum_porous_dissipation_mpi, mpi_communicator);
+//		  total_viscous_dissipation = dealii::Utilities::MPI::sum(sum_viscous_dissipation_mpi, mpi_communicator);
+//		  total_solid_vol = dealii::Utilities::MPI::sum(sum_solid_vol_mpi, mpi_communicator);
+//		  total_vol_current = dealii::Utilities::MPI::sum(sum_vol_current_mpi, mpi_communicator);
+//		  total_vol_reference = dealii::Utilities::MPI::sum(sum_vol_reference_mpi, mpi_communicator);
+//		  reaction_torque = dealii::Utilities::MPI::sum(sum_torque_mpi, mpi_communicator);
 //
 //		  det_F_min_mpi = *std::min_element(det_F_mpi.begin(),det_F_mpi.end());
-//		  det_F_min = Utilities::MPI::min(det_F_min_mpi, mpi_communicator);
+//		  det_F_min = dealii::Utilities::MPI::min(det_F_min_mpi, mpi_communicator);
 //
 //		  //if (seepage_vec_mpi.size()>1) {
 //			  //	seepage_vec_mean_mpi = std::accumulate(seepage_vec_mpi.begin(), seepage_vec_mpi.end(), 0.0) / seepage_vec_mpi.size();
 //		  //	std::cout << seepage_vec_mean_mpi << std::endl;
 //		  //	seepage_vec_mean = seepage_vec_mean_mpi;
 //		  //}
-//		  // seepage_vec_mean = Utilities::MPI::sum(seepage_vec_mean_mpi, mpi_communicator) / 6;
+//		  // seepage_vec_mean = dealii::Utilities::MPI::sum(seepage_vec_mean_mpi, mpi_communicator) / 6;
 //
 //		  //  Extract solution for tracked vectors
 //		  // Copying an MPI::BlockVector into MPI::Vector is not possible,
@@ -11267,6 +11370,54 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
 			}
     };
 
+        //@sect4{Derived class: Cyclic Tension and Compression}
+    template <int dim>
+    class BrainRheometerLTMCyclicRelaxationQuarter : public BrainRheometerLTMBaseQuarter<dim>
+    {
+        public:
+    		BrainRheometerLTMCyclicRelaxationQuarter (const Parameters::AllParameters &parameters) : BrainRheometerLTMBaseQuarter<dim> (parameters) {}
+    		virtual ~BrainRheometerLTMCyclicRelaxationQuarter () {}
+
+        private:
+
+          virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
+          {
+                std::vector<double> displ_incr (dim,0.0);
+
+                if ((boundary_id == 2) && (direction == 2)) {
+                    const double final_time    = this->time->get_end();           // 780
+                    const double end_load_time = this->parameters.end_load_time;  // 180
+                    const double delta_time    = this->time->get_delta_t();       // 1.0
+                    const double current_time  = this->time->get_current();
+                    const double final_displ   = this->parameters.load;           // 0.6
+                    const double num_cycles    = this->parameters.num_cycle_sets; // 3.0
+                    const double cycle_time    = end_load_time/(4*num_cycles);    // 180/4*3=15
+                    const double displ_increment = (delta_time/cycle_time) * final_displ;
+                    const double relax_increment = (delta_time/6) * final_displ;
+
+                    if (current_time <= cycle_time || std::abs(current_time-cycle_time) < 1e-6)
+                    	displ_incr[2] = -displ_increment;
+                    else if (current_time <= 3*cycle_time || std::abs(current_time-3*cycle_time) < 1e-6)
+                    	displ_incr[2] = +displ_increment;
+                    else if (current_time <= 5*cycle_time || std::abs(current_time-5*cycle_time) < 1e-6)
+                    	displ_incr[2] = -displ_increment;
+                    else if (current_time <= 7*cycle_time || std::abs(current_time-7*cycle_time) < 1e-6)
+                    	displ_incr[2] = +displ_increment;
+                    else if (current_time <= 9*cycle_time || std::abs(current_time-9*cycle_time) < 1e-6)
+                    	displ_incr[2] = -displ_increment;
+                    else if (current_time <= 11*cycle_time || std::abs(current_time-11*cycle_time) < 1e-6)
+                    	displ_incr[2] = +displ_increment;
+                    else if (current_time <= end_load_time || std::abs(current_time-end_load_time) < 1e-6)
+                    	displ_incr[2] = -displ_increment;
+                    else if (current_time <= end_load_time + 6 || std::abs(current_time-end_load_time + 6) < 1e-6)
+                    	displ_incr[2] = -relax_increment;
+                    else
+                      displ_incr[2] = -0.000000001;
+                }
+                return displ_incr;
+          }
+    };
+
 
 
     // @sect3{Examples to reproduce nanoindentation experiments for collaboration with Pablo Sáez}
@@ -12852,7 +13003,7 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
 				//this->solution_n = this->distributed_solution;
 
 				this->pcout << "Size of active set: "
-					  << Utilities::MPI::sum((this->active_set & this->locally_owned_dofs).n_elements(), this->mpi_communicator)
+					  << dealii::Utilities::MPI::sum((this->active_set & this->locally_owned_dofs).n_elements(), this->mpi_communicator)
 					  << std::endl;
 				}
 
@@ -13828,6 +13979,204 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
           }
     };
 
+    // Full-brain simulations
+    template <int dim>
+    class FullBrainBase : public Solid<dim>
+    {
+        public:
+            FullBrainBase (const Parameters::AllParameters &parameters) : Solid<dim> (parameters) {}
+            virtual ~FullBrainBase () {}
+
+        private:
+            virtual void make_grid() override 
+            {
+              // import external geometry: set path to file (TODO: add to parameter file)
+              std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_noCSF_superior.inp");
+              dealii::GridIn<dim> gridIn;
+              gridIn.attach_triangulation(this->triangulation);
+              gridIn.read_ucd(input_path);
+
+              std::set<types::material_id> unique_material_ids;
+              std::set<types::boundary_id> unique_boundary_ids;
+
+              for (const auto &cell : this->triangulation.active_cell_iterators()) {
+                  unique_material_ids.insert(cell->material_id());
+                  for (const auto &face : cell->face_iterators()) {
+                      if (face->at_boundary()) {
+                          unique_boundary_ids.insert(face->boundary_id());
+                      }
+                  }
+              }
+
+              std::cout << "Vergebene Material-IDs: ";
+              for (auto id : unique_material_ids) {
+                  // Cast nach int, damit char-IDs als Zahlen gedruckt werden
+                  std::cout << static_cast<unsigned int>(id) << " ";
+              }
+              std::cout << std::endl;
+
+              std::cout << "Vergebene Boundary-IDs: ";
+              for (auto id : unique_boundary_ids) {
+                  // Cast nach int, damit char-IDs als Zahlen gedruckt werden
+                  std::cout << static_cast<unsigned int>(id) << " ";
+              }
+              std::cout << std::endl;
+            }
+
+            virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override 
+            {
+              const types::boundary_id target_id = 1; // Deine gesuchte ID
+              std::set<unsigned int> vertex_indices;
+
+              for (const auto &cell : this->triangulation.active_cell_iterators()) {
+                  if (cell->at_boundary()) {
+                      for (const auto &face : cell->face_iterators()) {
+                          if (face->at_boundary() && face->boundary_id() == target_id) {
+                              // Gehe durch alle Eckpunkte dieser Fläche
+                              for (unsigned int v = 0; v < GeometryInfo<dim>::vertices_per_face; ++v){
+                                  // Wir speichern den Index, um Duplikate zu vermeiden
+                                  vertex_indices.insert(face->vertex_index(v));
+                              }
+                          }
+                      }
+                  }
+              }
+
+              // // Ausgabe der Koordinaten
+              // std::cout << "Koordinaten der Vertices für Boundary ID " << static_cast<unsigned int>(target_id) << ":" << std::endl;
+              // for (auto v_idx : vertex_indices)
+              // {
+              //     Point<dim> coord = this->triangulation.get_vertices()[v_idx];
+              //     std::cout << "Vertex " << v_idx << ": " << coord << std::endl;
+              // }
+              
+              // Erstelle einen Iterator, der auf den Anfang des Sets zeigt
+              auto it = vertex_indices.begin();
+              // Verschiebe den Iterator um 4 Positionen nach vorne
+              std::advance(it, 4); 
+              // Hole den fünften Vertex-Index
+              unsigned int fifth_v_idx = *it;
+              tracked_vertices[0] = this->triangulation.get_vertices()[fifth_v_idx];
+              // std::cout << tracked_vertices[0][0] << " " << tracked_vertices[0][1] << " " << tracked_vertices[0][2] << " " << std::endl;
+            }
+
+            virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override 
+            {
+              // Brain bottom is fully fixed in space
+              VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                       2,
+                                                       Functions::ZeroFunction<dim>(this->n_components),
+                                                       constraints,
+                                                       (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
+
+              // Brain surface drained except from loaded part
+              if (this->time->get_timestep() < 2) {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          0,
+                                                          Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+              } else {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          0,
+                                                          Functions::ZeroFunction<dim>(this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+              }
+              if (this->time->get_timestep() < 2) {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          2,
+                                                          Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+              } else {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          2,
+                                                          Functions::ZeroFunction<dim>(this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+              }
+              
+              // Apply displacement to loaded top surface
+              if (this->parameters.load_type == "displacement") {
+                  const std::vector<double> value = get_dirichlet_load(1,1);
+
+                  VectorTools::interpolate_boundary_values(
+                      this->dof_handler_ref,
+                          100,
+                          Functions::ConstantFunction<dim>(value[1],this->n_components), //TODO: dont use minus sign, work with sign function in get_dirichlet_load
+                          constraints,
+                          this->fe.component_mask(this->y_displacement));
+              }
+            }
+
+            virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
+        	  {
+            	if (this->parameters.load_type == "pressure")
+            		AssertThrow(false, ExcMessage("Pressure loading not implemented for full-brain indenter examples."));
+
+            	(void)boundary_id;
+            	(void)pt;
+            	(void)N;
+            	return Tensor<1,dim>();
+        	  }
+
+            virtual types::boundary_id get_reaction_boundary_id_for_output() const override
+            {
+            	return 1;
+            }
+
+            virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const override
+            {
+            	(void)pt;
+            	(void)boundary_id;
+            	return 0.0;
+            }
+
+            virtual std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const override
+			      {
+              // the whole brain surface is drained except from the loaded part
+		        	return std::make_pair(0,2);
+		        }
+
+    		    // Define Dirichlet load, definition in derived classes
+    		    virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override = 0;
+    };
+
+    template <int dim>
+    class FullBrainIndenter : public FullBrainBase<dim>
+    {
+        public:
+            FullBrainIndenter (const Parameters::AllParameters &parameters) : FullBrainBase<dim> (parameters) {}
+            virtual ~FullBrainIndenter () {}
+
+        private:
+            virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
+            {
+                std::vector<double> displ_incr (dim, 0.0); //vector of length dim with zero entries
+
+                if ((boundary_id == 1) && (direction == 1)) {
+                    const double final_displ = this->parameters.load;
+                    const double final_load_time = this->parameters.end_load_time;
+                    const double current_time = this->time->get_current();
+                    const double delta_time = this->time->get_delta_t();
+
+                    double current_displ = 0.0;
+                    double previous_displ = 0.0;
+
+                    if (current_time <= final_load_time) {
+                        current_displ = (current_time/final_load_time) * final_displ;
+
+                        if (current_time > delta_time)
+                              previous_displ = ((current_time-delta_time)/final_load_time) * final_displ;
+
+                        displ_incr[direction] = current_displ - previous_displ;
+                    } else
+                        displ_incr[direction] = 0.000000001;
+                }
+            return displ_incr;  
+            };
+    };
 }
 
 // @sect3{Main function}
@@ -13838,9 +14187,10 @@ int main (int argc, char *argv[])
   using namespace NonLinearPoroViscoElasticity;
 
   //const unsigned int n_tbb_processes = 1;
-  const unsigned int n_tbb_processes = Utilities::string_to_int(std::string(argv[1]));
-  Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, n_tbb_processes);
-
+  const unsigned int n_tbb_processes = dealii::Utilities::string_to_int(std::string(argv[1]));
+ // std::cout << "argc = " << argc << ", argv[1] " << argv[1] << ", argv[2] " << argv[2] << ", tbb " << n_tbb_processes << std::endl;
+  dealii::Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, n_tbb_processes);
+ // dealii::Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, numbers::invalid_unsigned_int);
   try
     {
 	  std::string parameters_in (argv[2]);
@@ -13953,6 +14303,11 @@ int main (int argc, char *argv[])
     	BrainRheometerLTMRelaxationTensionCompressionQuarter<3> solid_3d(parameters);
     	solid_3d.run();
       }
+      else if (parameters.geom_type == "brain_rheometer_cyclic_relaxation_quarter")
+      {
+    	BrainRheometerLTMCyclicRelaxationQuarter<3> solid_3d(parameters);
+    	solid_3d.run();
+      }
       else if (parameters.geom_type == "brain_nanoindentation_sinus")
       {
         BrainNanoSpherIndentSinusoidalLoad<3> solid_3d(parameters);
@@ -13993,6 +14348,11 @@ int main (int argc, char *argv[])
         SlidingIndenterRampLoad<3> solid_3d(parameters);
         solid_3d.run();
       }
+      else if (parameters.geom_type == "full_brain_indenter")
+      {
+        FullBrainIndenter<3> solid_3d(parameters);
+        solid_3d.run();
+      }
       else
       {
         AssertThrow(false, ExcMessage("Problem type not defined. Current setting: " + parameters.geom_type));
@@ -14001,7 +14361,7 @@ int main (int argc, char *argv[])
     }
   catch (std::exception &exc)
     {
-      if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+      if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
       {
           std::cerr << std::endl << std::endl
                     << "----------------------------------------------------"
@@ -14016,7 +14376,7 @@ int main (int argc, char *argv[])
     }
   catch (...)
     {
-      if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+      if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
       {
           std::cerr << std::endl << std::endl
                     << "----------------------------------------------------"
