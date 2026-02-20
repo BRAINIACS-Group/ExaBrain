@@ -6,3 +6,6 @@ nonlinear-poro-viscoelasticity
 .cproject
 .vscode
 compile_commands.json
+CMakeCache.txt
+Makefile
+cmake_install.cmake
