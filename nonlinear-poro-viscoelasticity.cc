@@ -90,6 +90,7 @@
 #include <deal.II/lac/trilinos_sparsity_pattern.h>
 #include <deal.II/lac/trilinos_solver.h>
 #include <deal.II/lac/trilinos_vector.h>
+#include <deal.II/lac/solver_gmres.h>
 #include <deal.II/lac/sparse_direct.h>
 
 #include <deal.II/lac/block_vector.h>
@@ -109,6 +110,7 @@
 #include <Teuchos_ParameterList.hpp>
 #include <Epetra_LinearProblem.h>
 #include <Amesos_Mumps.h>
+#include <dmumps_c.h>
 
 #include <iostream>
 #include <fstream>
@@ -1499,8 +1501,8 @@ private:
 
 
 
-
-static constexpr bool PREFER_TRILINOS_OVER_MUMPS = true;
+#define LINUX_SYSTEM 0
+#define MACOS_SYSTEM 1
 
 // We create a namespace for everything that relates to
 // the nonlinear poro-viscoelastic formulation,
@@ -2035,6 +2037,7 @@ namespace NonLinearPoroViscoElasticity
         double       tol_f;
         double       tol_u;
         double       tol_p_fluid;
+        std::string  lin_solver;
 
         static void
         declare_parameters(ParameterHandler &prm);
@@ -2062,6 +2065,9 @@ namespace NonLinearPoroViscoElasticity
           prm.declare_entry("Tolerance pore pressure", "1.0e-6",
                             Patterns::Double(0.0),
                             "Pore pressure error tolerance");
+          prm.declare_entry("Linear solver", "MumpsDirect",
+                            Patterns::Selection("MumpsDirect|AmesosMumpsDirect|AmesosMumpsDirectManual|SuperLUdist|BLRGmres|BLRNewt"),
+                            "Type of linear solver");
         }
         prm.leave_subsection();
       }
@@ -2074,6 +2080,7 @@ namespace NonLinearPoroViscoElasticity
           tol_f = prm.get_double("Tolerance force");
           tol_u = prm.get_double("Tolerance displacement");
           tol_p_fluid =  prm.get_double("Tolerance pore pressure");
+          lin_solver = prm.get("Linear solver");
         }
         prm.leave_subsection();
       }
@@ -4487,7 +4494,8 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             void solve_nonlinear_timestep(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT);
 
             //Solve the linearized equations using a direct solver
-            void solve_linear_system ( TrilinosWrappers::MPI::BlockVector &newton_update_OUT);
+            void solve_linear_system (TrilinosWrappers::MPI::BlockVector &newton_update_OUT);
+            void solve_linear_system (TrilinosWrappers::MPI::BlockVector &newton_update_OUT, SparseDirectMUMPS &precon);
 
             //Retrieve the  solution
             TrilinosWrappers::MPI::BlockVector
@@ -5328,6 +5336,25 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         //Declare and initialize iterator for the Newton-Raphson algorithm steps
         unsigned int newton_iteration = 0;
 
+        #if LINUX_SYSTEM
+            #define BLRICNTL(I) BLRicntl[(I)-1]
+
+            SparseDirectMUMPS::AdditionalData data_mumps;
+            data_mumps.blr_factorization = true;
+            data_mumps.output_details = false;
+            data_mumps.blr.lowrank_threshold = 1e-4; // default = 1e-8
+            data_mumps.blr.blr_ucfs = true;          // use UCFs
+            SparseDirectMUMPS preconditioner(data_mumps, mpi_communicator);
+
+            int *BLRicntl = preconditioner.get_icntl();
+            double *BLRcntl = preconditioner.get_cntl();
+
+            BLRcntl[0] = 0; // disables pivoting
+
+            // BLRICNTL(40) = 1; // mixed prec BLR, only on DEV version
+            // BLRICNTL(28) = 2; //Parallel analysis
+        #endif
+
         //Iterate until error is below tolerance or max number iterations are reached
         while(newton_iteration < parameters.max_iterations_NR)
           {
@@ -5397,9 +5424,22 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 //            }
 
             //Solve the linearized system
-            //constraints.distribute(newton_update);
-            solve_linear_system(newton_update);
-            constraints.distribute(newton_update);
+            if (this->parameters.lin_solver == "BLRNewt") {
+                #if LINUX_SYSTEM
+                    if (newton_iteration == 0) {
+                        TimerOutput::Scope timing_section(timerconsole, "Preconditioner");
+                        TimerOutput::Scope timer_section(timerfile, "Preconditioner");
+                        preconditioner.initialize(tangent_matrix_nb);
+                    }
+                    solve_linear_system(newton_update, preconditioner);
+                #endif
+                #if MACOS_SYSTEM
+                    Assert (false, ExcMessage("BLRNewt not implemented on MACOS"));
+                #endif
+            } else {
+                solve_linear_system(newton_update);
+            }
+                constraints.distribute(newton_update);
 
             //Compute the displacement error
             get_error_update(newton_update, error_update);
@@ -6132,48 +6172,84 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 	}
 
 
-     //Solve the linearized equations
-     template <int dim>
-     void Solid<dim>::solve_linear_system( TrilinosWrappers::MPI::BlockVector &newton_update_OUT)
-     {
+    //Solve the linearized equations
+    template <int dim>
+    void Solid<dim>::solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT)
+    {
+        TimerOutput::Scope timing_section(timerconsole, "Linear solver");
+        TimerOutput::Scope timer_section(timerfile, "Linear solver");
+        pcout     << " SLV " << std::flush;
+        outfile   << " SLV " << std::flush;
 
-           TimerOutput::Scope timing_section(timerconsole, "Linear solver");
-           TimerOutput::Scope timer_section(timerfile, "Linear solver");
-           pcout     << " SLV " << std::flush;
-           outfile   << " SLV " << std::flush;
+        TrilinosWrappers::MPI::Vector newton_update_nb;
+        newton_update_nb.reinit(locally_owned_dofs, mpi_communicator);
 
-           TrilinosWrappers::MPI::Vector newton_update_nb;
-           newton_update_nb.reinit(locally_owned_dofs, mpi_communicator);
+        #if LINUX_SYSTEM
+            if (this->parameters.lin_solver == "SuperLUdist") {
+                SolverControl solver_control (tangent_matrix_nb.m(), 1.0e-8 * system_rhs_nb.l2_norm());		// (maximum number of iterations, tolerance)
+                TrilinosWrappers::SolverDirect::AdditionalData additional_data;		                        // select solver type
+                additional_data.solver_type = "Superludist";						                                  // default: Amesos_Klu
+                TrilinosWrappers::SolverDirect solver (solver_control, additional_data);
+                solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb);	                        // linear system (A, x, b) 
+            } else if (this->parameters.lin_solver == "AmesosMumpsDirect") {
+                SolverControl solver_control (tangent_matrix_nb.m(), 1.0e-8 * system_rhs_nb.l2_norm());		// (maximum number of iterations, tolerance)
+                TrilinosWrappers::SolverDirect::AdditionalData additional_data;		                        // select solver type
+                additional_data.solver_type = "Amesos_Mumps";						                                  // default: Amesos_Klu
+                TrilinosWrappers::SolverDirect solver (solver_control, additional_data);
+                solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb);	                        // linear system (A, x, b) 
+            } else if (this->parameters.lin_solver == "MumpsDirect") {
+                SparseDirectMUMPS::AdditionalData data_mumps;
+                SparseDirectMUMPS direct_solver_mumps(data_mumps, mpi_communicator);
+                direct_solver_mumps.get_icntl()[13] = 40;                                                 // Index 13 entspricht ICNTL(14)
+                direct_solver_mumps.initialize(tangent_matrix_nb);
+                direct_solver_mumps.vmult(newton_update_nb, system_rhs_nb);                               // segfault in here on Apple Silicon
+            } else if (this->parameters.lin_solver == "BLRGmres") {
+                SparseDirectMUMPS::AdditionalData data_mumps;
+                data_mumps.blr_factorization = true;
+                data_mumps.output_details = true;
+                data_mumps.blr.lowrank_threshold = 1e-4;                                                  // default = 1e-8
+                data_mumps.blr.blr_ucfs = true;                                                           // use UCFs
+                SparseDirectMUMPS direct_solver_mumps(data_mumps, mpi_communicator);
 
-if constexpr (PREFER_TRILINOS_OVER_MUMPS){
-                  SolverControl solver_control (tangent_matrix_nb.m(),					// (maximum number of iterations, tolerance)
-                  1.0e-8 * system_rhs_nb.l2_norm());
-                  TrilinosWrappers::SolverDirect::AdditionalData additional_data;		// select solver type
-                  additional_data.solver_type = "Amesos_Mumps";						// default: Amesos_Klu Superludist
-                  TrilinosWrappers::SolverDirect solver (solver_control, additional_data);
-                  solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb);	// linear system (A, x, b) 
+                int *BLRicntl = direct_solver_mumps.get_icntl();
+                double *BLRcntl = direct_solver_mumps.get_cntl();
 
-                  // GMRES 
-                  // SolverControl solver_control(1000, 1e-12);
-                  // TrilinosWrappers::SolverGMRES::AdditionalData solver_data (false, 30);
-                  //solver_data.gmres_restart_parameter = 30; // Anzahl der Iterationen bis zum Restart
-                  //solver_data.num_temp_vectors = 30;
-                  // TrilinosWrappers::PreconditionILU preconditioner;
-                  // preconditioner.initialize(tangent_matrix_nb);
+                BLRcntl[0] = 0;                                                                           // disables pivoting (faster, saves memory)
 
-                  // TrilinosWrappers::SolverGMRES solver(solver_control, solver_data);
-                  // solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb, preconditioner);
-    
-                  // pcout << "GMRES konvergiert nach " << solver_control.last_step() << " Iterationen." << std::endl;
+                // BLRICNTL(40) = 1;                                                                      // mixed prec BLR
+                // BLRICNTL(28) = 2;                                                                      // Parallel analysis
 
-          } else {
-                  // direct Mumps interface for HPC clusters
-                  // SparseDirectMUMPS::AdditionalData data_mumps;
-                  // SparseDirectMUMPS direct_solver_mumps(data_mumps, mpi_communicator);
-                  // direct_solver_mumps.get_icntl()[13] = 40; // Index 13 entspricht ICNTL(14)
-                  // direct_solver_mumps.initialize(tangent_matrix_nb);
-                  // direct_solver_mumps.vmult(newton_update_nb, system_rhs_nb); // segfault in here
+                direct_solver_mumps.initialize(tangent_matrix_nb);
+                direct_solver_mumps.vmult(newton_update_nb, system_rhs_nb);
 
+                // Turn off the output for the GMRES bro
+                BLRICNTL(1) = 0;
+                BLRICNTL(2) = 0;
+                BLRICNTL(3) = 0;
+                BLRICNTL(4) = 0;
+                SolverControl solver_control(120, 1e-12);
+                SolverGMRES<TrilinosWrappers::MPI::Vector>::AdditionalData gmres_data;
+                gmres_data.right_preconditioning = false;
+                gmres_data.max_basis_size = 20; // default
+                gmres_data.use_default_residual = true;
+                SolverGMRES<TrilinosWrappers::MPI::Vector> solver(solver_control, gmres_data);
+                solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb, direct_solver_mumps);
+            }
+        #endif
+        #if MACOS_SYSTEM
+            if (this->parameters.lin_solver == "SuperLUdist") {
+                SolverControl solver_control (tangent_matrix_nb.m(), 1.0e-8 * system_rhs_nb.l2_norm());		// (maximum number of iterations, tolerance)
+                TrilinosWrappers::SolverDirect::AdditionalData additional_data;		                        // select solver type
+                additional_data.solver_type = "Superludist";						                                  // default: Amesos_Klu
+                TrilinosWrappers::SolverDirect solver (solver_control, additional_data);
+                solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb);	                        // linear system (A, x, b) 
+            } else if (this->parameters.lin_solver == "AmesosMumpsDirect") {
+                SolverControl solver_control (tangent_matrix_nb.m(), 1.0e-8 * system_rhs_nb.l2_norm());		// (maximum number of iterations, tolerance)
+                TrilinosWrappers::SolverDirect::AdditionalData additional_data;		                        // select solver type
+                additional_data.solver_type = "Amesos_Mumps";						                                  // default: Amesos_Klu
+                TrilinosWrappers::SolverDirect solver(solver_control, additional_data);
+                solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb);	                        // linear system (A, x, b) 
+            } else if (this->parameters.lin_solver == "AmesosMumpsDirectManual") {
                   // Manual solver setup for Mac M4
                   Epetra_LinearProblem problem(const_cast<Epetra_CrsMatrix*>(&tangent_matrix_nb.trilinos_matrix()), 
                                                static_cast<Epetra_MultiVector*>(const_cast<Epetra_FEVector*>(&newton_update_nb.trilinos_vector())), 
@@ -6203,18 +6279,214 @@ if constexpr (PREFER_TRILINOS_OVER_MUMPS){
                   solver->Solve();
                   // Wichtig bei manueller Erstellung: Speicher freigeben
                   delete solver;
+            } else if (this->parameters.lin_solver == "BLRGmres") {
+                  //AssertThrow(false, dealii::ExcMessage("BLRGmres noch nicht einsatzfähig!"));
+                  class MumpsBLRPreconditioner : public dealii::TrilinosWrappers::PreconditionBase {
+                  public:
+                      MumpsBLRPreconditioner(Amesos_BaseSolver* s, 
+                                            dealii::TrilinosWrappers::MPI::Vector& sol, 
+                                            dealii::TrilinosWrappers::MPI::Vector& rhs)
+                        : amesos_solver(s), sol_ref(sol), rhs_ref(rhs) {}
+
+                      // 1. Die vmult Funktion (das 'override' hier sollte funktionieren)
+                      void vmult(dealii::TrilinosWrappers::MPI::Vector &dst, 
+                                const dealii::TrilinosWrappers::MPI::Vector &src) const override {
+                          // std::cout << "--- MUMPS vmult aufgerufen ---" << std::endl; // MUSS erscheinen
+                          rhs_ref = src;           
+                          amesos_solver->Solve();  
+                          dst = sol_ref;
+                          // std::cout << "Precond norm: " << dst.l2_norm() << std::endl;           
+                      }
+
+                      // 2. Die tr_operator Funktion ohne 'override' und mit korrekter Epetra-Kette
+                      const Epetra_Operator & tr_operator() const {
+                          // Amesos -> Problem -> Matrix (ist ein Epetra_RowMatrix, was von Epetra_Operator erbt)
+                          return *(amesos_solver->GetProblem()->GetMatrix());
+                      }
+
+                  private:
+                      Amesos_BaseSolver* amesos_solver;
+                      dealii::TrilinosWrappers::MPI::Vector& sol_ref;
+                      dealii::TrilinosWrappers::MPI::Vector& rhs_ref;
+                  };
+
+// 1. Der Helper (unverändert, muss MDS als Member haben)
+class AmesosMumpsHelper : public Amesos_Mumps {
+public:
+    static DMUMPS_STRUC_C* get_struct_unsafe(Amesos_BaseSolver* solver) {
+        // static_cast erzwingt den Zugriff, auch wenn RTTI auf dem Mac zickt
+        auto* helper = static_cast<AmesosMumpsHelper*>(solver);
+        return &(helper->MDS); 
+    }
+};               
+
+                // ... In deiner Newton-Iteration oder Solve-Methode ...
+
+                // 2. Amesos Problem-Definition
+                // Nutzt const_cast, da Epetra (Trilinos) intern keine const-Matrizen/Vektoren führt
+                Epetra_LinearProblem problem(
+                    const_cast<Epetra_CrsMatrix*>(&tangent_matrix_nb.trilinos_matrix()), 
+                    &newton_update_nb.trilinos_vector(), 
+                    &system_rhs_nb.trilinos_vector()
+                );
+
+                // 3. Amesos-MUMPS Instanz erstellen
+                Amesos factory;
+                Amesos_BaseSolver* mumps_ptr = factory.Create("Amesos_Mumps", problem);
+                AssertThrow(mumps_ptr != nullptr, dealii::ExcMessage("Amesos_Mumps nicht gefunden!"));
+
+                // // 4. MUMPS-BLR Parameter setzen
+                Teuchos::ParameterList params;
+                auto &mumps_sub = params.sublist("mumps");
+                // mumps_sub.set("CNTL(1)", 0.0);
+                mumps_sub.set("ICNTL(35)", 1);    // BLR aktivieren
+                // mumps_sub.set("ICNTL(36)", 1);    // BLR Variante
+                // mumps_sub.set("CNTL(6)", 1.0E-04);   // BLR Toleranz (Tuning-Faktor!)
+                // mumps_sub.set("ICNTL(14)", 60);   // Arbeitsplatz-Puffer (bei Fehlern erhöhen)
+                // mumps_sub.set("ICNTL(1)", 6); // Errors auf stdout
+                // mumps_sub.set("ICNTL(2)", 6); // Diagnostics auf stdout
+                // mumps_sub.set("ICNTL(3)", 6); // Global info auf stdout
+                // mumps_sub.set("ICNTL(4)", 2); // Level 2 oder 3 für Details
+                mumps_ptr->SetParameters(params);
+
+                // 5. Einmalige Faktorisierung (teuer, aber nur 1x vor GMRES)
+                mumps_ptr->SymbolicFactorization();
+
+// 3. JETZT DEN HACK ÜBERSCHREIBEN (VOR DER NUMERIK)
+DMUMPS_STRUC_C* mumps_struct = AmesosMumpsHelper::get_struct_unsafe(mumps_ptr);
+if (mumps_struct) {
+    // Erzwinge BLR erneut (Sicherheits-Check)
+    mumps_struct->icntl[34] = 1;      // ICNTL(35)
+    mumps_struct->icntl[23] = 1;      // ICNTL(24)
+    mumps_struct->cntl[6]   = 1e-12;   // CNTL(7) - DEIN TUNING!
+    mumps_struct->cntl[0]   = 1.0;      // disable pivoting
+
+    // ERZWINGE OUTPUT (Hier liegt der Fehler - wir biegen die Kanäle auf stdout um)
+    mumps_struct->icntl[0] = 6; // ICNTL(1)
+    mumps_struct->icntl[1] = 6; // ICNTL(2)
+    mumps_struct->icntl[2] = 6; // ICNTL(3)
+    mumps_struct->icntl[3] = 1; // ICNTL(4) - Level 3 für volle BLR-Statistik
+
+    // printf(">>> HACK FINAL: BLR=%d, CNTL(7)=%e, ICNTL(4)=%d\n", 
+    //        mumps_struct->icntl[34], mumps_struct->cntl[6], mumps_struct->icntl[3]);
+    // fflush(stdout);
+}
+
+                mumps_ptr->NumericFactorization();
+
+if (mumps_struct != nullptr) {
+    int my_ram = mumps_struct->info[10]; // INFO(11) auf diesem Prozess
+    int max_ram = 0;
+    int total_ram = 0;
+
+    // Nutze MPI-Reduktion, um die Werte zu sammeln
+    MPI_Reduce(&my_ram, &max_ram, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&my_ram, &total_ram, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
+        std::cout << ">>> Peak RAM auf einem Kern: " << max_ram << " MB" << std::endl;
+        std::cout << ">>> Gesamt RAM aller Kerne:  " << total_ram << " MB" << std::endl;
+    }
+}
+
+                // 6. GMRES Setup
+                // dealii::SolverControl solver_control(1000, 1e-12, true, true);
+                // solver_control.enable_history_data();
+                // dealii::TrilinosWrappers::SolverGMRES::AdditionalData gmres_data;
+                // //gmres_data.gmres_restart_parameter = 50; // Wichtig bei schwierigen Problemen
+                // // gmres_data.max_basis_size = 50;
+                // dealii::TrilinosWrappers::SolverGMRES gmres(solver_control);
+
+                // Den korrekt geerbten Preconditioner erstellen
+                MumpsBLRPreconditioner mumps_precond(mumps_ptr, newton_update_nb, system_rhs_nb);
+                //newton_update_nb = 0;
+
+// dealii::TrilinosWrappers::MPI::Vector residual(system_rhs_nb.locally_owned_elements(), mpi_communicator);
+// tangent_matrix_nb.vmult(residual, newton_update_nb); // r = A * x
+// residual.sadd(-1.0, 1.0, system_rhs_nb);            // r = -1.0 * r + 1.0 * b  => r = b - Ax
+// // 3. Ausgabe der Normen
+// const double l2_norm_rhs = system_rhs_nb.l2_norm();
+// const double l2_norm_res = residual.l2_norm();
+// std::cout << "--- Residuum Check ---" << std::endl;
+// std::cout << "L2-Norm der Rechten Seite (b): " << l2_norm_rhs << std::endl;
+// std::cout << "L2-Norm des Startresiduums (r): " << l2_norm_res << std::endl;
+
+                //mumps_precond.vmult(newton_update_nb, system_rhs_nb);
+
+// dealii::TrilinosWrappers::MPI::Vector residual2(system_rhs_nb.locally_owned_elements(), mpi_communicator);
+// tangent_matrix_nb.vmult(residual2, newton_update_nb); // r = A * x
+// residual2.sadd(-1.0, 1.0, system_rhs_nb);            // r = -1.0 * r + 1.0 * b  => r = b - Ax
+// // 3. Ausgabe der Normen
+// const double l2_norm_rhs2 = system_rhs_nb.l2_norm();
+// const double l2_norm_res2 = residual2.l2_norm();
+// std::cout << "--- Residuum Check ---" << std::endl;
+// std::cout << "L2-Norm der Rechten Seite (b): " << l2_norm_rhs2 << std::endl;
+// std::cout << "L2-Norm des Startresiduums (r): " << l2_norm_res2 << std::endl;
+
+                // Jetzt passt die Signatur zu Candidate 1 (Zeile 172 in trilinos_solver.h)
+                // gmres.solve(tangent_matrix_nb, 
+                //             newton_update_nb, 
+                //             system_rhs_nb, 
+                //             mumps_precond);
+                      
+SolverControl solver_control(120, 1.0e-14);
+                SolverGMRES<TrilinosWrappers::MPI::Vector>::AdditionalData gmres_data;
+                gmres_data.right_preconditioning = false;
+                gmres_data.max_basis_size = 50; // default
+                gmres_data.use_default_residual = true;
+                SolverGMRES<TrilinosWrappers::MPI::Vector> solver(solver_control, gmres_data);
+                solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb, mumps_precond);
+
+                // Sofortiger Output nach dem Solve
+if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
+    std::printf("\n>>> GMRES FERTIG in %d Schritten. Residuum: %e\n", 
+                solver_control.last_step(), solver_control.last_value());
+    std::fflush(stdout);
+}
+
+                // Ressourcen-Management (MUMPS manuell löschen, da Amesos Factory Raw-Pointer nutzt)
+                delete mumps_ptr;
             }
 
-           // Copy the non-block solution back to block system
-           for (unsigned int i=0; i<locally_owned_dofs.n_elements(); ++i)
-             {
-               const types::global_dof_index idx_i
-                              = locally_owned_dofs.nth_index_in_set(i);
-               newton_update_OUT(idx_i) = newton_update_nb(idx_i);
-             }
-           newton_update_OUT.compress(VectorOperation::insert);
-     }
+        #endif
+        
+        // Copy the non-block solution back to block system
+        for (unsigned int i=0; i<locally_owned_dofs.n_elements(); ++i) {
+                const types::global_dof_index idx_i = locally_owned_dofs.nth_index_in_set(i);
+                newton_update_OUT(idx_i) = newton_update_nb(idx_i);
+            }
+        newton_update_OUT.compress(VectorOperation::insert);
+    }
 
+    //Solve the linearized equations
+    template <int dim>
+    void Solid<dim>::solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, SparseDirectMUMPS &precon)
+    {
+        TimerOutput::Scope timing_section(timerconsole, "Linear solver");
+        TimerOutput::Scope timer_section(timerfile, "Linear solver");
+        pcout     << " SLV " << std::flush;
+        outfile   << " SLV " << std::flush;
+
+        TrilinosWrappers::MPI::Vector newton_update_nb;
+        newton_update_nb.reinit(locally_owned_dofs, mpi_communicator);
+
+        if (this->parameters.lin_solver == "BLRNewt") {
+            SolverControl solver_control(120, 1e-12);
+            SolverGMRES<TrilinosWrappers::MPI::Vector>::AdditionalData gmres_data;
+            gmres_data.right_preconditioning = false;
+            gmres_data.max_basis_size = 20; // default
+            gmres_data.use_default_residual = true;
+            SolverGMRES<TrilinosWrappers::MPI::Vector> solver(solver_control, gmres_data);
+            solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb, precon);
+        }
+
+        // Copy the non-block solution back to block system
+        for (unsigned int i=0; i<locally_owned_dofs.n_elements(); ++i) {
+                const types::global_dof_index idx_i = locally_owned_dofs.nth_index_in_set(i);
+                newton_update_OUT(idx_i) = newton_update_nb(idx_i);
+            }
+        newton_update_OUT.compress(VectorOperation::insert);
+    }
 
     //Class to compute gradient of the pressure
 	template <int dim>
