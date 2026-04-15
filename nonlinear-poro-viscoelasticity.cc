@@ -111,6 +111,9 @@
 #include <Epetra_LinearProblem.h>
 #include <Amesos_Mumps.h>
 #include <dmumps_c.h>
+#include <EpetraExt_RowMatrixOut.h>
+#include <Epetra_RowMatrix.h>
+#include <EpetraExt_MultiVectorOut.h>
 
 #include <iostream>
 #include <fstream>
@@ -6183,6 +6186,16 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         TrilinosWrappers::MPI::Vector newton_update_nb;
         newton_update_nb.reinit(locally_owned_dofs, mpi_communicator);
+        
+        if (true) {
+            std::string filename = parameters.output_directory + "/tangent_matrix.mtx";
+            EpetraExt::RowMatrixToMatrixMarketFile(filename.c_str(), tangent_matrix_nb.trilinos_matrix());
+            std::cout << "Successfully exported tangent matrix!"<< std::endl;
+
+            std::string rhs_path = parameters.output_directory + "/system_rhs.mtx";
+            EpetraExt::MultiVectorToMatrixMarketFile(rhs_path.c_str(), system_rhs_nb.trilinos_vector());
+            std::cout << "RHS vector output complete!" << std::endl;
+        }
 
         #if LINUX_SYSTEM
             if (this->parameters.lin_solver == "SuperLUdist") {
@@ -6264,13 +6277,14 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
                   //params.set("PrintStatus", true);
                   //params.set("PrintTiming", true);
                   // WICHTIG: Die Sublist muss "mumps" heißen
-                  params.sublist("mumps").set("ICNTL(14)", 60);
+                  params.sublist("mumps").set("ICNTL(14)", 100);
+                  params.sublist("mumps").set("ICNTL(22)", 2);
                   // Matrix parallel verteilen (reduziert Speicherflaschenhals auf einem Kern)
                   //params.set("Reindex", true);
                   //params.sublist("mumps").set("ICNTL(18)", 3);
                   // BLR aktivieren
-                  //params.sublist("mumps").set("ICNTL(35)", 1);
-                  //params.sublist("mumps").set("CNTL(7)", 1e-4);
+                  params.sublist("mumps").set("ICNTL(35)", 1);
+                  params.sublist("mumps").set("CNTL(7)", 1e-4);
                   // Parameter an den Solver übergeben
                   solver->SetParameters(params);
                   // 3. Schrittweises Lösen (Amesos Standard-Workflow)
@@ -14262,8 +14276,10 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
         private:
             virtual void make_grid() override 
             {
-              // import external geometry: set path to file (TODO: add to parameter file)
+              // import external geometry: set path to file (TODO: add to parameter file) OAS1_0002_MR1_UCD_HR.inp
+              //std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_coarse.inp");
               std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_noCSF_superior.inp");
+              //std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_HR.inp");
               dealii::GridIn<dim> gridIn;
               gridIn.attach_triangulation(this->triangulation);
               gridIn.read_ucd(input_path);
@@ -14336,10 +14352,17 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
             {
               // Brain bottom is fully fixed in space
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
-                                                       2,
+                                                       200, // 2 for NR, HR but 200 for LR
                                                        Functions::ZeroFunction<dim>(this->n_components),
                                                        constraints,
                                                        (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
+
+              // sticky contact at indenter
+              VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                       1,
+                                                       Functions::ZeroFunction<dim>(this->n_components),
+                                                       constraints,
+                                                       (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->z_displacement)));
 
               // Brain surface drained except from loaded part
               if (this->time->get_timestep() < 2) {
@@ -14357,13 +14380,13 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
               }
               if (this->time->get_timestep() < 2) {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
-                                                          2,
+                                                          200, // 2 for NR, HR but 200 for LR
                                                           Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
                                                           constraints,
                                                           this->fe.component_mask(this->pressure));
               } else {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
-                                                          2,
+                                                          200, // 2 for NR, HR but 200 for LR
                                                           Functions::ZeroFunction<dim>(this->n_components),
                                                           constraints,
                                                           this->fe.component_mask(this->pressure));
@@ -14375,7 +14398,7 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
 
                   VectorTools::interpolate_boundary_values(
                       this->dof_handler_ref,
-                          100,
+                          1,
                           Functions::ConstantFunction<dim>(value[1],this->n_components), //TODO: dont use minus sign, work with sign function in get_dirichlet_load
                           constraints,
                           this->fe.component_mask(this->y_displacement));
