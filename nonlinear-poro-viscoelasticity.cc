@@ -4544,7 +4544,8 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             const Parameters::AllParameters &parameters;
 
             // Declare an instance of dealii Triangulation class (mesh)
-            parallel::shared::Triangulation<dim>  triangulation;
+            //parallel::shared::Triangulation<dim>  triangulation;
+            parallel::distributed::Triangulation<dim>  triangulation;
 
             // Keep track of the current time and the time spent evaluating certain functions
             std::shared_ptr<Time>    time;
@@ -4702,7 +4703,8 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         this_mpi_process (dealii::Utilities::MPI::this_mpi_process(mpi_communicator)),
         pcout(std::cout, this_mpi_process == 0),
         parameters(parameters),
-        triangulation(mpi_communicator,Triangulation<dim>::maximum_smoothing,false,parallel::shared::Triangulation<dim>::partition_zorder),
+        //triangulation(mpi_communicator,Triangulation<dim>::maximum_smoothing,false,parallel::shared::Triangulation<dim>::partition_zorder),
+        triangulation(mpi_communicator,Triangulation<dim>::maximum_smoothing),
         timerconsole( mpi_communicator,
                       pcout,
                       TimerOutput::summary,
@@ -5083,6 +5085,9 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
     template <int dim>
     void Solid<dim>::system_setup(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT)
     {
+        std::cout << "Lokale Zellen auf Prozess " << this_mpi_process 
+      << ": " << triangulation.n_locally_owned_active_cells() << std::endl;
+
         TimerOutput::Scope timing_section(timerconsole, "Setup system");
         TimerOutput::Scope timer_section(timerfile, "Setup system");
 
@@ -5092,8 +5097,11 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         // The DOF handler is initialised and we renumber the grid in an efficient manner.
         dof_handler_ref.distribute_dofs(fe);
-        DoFRenumbering::Cuthill_McKee(dof_handler_ref);
+
+        //DoFRenumbering::Cuthill_McKee(dof_handler_ref);  //order might need to change for block preconditioners
+        //DoFRenumbering::subdomain_wise(dof_handler_ref);
         DoFRenumbering::component_wise(dof_handler_ref, block_component);
+        //DoFRenumbering::Cuthill_McKee(dof_handler_ref);
 
         //hanging_node_constraints.clear();
         //DoFTools::make_hanging_node_constraints(dof_handler_ref,hanging_node_constraints);
@@ -5106,88 +5114,147 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
         dofs_per_block =
         DoFTools::count_dofs_per_fe_block(dof_handler_ref, block_component);
-        
+
         // Setup the sparsity pattern and tangent matrix
-        all_locally_owned_dofs = DoFTools::locally_owned_dofs_per_subdomain (dof_handler_ref);
-        std::vector<IndexSet> all_locally_relevant_dofs
-        = DoFTools::locally_relevant_dofs_per_subdomain (dof_handler_ref);
+        // all_locally_owned_dofs = DoFTools::locally_owned_dofs_per_subdomain (dof_handler_ref);
+        // std::vector<IndexSet> all_locally_relevant_dofs
+        // = DoFTools::locally_relevant_dofs_per_subdomain (dof_handler_ref);
+        // std::cout << "Here2! " << std::endl;
+        // locally_owned_dofs.clear();
+        // locally_owned_partitioning.clear();
+        // Assert(all_locally_owned_dofs.size() > this_mpi_process, ExcInternalError());
+        // locally_owned_dofs = all_locally_owned_dofs[this_mpi_process];
+        // std::cout << "Here3! " << std::endl;
+        // locally_relevant_dofs.clear();
+        // locally_relevant_partitioning.clear();
+        // Assert(all_locally_relevant_dofs.size() > this_mpi_process, ExcInternalError());
+        // locally_relevant_dofs = all_locally_relevant_dofs[this_mpi_process];
+        // 1. Hole direkt das IndexSet für diesen Prozess
+        locally_owned_dofs = dof_handler_ref.locally_owned_dofs();
 
-        locally_owned_dofs.clear();
-        locally_owned_partitioning.clear();
-        Assert(all_locally_owned_dofs.size() > this_mpi_process, ExcInternalError());
-        locally_owned_dofs = all_locally_owned_dofs[this_mpi_process];
-
+        // 2. Extrahiere die relevanten (Ghost) DoFs
         locally_relevant_dofs.clear();
-        locally_relevant_partitioning.clear();
-        Assert(all_locally_relevant_dofs.size() > this_mpi_process, ExcInternalError());
-        locally_relevant_dofs = all_locally_relevant_dofs[this_mpi_process];
+        DoFTools::extract_locally_relevant_dofs(dof_handler_ref, locally_relevant_dofs);
 
-        locally_owned_partitioning.reserve(n_blocks);
-        locally_relevant_partitioning.reserve(n_blocks);
+        // locally_owned_partitioning.reserve(n_blocks);
+        // locally_relevant_partitioning.reserve(n_blocks);
+        // std::cout << "Here5! " << std::endl;
+        // for (unsigned int b=0; b<n_blocks; ++b)
+        //   {
+        //     const types::global_dof_index idx_begin
+        //     = std::accumulate(dofs_per_block.begin(),
+        //                       std::next(dofs_per_block.begin(),b), 0);
+        //     const types::global_dof_index idx_end
+        //     = std::accumulate(dofs_per_block.begin(),
+        //                       std::next(dofs_per_block.begin(),b+1), 0);
+        //     locally_owned_partitioning.push_back(locally_owned_dofs.get_view(idx_begin, idx_end));
+        //     locally_relevant_partitioning.push_back(locally_relevant_dofs.get_view(idx_begin, idx_end));
+        //   }
+        
+        locally_owned_partitioning.clear();
+locally_relevant_partitioning.clear();
 
-        for (unsigned int b=0; b<n_blocks; ++b)
-          {
-            const types::global_dof_index idx_begin
-            = std::accumulate(dofs_per_block.begin(),
-                              std::next(dofs_per_block.begin(),b), 0);
-            const types::global_dof_index idx_end
-            = std::accumulate(dofs_per_block.begin(),
-                              std::next(dofs_per_block.begin(),b+1), 0);
-            locally_owned_partitioning.push_back(locally_owned_dofs.get_view(idx_begin, idx_end));
-            locally_relevant_partitioning.push_back(locally_relevant_dofs.get_view(idx_begin, idx_end));
-          }
+// Wir berechnen die Offsets der Blöcke basierend auf dofs_per_block
+for (unsigned int b=0; b<n_blocks; ++b)
+  {
+    const types::global_dof_index idx_begin
+      = std::accumulate(dofs_per_block.begin(),
+                        std::next(dofs_per_block.begin(), b), 0);
+    const types::global_dof_index idx_end
+      = std::accumulate(dofs_per_block.begin(),
+                        std::next(dofs_per_block.begin(), b + 1), 0);
 
-        //Print information on screen
-        pcout  << "\nTriangulation:\n"
-               << "  Number of active cells: "
-               << triangulation.n_active_cells()
-               << " (by partition:";
-        for (unsigned int p=0; p<n_mpi_processes; ++p)
-          pcout  << (p==0 ? ' ' : '+')
-                 << (GridTools::count_cells_with_subdomain_association (triangulation,p));
-        pcout << ")"
-              << std::endl;
-        pcout << "  Number of degrees of freedom: "
-              << dof_handler_ref.n_dofs()
-              << " (by partition:";
-        for (unsigned int p=0; p<n_mpi_processes; ++p)
-          pcout  << (p==0 ? ' ' : '+')
-                 << (DoFTools::count_dofs_with_subdomain_association (dof_handler_ref,p));
-        pcout << ")"
-              << std::endl;
-        pcout   << "  Number of degrees of freedom per block: "
-            << "[n_u, n_p_fluid] = ["
-            << dofs_per_block[u_block]
-            << ", "
-            << dofs_per_block[p_fluid_block]
-            << "]"
-            << std::endl;
+    // Jetzt erstellen wir die Teilansichten für den aktuellen Block
+    locally_owned_partitioning.push_back(locally_owned_dofs.get_view(idx_begin, idx_end));
+    locally_relevant_partitioning.push_back(locally_relevant_dofs.get_view(idx_begin, idx_end));
+  }
 
-        //Print information to file
-        outfile  << "\nTriangulation:\n"
-                 <<  "  Number of active cells: "
-                << triangulation.n_active_cells()
-                << " (by partition:";
-        for (unsigned int p=0; p<n_mpi_processes; ++p)
-          outfile << (p==0 ? ' ' : '+')
-                  << (GridTools::count_cells_with_subdomain_association (triangulation,p));
-        outfile << ")"
-                << std::endl;
-        outfile << "  Number of degrees of freedom: "
-                << dof_handler_ref.n_dofs()
-                << " (by partition:";
-        for (unsigned int p=0; p<n_mpi_processes; ++p)
-          outfile  << (p==0 ? ' ' : '+')
-                   << (DoFTools::count_dofs_with_subdomain_association (dof_handler_ref,p));
-        outfile << ")"
-                << std::endl;
-        outfile << "  Number of degrees of freedom per block: "
-            << "[n_u, n_p_fluid] = ["
-            << dofs_per_block[u_block]
-            << ", "
-            << dofs_per_block[p_fluid_block]
-            << "]"
-            << std::endl;
+        // //Print information on screen
+        // pcout  << "\nTriangulation:\n"
+        //        << "  Number of active cells: "
+        //        << triangulation.n_active_cells()
+        //        << " (by partition:";
+        // for (unsigned int p=0; p<n_mpi_processes; ++p)
+        //   pcout  << (p==0 ? ' ' : '+')
+        //          << (GridTools::count_cells_with_subdomain_association (triangulation,p));
+        // pcout << ")"
+        //       << std::endl;
+        // pcout << "  Number of degrees of freedom: "
+        //       << dof_handler_ref.n_dofs()
+        //       << " (by partition:";
+        // for (unsigned int p=0; p<n_mpi_processes; ++p)
+        //   pcout  << (p==0 ? ' ' : '+')
+        //          << (DoFTools::count_dofs_with_subdomain_association (dof_handler_ref,p));
+        // pcout << ")"
+        //       << std::endl;
+        // pcout   << "  Number of degrees of freedom per block: "
+        //     << "[n_u, n_p_fluid] = ["
+        //     << dofs_per_block[u_block]
+        //     << ", "
+        //     << dofs_per_block[p_fluid_block]
+        //     << "]"
+        //     << std::endl;
+
+        // //Print information to file
+        // outfile  << "\nTriangulation:\n"
+        //          <<  "  Number of active cells: "
+        //         << triangulation.n_active_cells()
+        //         << " (by partition:";
+        // for (unsigned int p=0; p<n_mpi_processes; ++p)
+        //   outfile << (p==0 ? ' ' : '+')
+        //           << (GridTools::count_cells_with_subdomain_association (triangulation,p));
+        // outfile << ")"
+        //         << std::endl;
+        // outfile << "  Number of degrees of freedom: "
+        //         << dof_handler_ref.n_dofs()
+        //         << " (by partition:";
+        // for (unsigned int p=0; p<n_mpi_processes; ++p)
+        //   outfile  << (p==0 ? ' ' : '+')
+        //            << (DoFTools::count_dofs_with_subdomain_association (dof_handler_ref,p));
+        // outfile << ")"
+        //         << std::endl;
+        // outfile << "  Number of degrees of freedom per block: "
+        //     << "[n_u, n_p_fluid] = ["
+        //     << dofs_per_block[u_block]
+        //     << ", "
+        //     << dofs_per_block[p_fluid_block]
+        //     << "]"
+        //     << std::endl;
+
+        // 1. Zellen pro Partition sammeln
+        unsigned int local_cells = triangulation.n_locally_owned_active_cells();
+        // gather gibt auf dem root_process (hier 0) einen std::vector zurück
+        std::vector<unsigned int> cells_per_partition = 
+            dealii::Utilities::MPI::gather(mpi_communicator, local_cells, 0);
+
+        // 2. DoFs pro Partition sammeln
+        unsigned int local_dofs = dof_handler_ref.n_locally_owned_dofs();
+        std::vector<unsigned int> dofs_per_partition = 
+            dealii::Utilities::MPI::gather(mpi_communicator, local_dofs, 0);
+
+        // 3. Ausgabe (pcout sorgt dafür, dass nur Rank 0 schreibt)
+        // WICHTIG: Da gather nur auf Rank 0 den vollen Vektor hat, 
+        // darf der Loop über cells_per_partition nur auf Rank 0 ausgeführt werden.
+        if (this_mpi_process == 0)
+        {
+            std::cout << "\nTriangulation:\n"
+                      << "  Number of active cells: " << triangulation.n_global_active_cells()
+                      << " (by partition:";
+            for (unsigned int p=0; p<n_mpi_processes; ++p)
+                std::cout << (p==0 ? " " : "+") << cells_per_partition[p];
+            std::cout << ")" << std::endl;
+
+            std::cout << "  Number of degrees of freedom: " << dof_handler_ref.n_dofs()
+                      << " (by partition:";
+            for (unsigned int p=0; p<n_mpi_processes; ++p)
+                std::cout << (p==0 ? " " : "+") << dofs_per_partition[p];
+            std::cout << ")" << std::endl;
+        }
+
+        // n_u und n_p_fluid können alle ausgeben, da dofs_per_block überall gleich ist
+        pcout << "  Number of degrees of freedom per block: "
+              << "[n_u, n_p_fluid] = [" << dofs_per_block[u_block]
+              << ", " << dofs_per_block[p_fluid_block] << "]" << std::endl;
 
         // We optimise the sparsity pattern to reflect this structure and prevent
         // unnecessary data creation for the right-diagonal block components.
@@ -5221,6 +5288,10 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         //Reinitialize the (sparse) tangent matrix with the given sparsity pattern.
         tangent_matrix.reinit (bsp);
 
+        pcout << "Memory consumption:" << std::endl;
+pcout << "  Triangulation: " << triangulation.memory_consumption() / 1024 / 1024 << " MB" << std::endl;
+pcout << "  Matrix (local): " << tangent_matrix.memory_consumption() / 1024 / 1024 << " MB" << std::endl;
+
         //Initialize the right hand side and solution vectors with number of DoFs
         system_rhs.reinit(locally_owned_partitioning, mpi_communicator);
         solution_n.reinit(locally_owned_partitioning, mpi_communicator);
@@ -5241,6 +5312,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         system_rhs_nb.reinit(locally_owned_dofs, mpi_communicator);
 
         //Set up the quadrature point history
+        std::cout << "Here! " << std::endl;
         setup_qph();
     }
 
@@ -5273,28 +5345,51 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         pcout     << "\nSetting up quadrature point data..." << std::endl;
         outfile   << "\nSetting up quadrature point data..." << std::endl;
 
-        //Create QPH data objects.
+        // //Create QPH data objects.
+        // quadrature_point_history.initialize(triangulation.begin_active(),
+        //                                     triangulation.end(), n_q_points);
+
+        // //Setup the initial quadrature point data using the info stored in parameters
+        // dealii::FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+        // cell (IteratorFilters::LocallyOwnedCell(),
+        //       dof_handler_ref.begin_active()),
+        // endc (IteratorFilters::LocallyOwnedCell(),
+        //       dof_handler_ref.end());
+        // for (; cell!=endc; ++cell)
+        //   {
+        //     Assert(cell->is_locally_owned(), ExcInternalError());
+        //     Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
+
+        //     const std::vector<std::shared_ptr<PointHistory<dim, ADNumberType> > >
+        //         lqph = quadrature_point_history.get_data(cell);
+        //     Assert(lqph.size() == n_q_points, ExcInternalError());
+
+        //     for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
+        //       lqph[q_point]->setup_lqp(parameters, time);
+        //   }
+
+        // 1. Initialisierung: Überprüfe, ob deine Speicherklasse MPI-fähig ist.
+        // Falls es eine dealii::CellDataStorage ist, ist sie meist okay.
         quadrature_point_history.initialize(triangulation.begin_active(),
                                             triangulation.end(), n_q_points);
 
-        //Setup the initial quadrature point data using the info stored in parameters
-        dealii::FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
-        cell (IteratorFilters::LocallyOwnedCell(),
-              dof_handler_ref.begin_active()),
-        endc (IteratorFilters::LocallyOwnedCell(),
-              dof_handler_ref.end());
-        for (; cell!=endc; ++cell)
-          {
-            Assert(cell->is_locally_owned(), ExcInternalError());
-            Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
+        // 2. Loop über lokale Zellen
+        for (const auto &cell : dof_handler_ref.active_cell_iterators())
+        {
+            if (cell->is_locally_owned()) // Diese Abfrage ist bei parallel::distributed PFLICHT
+            {
+                const std::vector<std::shared_ptr<PointHistory<dim, ADNumberType>>>
+                    lqph = quadrature_point_history.get_data(cell);
 
-            const std::vector<std::shared_ptr<PointHistory<dim, ADNumberType> > >
-                lqph = quadrature_point_history.get_data(cell);
-            Assert(lqph.size() == n_q_points, ExcInternalError());
-
-            for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
-              lqph[q_point]->setup_lqp(parameters, time);
-          }
+                for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
+                {
+                    // Hier springt er in die Material-Konstruktoren.
+                    // Prüfe: Nutzen diese Materialien intern Funktionen, 
+                    // die auf globale Daten zugreifen?
+                    lqph[q_point]->setup_lqp(parameters, time);
+                }
+            }
+        }
     }
 
     //Solve the non-linear system using a Newton-Raphson scheme
@@ -6174,7 +6269,6 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 		return det_F_change;
 	}
 
-
     //Solve the linearized equations
     template <int dim>
     void Solid<dim>::solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT)
@@ -6187,7 +6281,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         TrilinosWrappers::MPI::Vector newton_update_nb;
         newton_update_nb.reinit(locally_owned_dofs, mpi_communicator);
         
-        if (true) {
+        if (false) {
             std::string filename = parameters.output_directory + "/tangent_matrix.mtx";
             EpetraExt::RowMatrixToMatrixMarketFile(filename.c_str(), tangent_matrix_nb.trilinos_matrix());
             std::cout << "Successfully exported tangent matrix!"<< std::endl;
@@ -7926,53 +8020,99 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
         //}
        // seepage_vec_mean = dealii::Utilities::MPI::sum(seepage_vec_mean_mpi, mpi_communicator) / 6;
 
-      //  Extract solution for tracked vectors
-      // Copying an MPI::BlockVector into MPI::Vector is not possible,
-      // so we copy each block of MPI::BlockVector into an MPI::Vector
-      // And then we copy the MPI::Vector into "normal" Vectors
-        TrilinosWrappers::MPI::Vector solution_vector_u_MPI(solution_total.block(u_block));
-        TrilinosWrappers::MPI::Vector solution_vector_p_MPI(solution_total.block(p_fluid_block));
-        Vector<double> solution_u_vector(solution_vector_u_MPI);
-        Vector<double> solution_p_vector(solution_vector_p_MPI);
+      // //  Extract solution for tracked vectors
+      // // Copying an MPI::BlockVector into MPI::Vector is not possible,
+      // // so we copy each block of MPI::BlockVector into an MPI::Vector
+      // // And then we copy the MPI::Vector into "normal" Vectors
+      //   TrilinosWrappers::MPI::Vector solution_vector_u_MPI(solution_total.block(u_block));
+      //   TrilinosWrappers::MPI::Vector solution_vector_p_MPI(solution_total.block(p_fluid_block));
+      //   Vector<double> solution_u_vector(solution_vector_u_MPI);
+      //   Vector<double> solution_p_vector(solution_vector_p_MPI);
 
-        if (this_mpi_process == 0)
-        {
-            //Append the pressure solution vector to the displacement solution vector,
-            //creating a single solution vector equivalent to the original BlockVector
-            //so FEFieldFunction will work with the dof_handler_ref.
-            Vector<double> solution_vector(solution_p_vector.size()
-                                           +solution_u_vector.size());
+      //   if (this_mpi_process == 0)
+      //   {
+      //       //Append the pressure solution vector to the displacement solution vector,
+      //       //creating a single solution vector equivalent to the original BlockVector
+      //       //so FEFieldFunction will work with the dof_handler_ref.
+      //       Vector<double> solution_vector(solution_p_vector.size()
+      //                                      +solution_u_vector.size());
 
-            for (unsigned int d=0; d<(solution_u_vector.size()); ++d)
-                solution_vector[d] = solution_u_vector[d];
+      //       for (unsigned int d=0; d<(solution_u_vector.size()); ++d)
+      //           solution_vector[d] = solution_u_vector[d];
 
-            for (unsigned int d=0; d<(solution_p_vector.size()); ++d)
-                solution_vector[solution_u_vector.size()+d] = solution_p_vector[d];
+      //       for (unsigned int d=0; d<(solution_p_vector.size()); ++d)
+      //           solution_vector[solution_u_vector.size()+d] = solution_p_vector[d];
 
-            //Functions::FEFieldFunction<dim,DoFHandler<dim>,Vector<double>>
-            Functions::FEFieldFunction<dim,Vector<double>>
-            find_solution(dof_handler_ref, solution_vector);
+      //       //Functions::FEFieldFunction<dim,DoFHandler<dim>,Vector<double>>
+      //       Functions::FEFieldFunction<dim,Vector<double>>
+      //       find_solution(dof_handler_ref, solution_vector);
 
-            for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
-            {
-                Vector<double> update(dim+1);
-                Point<dim> pt_ref;
+      //       for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
+      //       {
+      //           Vector<double> update(dim+1);
+      //           Point<dim> pt_ref;
 
-                pt_ref[0]= tracked_vertices_IN[p][0];
-                pt_ref[1]= tracked_vertices_IN[p][1];
-                pt_ref[2]= tracked_vertices_IN[p][2];
+      //           pt_ref[0]= tracked_vertices_IN[p][0];
+      //           pt_ref[1]= tracked_vertices_IN[p][1];
+      //           pt_ref[2]= tracked_vertices_IN[p][2];
 
-               find_solution.vector_value(pt_ref, update);
+      //          find_solution.vector_value(pt_ref, update);
 
-               for (unsigned int d=0; d<(dim+1); ++d)
-               {
-                   //For values close to zero, set to 0.0
-                   if (abs(update[d])<1.5*parameters.tol_u)
-                       update[d] = 0.0;
-                   solution_vertices[p][d] = update[d];
-               }
-            }
+      //          for (unsigned int d=0; d<(dim+1); ++d)
+      //          {
+      //              //For values close to zero, set to 0.0
+      //              if (abs(update[d])<1.5*parameters.tol_u)
+      //                  update[d] = 0.0;
+      //              solution_vertices[p][d] = update[d];
+      //          }
+      //       }
+
+      // 1. KEINE Kopien in Vector<double> machen!
+      // Wir nutzen direkt 'solution_total'. Stelle sicher, dass dieser Ghost-Einträge hat.
+      // Falls nicht, erstelle kurz einen:
+      TrilinosWrappers::MPI::BlockVector solution_relevant;
+      solution_relevant.reinit(locally_owned_partitioning, 
+                              locally_relevant_partitioning, 
+                              mpi_communicator);
+      solution_relevant = solution_total; // Kopiert die Werte und synchronisiert Ghost-Dofs
+
+      // 2. Erstelle die FEFieldFunction auf ALLEN Kernen
+      // (Sie arbeitet direkt mit dem verteilten BlockVector)
+      Functions::FEFieldFunction<dim, TrilinosWrappers::MPI::BlockVector> 
+          find_solution(dof_handler_ref, solution_relevant);
+
+      // 3. Lokale Datensammlung
+      std::vector<double> local_updates(tracked_vertices_IN.size() * (dim + 1), 0.0);
+
+      for (unsigned int p = 0; p < tracked_vertices_IN.size(); ++p)
+      {
+          Point<dim> pt_ref(tracked_vertices_IN[p][0], 
+                            tracked_vertices_IN[p][1], 
+                            tracked_vertices_IN[p][2]);
+          Vector<double> update(dim + 1);
+          try {
+              find_solution.vector_value(pt_ref, update);
+              for (unsigned int d = 0; d < (dim + 1); ++d)
+                  local_updates[p * (dim + 1) + d] = (std::abs(update[d]) < 1.5 * parameters.tol_u) ? 0.0 : update[d];
+          } catch (...) { /* Punkt nicht hier */ }
+      }
+
+      // 4. Globale Reduktion (nur die kleinen Ergebnis-Arrays werden übertragen)
+      std::vector<double> global_updates(local_updates.size());
+      dealii::Utilities::MPI::sum(local_updates, mpi_communicator, global_updates);
+
+      // 5. Nur Prozess 0 speichert final
+      if (this_mpi_process == 0)
+      {
+          for (unsigned int p = 0; p < tracked_vertices_IN.size(); ++p)
+              for (unsigned int d = 0; d < (dim + 1); ++d)
+                  solution_vertices[p][d] = global_updates[p * (dim + 1) + d];
+      }
+
+
       // Write the results to the plotting file.
+      if (this_mpi_process == 0)
+        {
       // Add two blank lines between cycles in the cyclic loading examples so GNUPLOT can detect each cycle as a different block
             if ((parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
                 (parameters.geom_type == "Budday_cube_tension_compression")||
@@ -14277,8 +14417,8 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
             virtual void make_grid() override 
             {
               // import external geometry: set path to file (TODO: add to parameter file) OAS1_0002_MR1_UCD_HR.inp
-              //std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_coarse.inp");
-              std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_noCSF_superior.inp");
+              std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_coarse.inp");
+              //std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_noCSF_superior.inp");
               //std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_HR.inp");
               dealii::GridIn<dim> gridIn;
               gridIn.attach_triangulation(this->triangulation);
