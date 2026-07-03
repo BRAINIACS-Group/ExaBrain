@@ -4427,6 +4427,88 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             std::shared_ptr< Material_Darcy_Fluid<dim, NumberType> > fluid_material;
     };
 
+
+template <int dim>
+class MUMPSPreconditioner : public Subscriptor
+{
+public:
+  MUMPSPreconditioner()
+    : solver(nullptr), problem(nullptr), dummy_x(nullptr), dummy_b(nullptr)
+  {}
+
+  ~MUMPSPreconditioner()
+  {
+    clear();
+  }
+
+  void clear()
+  {
+    if (solver)  { delete solver;  solver = nullptr;  }
+    if (problem) { delete problem; problem = nullptr; }
+    if (dummy_x) { delete dummy_x; dummy_x = nullptr; }
+    if (dummy_b) { delete dummy_b; dummy_b = nullptr; }
+  }
+
+  void initialize(const TrilinosWrappers::SparseMatrix &matrix)
+  {
+    clear();
+
+    // Wir holen uns die native Epetra-Matrix
+    Epetra_CrsMatrix &epetra_matrix = const_cast<Epetra_CrsMatrix&>(matrix.trilinos_matrix());
+    
+    // Die exakte MPI-Map (Partitionierung) direkt aus der Matrix extrahieren
+    const Epetra_BlockMap &map = epetra_matrix.RowMap();
+
+    // Dummy-Vektoren direkt auf nativer Trilinos-Ebene erstellen (kein reinit nötig!)
+    dummy_x = new Epetra_FEVector(map);
+    dummy_b = new Epetra_FEVector(map);
+
+    // Genau wie in Ihrem funktionierenden Setup
+    problem = new Epetra_LinearProblem(
+      &epetra_matrix,
+      static_cast<Epetra_MultiVector*>(dummy_x),
+      static_cast<Epetra_MultiVector*>(dummy_b)
+    );
+
+    Amesos factory;
+    solver = factory.Create("Amesos_Mumps", *problem);
+    AssertThrow(solver != nullptr, ExcMessage("Amesos_Mumps nicht verfügbar!"));
+
+    Teuchos::ParameterList params;
+    params.sublist("mumps").set("ICNTL(14)", 200);
+    params.sublist("mumps").set("ICNTL(22)", 2);
+    params.set("Reindex", true);
+    solver->SetParameters(params);
+
+    // Teure Schritte einfrieren
+    solver->SymbolicFactorization();
+    solver->NumericFactorization();
+  }
+
+  void vmult(TrilinosWrappers::MPI::Vector &dst, const TrilinosWrappers::MPI::Vector &src) const
+  {
+    AssertThrow(solver != nullptr, ExcMessage("MUMPSPreconditioner wurde nicht initialisiert!"));
+
+    Epetra_LinearProblem *non_const_problem = const_cast<Epetra_LinearProblem*>(problem);
+    
+    // Dynamisch die Vektoren des aktuellen GMRES-Schritts einhängen
+    non_const_problem->SetLHS(static_cast<Epetra_MultiVector*>(&dst.trilinos_vector()));
+    non_const_problem->SetRHS(static_cast<Epetra_MultiVector*>(&const_cast<TrilinosWrappers::MPI::Vector&>(src).trilinos_vector()));
+
+    // Schneller Vorwärts-Rückwärts-Solve
+    solver->Solve();
+  }
+
+private:
+  Amesos_BaseSolver*    solver;
+  Epetra_LinearProblem* problem;
+  
+  // Als Zeiger deklariert für sauberes dynamisches Erstellen ohne deal.II-reinit
+  Epetra_FEVector*      dummy_x;
+  Epetra_FEVector*      dummy_b;
+};
+
+
 // @sect3{Nonlinear poro-viscoelastic solid}
 // The Solid class is the central class as it represents the problem at hand:
 // the nonlinear poro-viscoelastic solid
@@ -4497,8 +4579,9 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             void solve_nonlinear_timestep(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT);
 
             //Solve the linearized equations using a direct solver
-            void solve_linear_system (TrilinosWrappers::MPI::BlockVector &newton_update_OUT);
-            void solve_linear_system (TrilinosWrappers::MPI::BlockVector &newton_update_OUT, SparseDirectMUMPS &precon);
+            void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT);
+            void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, SparseDirectMUMPS &precon);
+            void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, MUMPSPreconditioner<dim> &precon);
 
             //Retrieve the  solution
             TrilinosWrappers::MPI::BlockVector
@@ -4636,7 +4719,6 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             //Declare an instance of dealii classes necessary for FE system set-up and assembly
             //Store elements of tangent matrix (indicated by SparsityPattern class) as sparse matrix (more efficient)
             TrilinosWrappers::BlockSparseMatrix tangent_matrix;
-            TrilinosWrappers::BlockSparseMatrix tangent_matrix_preconditioner;
             //Right hand side vector of forces
             TrilinosWrappers::MPI::BlockVector  system_rhs;
             //Total displacement values + pressure (accumulated solution to FE system)
@@ -4645,6 +4727,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
             // Non-block system for the direct solver. We will copy the block system into these to solve the linearized system of equations.
             TrilinosWrappers::SparseMatrix tangent_matrix_nb;
+            TrilinosWrappers::SparseMatrix tangent_matrix_precon_nb;
             TrilinosWrappers::MPI::Vector  system_rhs_nb;
 
             //We define variables to store norms and update norms and normalisation factors.
@@ -4687,6 +4770,10 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             // Print information to screen
             void print_conv_header();
             void print_conv_footer();
+
+            #if MACOS_SYSTEM
+            MUMPSPreconditioner<dim> mumps_preconditioner;
+            #endif
 
 //NOTE: In all functions, we pass by reference (&), so these functions work on the original copy (not a clone copy),
 //      modifying the input variables inside the functions will change them outside the function.
@@ -4769,6 +4856,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
           //Generate mesh
           make_grid();
+
           //Assign DOFs and create the stiffness and right-hand-side force vector
           system_setup(solution_delta);
           //initialize();
@@ -4902,6 +4990,9 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
               //NOTE: ideally, we should close the outfile here [ >> outfile.close (); ]
               //But if we do, then the timer output will not be printed. That is why we leave it open.
           }
+          #if MACOS_SYSTEM
+            mumps_preconditioner.clear();
+          #endif
 
     }
 
@@ -5289,8 +5380,8 @@ for (unsigned int b=0; b<n_blocks; ++b)
         tangent_matrix.reinit (bsp);
 
         pcout << "Memory consumption:" << std::endl;
-pcout << "  Triangulation: " << triangulation.memory_consumption() / 1024 / 1024 << " MB" << std::endl;
-pcout << "  Matrix (local): " << tangent_matrix.memory_consumption() / 1024 / 1024 << " MB" << std::endl;
+        pcout << "  Triangulation: " << triangulation.memory_consumption() / 1024 / 1024 << " MB" << std::endl;
+        pcout << "  Matrix (local): " << tangent_matrix.memory_consumption() / 1024 / 1024 << " MB" << std::endl;
 
         //Initialize the right hand side and solution vectors with number of DoFs
         system_rhs.reinit(locally_owned_partitioning, mpi_communicator);
@@ -5309,10 +5400,10 @@ pcout << "  Matrix (local): " << tangent_matrix.memory_consumption() / 1024 / 10
                                          false, this_mpi_process);
         sp.compress();
         tangent_matrix_nb.reinit (sp);
+        tangent_matrix_precon_nb.reinit (sp);
         system_rhs_nb.reinit(locally_owned_dofs, mpi_communicator);
 
         //Set up the quadrature point history
-        std::cout << "Here! " << std::endl;
         setup_qph();
     }
 
@@ -5396,8 +5487,6 @@ pcout << "  Matrix (local): " << tangent_matrix.memory_consumption() / 1024 / 10
     template <int dim>
     void Solid<dim>::solve_nonlinear_timestep(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT)
     {
-        //double start = MPI_Wtime();
-
     	//Print the load step
         pcout  << std::endl
                << "\nTimestep "
@@ -5532,7 +5621,14 @@ pcout << "  Matrix (local): " << tangent_matrix.memory_consumption() / 1024 / 10
                     solve_linear_system(newton_update, preconditioner);
                 #endif
                 #if MACOS_SYSTEM
-                    Assert (false, ExcMessage("BLRNewt not implemented on MACOS"));
+                    if ((time->get_timestep() % 5 == 1) && newton_iteration == 0) {
+                        TimerOutput::Scope timing_section(timerconsole, "Preconditioner");
+                        TimerOutput::Scope timer_section(timerfile, "Preconditioner");
+
+                        mumps_preconditioner.initialize(tangent_matrix_nb);
+                    }
+                    solve_linear_system(newton_update, mumps_preconditioner);
+                    //Assert (false, ExcMessage("BLRNewt not implemented on MACOS"));
                 #endif
             } else {
                 solve_linear_system(newton_update);
@@ -5582,20 +5678,12 @@ pcout << "  Matrix (local): " << tangent_matrix.memory_consumption() / 1024 / 10
             newton_update = 0.0;
             newton_iteration++;
           }
-
+        
+        // #if MACOS_SYSTEM
+        //   mumps_preconditioner.clear();
+        // #endif
         //If maximum allowed number of iterations for Newton algorithm are reached, print non-convergence message and abort program
         AssertThrow (newton_iteration < parameters.max_iterations_NR, ExcMessage("No convergence in nonlinear solver!"));
-
-        //double end = MPI_Wtime();
-
-        /*if (this_mpi_process == 0) {
-        	std::ofstream solve_nonlinear_timestep_time;
-        	solve_nonlinear_timestep_time.open(parameters.output_directory + "/solve_nonlinear_timestep_time", std::ofstream::app);
-        	solve_nonlinear_timestep_time << std::setprecision(6) << std::scientific;
-        	solve_nonlinear_timestep_time << std::setw(16) << this->time->get_current() << ","
-        			<< std::setw(16) << end - start << std::endl;
-        	solve_nonlinear_timestep_time.close();
-        }*/
     }
 
     //Prints the header for convergence info on console
@@ -6595,6 +6683,40 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
             }
         newton_update_OUT.compress(VectorOperation::insert);
     }
+
+    template <int dim>
+    void Solid<dim>::solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, MUMPSPreconditioner<dim> &precon)
+    {
+        TimerOutput::Scope timing_section(timerconsole, "Linear solver");
+        TimerOutput::Scope timer_section(timerfile, "Linear solver");
+        pcout     << " SLV " << std::flush;
+        outfile   << " SLV " << std::flush;
+
+        TrilinosWrappers::MPI::Vector newton_update_nb;
+        newton_update_nb.reinit(locally_owned_dofs, mpi_communicator);
+
+        if (this->parameters.lin_solver == "BLRNewt") {
+            // Exakt dieselben Einstellungen wie auf Linux
+            SolverControl solver_control(120, 1e-12);
+            SolverGMRES<TrilinosWrappers::MPI::Vector>::AdditionalData gmres_data;
+            gmres_data.right_preconditioning = false;
+            gmres_data.max_basis_size = 20; 
+            gmres_data.use_default_residual = true;
+            
+            SolverGMRES<TrilinosWrappers::MPI::Vector> solver(solver_control, gmres_data);
+            
+            // GMRES lösen mit dem Mac-spezifischen Vorkonditionierer
+            solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb, precon);
+        }
+
+        // Kopieren der nicht-geblockten Lösung zurück in das BlockSystem (identisch zu Linux)
+        for (unsigned int i=0; i<locally_owned_dofs.n_elements(); ++i) {
+            const types::global_dof_index idx_i = locally_owned_dofs.nth_index_in_set(i);
+            newton_update_OUT(idx_i) = newton_update_nb(idx_i);
+        }
+        newton_update_OUT.compress(VectorOperation::insert);
+    }
+
 
     //Class to compute gradient of the pressure
 	template <int dim>
@@ -11133,7 +11255,85 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
             virtual ~BrainRheometerLTMBaseQuarter () {}
 
         private:
+            std::unique_ptr<CylindricalManifold<dim>> cylinder_3d;
+
             virtual void make_grid() override
+            {
+                const Point<dim-1> mesh_center(0.0, 0.0);
+                
+                // Wir arbeiten direkt mit skalierten Maßen, um GridTools::scale ganz zu vermeiden
+                const double scaled_radius = this->parameters.radius * this->parameters.scale;
+                const double scaled_height = this->parameters.height * this->parameters.scale;
+
+                // 1. Das 2D-Gitter in der skalierten Größe erstellen
+                Triangulation<dim-1> triangulation_in;
+                GridGenerator::quarter_hyper_ball(triangulation_in, mesh_center, scaled_radius);
+
+                if (this->parameters.radius == 8 || this->parameters.radius == 16)
+                    triangulation_in.refine_global(1);
+
+                // 2. Extrudieren in eine serielle (normale) 3D-Triangulation
+                Triangulation<dim> serial_triangulation;
+                GridGenerator::extrude_triangulation(triangulation_in, 3, scaled_height, serial_triangulation);
+
+                // Manifold-ID definieren
+                const types::manifold_id cylinder_id = 0;
+
+                // CRITICAL FIX 1: Das Manifold auf der SERIELLEN Triangulation erstellen und zuweisen!
+                // Dadurch wird die Zylindergeometrie fest in der Gitterstruktur verankert, BEVOR MPI ins Spiel kommt.
+                cylinder_3d = std::make_unique<CylindricalManifold<dim>>(2);
+                serial_triangulation.set_manifold(cylinder_id, *cylinder_3d);
+
+                // SCHLEIFE 1: IDs auf dem seriellen Gitter vergeben.
+                // Da das Gitter hier noch nicht aufgeteilt ist, gibt es keine Ghost Cells und kein MPI-Risiko!
+                for (auto cell : serial_triangulation.active_cell_iterators()) {
+                    for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
+                        if (cell->face(face)->at_boundary() == true) {
+                            
+                            const Point<dim> face_center = cell->face(face)->center();
+                            const double x = face_center[0];
+                            const double y = face_center[1];
+                            const double z = face_center[2];
+
+                            if (std::abs(z) < 1e-10)
+                                cell->face(face)->set_boundary_id(1); // bottom
+                            else if (std::abs(z - scaled_height) < 1e-10)
+                                cell->face(face)->set_boundary_id(2); // top
+                            else if (std::abs(x) < 1e-10)
+                                cell->face(face)->set_boundary_id(3); // left
+                            else if (std::abs(y) < 1e-10)
+                                cell->face(face)->set_boundary_id(4); // front
+                            else {
+                                // Eigentliche gekrümmte Zylinderwand
+                                cell->face(face)->set_boundary_id(0);
+                                cell->face(face)->set_all_manifold_ids(cylinder_id);
+                            }
+                        }
+                    }
+                }
+
+                // CRITICAL FIX 2: Das fertige Gitter INKLUSIVE des Manifolds parallelisieren!
+                // copy_triangulation liest das serielle Gitter mitsamt dem CylindricalManifold ein 
+                // und synchronisiert das Geometrie-Objekt automatisch fehlerfrei auf alle 12 Kerne.
+                this->triangulation.copy_triangulation(serial_triangulation);
+
+                // CRITICAL FIX 3: Dem parallelen Gitter mitteilen, wo das Manifold-Objekt im Speicher liegt
+                this->triangulation.set_manifold(cylinder_id, *cylinder_3d);
+
+
+                
+                // 6. Erst JETZT global verfeinern! 
+                // p4est verfeinert nun hochparallel, absolut synchron und mathematisch exakt,
+                // da jeder Kern die Zylinderkrümmung auch für seine Ghost Cells kennt.
+                this->triangulation.refine_global(std::max(1U, this->parameters.global_refinement));
+                
+
+            }
+
+
+
+
+            /*virtual void make_grid() override
             {
             	const Point<dim-1> mesh_center(0.0, 0.0);
             	//const Point<dim> mesh_center2(0.0, 0.0, 0.0);
@@ -11145,52 +11345,66 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
             	GridGenerator::quarter_hyper_ball(triangulation_in, mesh_center, radius);
 
             	// Add a square to the quarter circle mesh
-            	/*Triangulation<dim-1> square;
-            	const std::vector<unsigned int> repetitions = {2, 2};
-            	const Point<dim-1> outer_edge(-4,4);
-            	GridGenerator::subdivided_hyper_rectangle(square, repetitions, mesh_center, outer_edge);
+            	// Triangulation<dim-1> square;
+            	// const std::vector<unsigned int> repetitions = {2, 2};
+            	// const Point<dim-1> outer_edge(-4,4);
+            	// GridGenerator::subdivided_hyper_rectangle(square, repetitions, mesh_center, outer_edge);
 
-            	Triangulation<dim-1> final_tria;
-            	GridGenerator::merge_triangulations(triangulation_in, square, final_tria, 0.5, true);*/
+            	// Triangulation<dim-1> final_tria;
+            	// GridGenerator::merge_triangulations(triangulation_in, square, final_tria, 0.5, true);
 
             	if (this->parameters.radius == 8)
             		triangulation_in.refine_global(1);
             	if (this->parameters.radius == 16)
             	    triangulation_in.refine_global(1);
 
-            	GridGenerator::extrude_triangulation(triangulation_in, 3, height, this->triangulation);
-            	//GridGenerator::extrude_triangulation(final_tria, 3, height, this->triangulation);
-            	// Assign a cylindrical manifold to the geometry
-            	const CylindricalManifold<dim> cylinder_3d(2);
-            	const types::manifold_id cylinder_id = 0;
-            	//this->triangulation.reset_all_manifolds();
-            	//this->triangulation.set_all_manifold_ids_on_boundary(0,cylinder_id);
-            	this->triangulation.set_manifold(cylinder_id, cylinder_3d);
+              // 2. SCHRITT: Eine TEMPORÄRE, SEQUENTIELLE 3D-Triangulation erstellen
+              // "Triangulation<dim>" erzeugt eine normale, serielle Triangulation im Speicher
+              Triangulation<dim> serial_triangulation;
+              GridGenerator::extrude_triangulation(triangulation_in, 3, height, serial_triangulation);
 
+              // 3. SCHRITT: Das sequentielle Gitter sauber in die verteilte Triangulation kopieren
+              // Dieser Befehl initialisiert die parallele p4est-Struktur korrekt auf allen Kernen!
+              this->triangulation.copy_triangulation(serial_triangulation);
+
+GridTools::scale(this->parameters.scale, this->triangulation);
+const double scaled_height = height * this->parameters.scale;
+            	//GridGenerator::extrude_triangulation(triangulation_in, 3, height, this->triangulation);
+            	// Assign a cylindrical manifold to the geometry
+            	// const CylindricalManifold<dim> cylinder_3d(2);
+            	// const types::manifold_id cylinder_id = 0;
+            	// this->triangulation.set_manifold(cylinder_id, cylinder_3d);
+
+              const types::manifold_id cylinder_id = 0;
+              cylinder_3d = std::make_unique<CylindricalManifold<dim>>(2);
+              this->triangulation.set_manifold(cylinder_id, *cylinder_3d);
 
             	// Assign proper boundary ids
             	for (auto cell : this->triangulation.active_cell_iterators()) {
-            		for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
-            			if (cell->face(face)->at_boundary() == true) {
-            				if (cell->face(face)->center()[2] == 0.0)
-            					cell->face(face)->set_boundary_id(1); //bottom
-            				else if (cell->face(face)->center()[2] == height)
-            					cell->face(face)->set_boundary_id(2); //top
-            				else if (cell->face(face)->center()[0] == 0.0) //-4.0
-            					cell->face(face)->set_boundary_id(3); //left
-            				else if (cell->face(face)->center()[1] == 0.0)
-            					cell->face(face)->set_boundary_id(4); //front
-            				else {
-            					cell->face(face)->set_boundary_id(0);
-            					cell->face(face)->set_all_manifold_ids(cylinder_id);
-            				}
-            			}
-            		}
+                if (cell->is_locally_owned() || cell->is_ghost()) {
+                  for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
+                    if (cell->face(face)->at_boundary() == true) {
+                      if (cell->face(face)->center()[2] == 0.0)
+                        cell->face(face)->set_boundary_id(1); //bottom
+                      else if (cell->face(face)->center()[2] == scaled_height)
+                        cell->face(face)->set_boundary_id(2); //top
+                      else if (cell->face(face)->center()[0] == 0.0) //-4.0
+                        cell->face(face)->set_boundary_id(3); //left
+                      else if (cell->face(face)->center()[1] == 0.0)
+                        cell->face(face)->set_boundary_id(4); //front
+                      else {
+                        cell->face(face)->set_boundary_id(0);
+                        cell->face(face)->set_all_manifold_ids(cylinder_id);
+                      }
+                    }
+                  }
+                }
             	}
-
-            	GridTools::scale(this->parameters.scale, this->triangulation);
+          // std::cout << "Here" << std::endl;
+            	// GridTools::scale(this->parameters.scale, this->triangulation);
+                        // std::cout << "Here2" << std::endl;
             	this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
-
+          // std::cout << "Here3" << std::endl;
                 //std::ofstream mesh_out(this->parameters.output_directory + "/" + "grid-very-fine.msh");
                 //GridOut       grid_out;
                 //grid_out.write_msh(this->triangulation, mesh_out);
@@ -11216,24 +11430,27 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
 
             	// Assign proper boundary ids
             	for (auto cell : this->triangulation.active_cell_iterators()) {
-            		for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
-            			if (cell->face(face)->at_boundary() == true) {
-            				if (cell->face(face)->center()[2] == 0.0)
-            					cell->face(face)->set_boundary_id(1); //bottom
-            					else if (cell->face(face)->center()[2] == height)
-            						cell->face(face)->set_boundary_id(2); //top
-            					else if (cell->face(face)->center()[0] < 1e-12) //-4.0
-            						cell->face(face)->set_boundary_id(3); //left
-            					else if (cell->face(face)->center()[1] < 1e-12)
-            						cell->face(face)->set_boundary_id(4); //front
-            					else {
-            						cell->face(face)->set_boundary_id(0);
-            						cell->face(face)->set_all_manifold_ids(cylinder_id);
-            					}
-            			}
-            		}
-            	}
-            }
+                if (cell->is_locally_owned() || cell->is_ghost()) {
+                  for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
+                    if (cell->face(face)->at_boundary() == true) {
+                      if (cell->face(face)->center()[2] == 0.0)
+                        cell->face(face)->set_boundary_id(1); //bottom
+                        else if (cell->face(face)->center()[2] == height)
+                          cell->face(face)->set_boundary_id(2); //top
+                        else if (cell->face(face)->center()[0] < 1e-12) //-4.0
+                          cell->face(face)->set_boundary_id(3); //left
+                        else if (cell->face(face)->center()[1] < 1e-12)
+                          cell->face(face)->set_boundary_id(4); //front
+                        else {
+                          cell->face(face)->set_boundary_id(0);
+                          cell->face(face)->set_all_manifold_ids(cylinder_id);
+                        }
+                    }
+                  }
+                }
+              }
+            }*/
+
 
             virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
             {
