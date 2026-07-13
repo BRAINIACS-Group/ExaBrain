@@ -92,6 +92,7 @@
 #include <deal.II/lac/trilinos_vector.h>
 #include <deal.II/lac/solver_gmres.h>
 #include <deal.II/lac/sparse_direct.h>
+#include <deal.II/lac/solver_cg.h>
 
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/lac/vector.h>
@@ -5621,7 +5622,8 @@ for (unsigned int b=0; b<n_blocks; ++b)
                     solve_linear_system(newton_update, preconditioner);
                 #endif
                 #if MACOS_SYSTEM
-                    if ((time->get_timestep() % 5 == 1) && newton_iteration == 0) {
+                    // if ((time->get_timestep() % 5 == 1) && newton_iteration == 0) {
+                    if (newton_iteration == 0) {
                         TimerOutput::Scope timing_section(timerconsole, "Preconditioner");
                         TimerOutput::Scope timer_section(timerfile, "Preconditioner");
 
@@ -6782,8 +6784,26 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
 					for (unsigned int d = 0; d < dim; ++d)
 						grad_u[d] = input_data.solution_gradients[p][d];
 
-					const Tensor<2,dim,ADNumberType>
-						F_AD = Physics::Elasticity::Kinematics::F(grad_u);
+					const Tensor<2,dim,ADNumberType> F_AD = Physics::Elasticity::Kinematics::F(grad_u);
+          Tensor<2,dim,ADNumberType> F_AD_post = F_AD;
+
+          double det_F = Tensor<0,dim,double>(determinant(F_AD));
+					
+					// Angenommen, J_cp liegt z.B. bei 0.2 (das Limit der Feststoffkompression).
+					// Wenn die Extrapolierung an den Knoten zu nahe an J_cp heranschiebt, 
+					// zwingen wir det_F auf einen sicheren Mindestabstand (z.B. J_cp + 0.02).
+					const double J_cp = this->parameters.compaction_point; // <- Setzen Sie hier Ihren exakten 'J_cp'-Wert ein!
+					const double safety_puffer = 0.05; 
+
+					if (det_F <= (J_cp + safety_puffer)) {
+						// Wenn die Extrapolierung kollabiert, skalieren wir das F_AD sphärisch hoch,
+						// sodass det(F_new) exakt dem sicheren Mindestwert entspricht.
+						// Da det(c * F) = c^dim * det(F), ist der Skalierungsfaktor c = (det_target / det_current)^(1/dim)
+						double target_det = J_cp + safety_puffer;
+						double scale_factor = std::pow(target_det / det_F, 1.0 / double(dim));
+						
+						F_AD_post *= scale_factor;
+					}
 
 					//Extract pressure value of the point
 					const double p_fluid =  input_data.solution_values[p][dim];
@@ -6810,19 +6830,35 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
 					else
 						Assert (false, ExcMessage("Material type not implemented"));
 
-					const SymmetricTensor<2,dim,ADNumberType> sigma_E_AD = solid_material->get_Cauchy_E(F_AD);
+					//const SymmetricTensor<2,dim,ADNumberType> sigma_E_AD = solid_material->get_Cauchy_E(F_AD);
+          const SymmetricTensor<2,dim,ADNumberType> sigma_E_base_AD = solid_material->get_Cauchy_E_base(F_AD);
+          const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = solid_material->get_Cauchy_E_ext_func(F_AD_post);
 
 					static const SymmetricTensor<2,dim,double>
 					  I (Physics::Elasticity::StandardTensors<dim>::I);
 
-					SymmetricTensor<2,dim> sigma_E;
+					// SymmetricTensor<2,dim> sigma_E;
+					// for (unsigned int i=0; i<dim; ++i)
+					// 	for (unsigned int j=0; j<dim; ++j)
+					// 	   sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
+
+          SymmetricTensor<2,dim> sigma_E_base;
 					for (unsigned int i=0; i<dim; ++i)
 						for (unsigned int j=0; j<dim; ++j)
-						   sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
+						   sigma_E_base[i][j] = Tensor<0,dim,double>(sigma_E_base_AD[i][j]);
+
+          SymmetricTensor<2,dim> sigma_E_ext_func;
+					for (unsigned int i=0; i<dim; ++i)
+						for (unsigned int j=0; j<dim; ++j)
+						   sigma_E_ext_func[i][j] = Tensor<0,dim,double>(sigma_E_ext_func_AD[i][j]);
+
+          SymmetricTensor<2,dim> tau_E_base = sigma_E_base * det_F;
 
 					SymmetricTensor<2,dim> sigma_fluid_vol (I);
 					sigma_fluid_vol *= -p_fluid;
-					const SymmetricTensor<2,dim> sigma = sigma_E + sigma_fluid_vol;
+					// const SymmetricTensor<2,dim> sigma = sigma_E + sigma_fluid_vol;
+          const SymmetricTensor<2,dim> sigma = sigma_E_base + sigma_E_ext_func + sigma_fluid_vol;
+          const SymmetricTensor<2,dim> sigma_E = sigma_E_base + sigma_E_ext_func;
 
 					computed_quantities[p](0) = sigma[0][0];
 					computed_quantities[p](1) = sigma[1][1];
@@ -6844,6 +6880,27 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
 					computed_quantities[p](15) = sigma_fluid_vol[0][1];
 					computed_quantities[p](16) = sigma_fluid_vol[0][2];
 					computed_quantities[p](17) = sigma_fluid_vol[1][2];
+
+          computed_quantities[p](18) = sigma_E_base[0][0];
+					computed_quantities[p](19) = sigma_E_base[1][1];
+					computed_quantities[p](20) = sigma_E_base[2][2];
+					computed_quantities[p](21) = sigma_E_base[0][1];
+					computed_quantities[p](22) = sigma_E_base[0][2];
+					computed_quantities[p](23) = sigma_E_base[1][2];
+
+          computed_quantities[p](24) = sigma_E_ext_func[0][0];
+					computed_quantities[p](25) = sigma_E_ext_func[1][1];
+					computed_quantities[p](26) = sigma_E_ext_func[2][2];
+					computed_quantities[p](27) = sigma_E_ext_func[0][1];
+					computed_quantities[p](28) = sigma_E_ext_func[0][2];
+					computed_quantities[p](29) = sigma_E_ext_func[1][2];
+
+          computed_quantities[p](30) = tau_E_base[0][0];
+					computed_quantities[p](31) = tau_E_base[1][1];
+					computed_quantities[p](32) = tau_E_base[2][2];
+					computed_quantities[p](33) = tau_E_base[0][1];
+					computed_quantities[p](34) = tau_E_base[0][2];
+					computed_quantities[p](35) = tau_E_base[1][2];
 				}
 			}
 
@@ -6864,19 +6921,39 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
 				solution_names.emplace_back("extra_cauchy_stress_xz");
 				solution_names.emplace_back("extra_cauchy_stress_yz");
 
-        // this is actually the fluid stress, not the solid volumetric stress
-				solution_names.emplace_back("volumetric_cauchy_stress_xx");
+				solution_names.emplace_back("fluid_cauchy_stress_xx");
+				solution_names.emplace_back("fluid_cauchy_stress_yy");
+				solution_names.emplace_back("fluid_cauchy_stress_zz");
+				solution_names.emplace_back("fluid_cauchy_stress_xy");
+				solution_names.emplace_back("fluid_cauchy_stress_xz");
+				solution_names.emplace_back("fluid_cauchy_stress_yz");
+
+        solution_names.emplace_back("base_cauchy_stress_xx");
+				solution_names.emplace_back("base_cauchy_stress_yy");
+				solution_names.emplace_back("base_cauchy_stress_zz");
+				solution_names.emplace_back("base_cauchy_stress_xy");
+				solution_names.emplace_back("base_cauchy_stress_xz");
+				solution_names.emplace_back("base_cauchy_stress_yz");
+
+        solution_names.emplace_back("volumetric_cauchy_stress_xx");
 				solution_names.emplace_back("volumetric_cauchy_stress_yy");
 				solution_names.emplace_back("volumetric_cauchy_stress_zz");
 				solution_names.emplace_back("volumetric_cauchy_stress_xy");
 				solution_names.emplace_back("volumetric_cauchy_stress_xz");
 				solution_names.emplace_back("volumetric_cauchy_stress_yz");
+
+        solution_names.emplace_back("base_tau_stress_xx");
+				solution_names.emplace_back("base_tau_stress_yy");
+				solution_names.emplace_back("base_tau_stress_zz");
+				solution_names.emplace_back("base_tau_stress_xy");
+				solution_names.emplace_back("base_tau_stress_xz");
+				solution_names.emplace_back("base_tau_stress_yz");
 				return solution_names;
 			}
 
 			virtual std::vector<DataComponentInterpretation::DataComponentInterpretation>get_data_component_interpretation() const override
 			{
-			    std::vector<DataComponentInterpretation::DataComponentInterpretation> interpretation(18,DataComponentInterpretation::component_is_scalar);
+			    std::vector<DataComponentInterpretation::DataComponentInterpretation> interpretation(this->get_names().size(),DataComponentInterpretation::component_is_scalar);
 			    return interpretation;
 			}
 
@@ -6978,15 +7055,15 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
 					const Tensor<2,dim> F = Physics::Elasticity::Kinematics::F(grad_u);
 					computed_quantities[p]= determinant(F);
 
-          sum_J += computed_quantities[p][0];
+          // sum_J += computed_quantities[p][0];
           //std::cout << "computed_quantities[" << p << "] = " << computed_quantities[p][0] << std::endl; 
 				}
          
-        double mean_J = sum_J / computed_quantities.size();
-        for (unsigned int p=0; p<max_points; ++p)
-				{
-        computed_quantities[p] = mean_J;
-        }
+        // double mean_J = sum_J / computed_quantities.size();
+        // for (unsigned int p=0; p<max_points; ++p)
+				// {
+        // computed_quantities[p] = mean_J;
+        // }
         //std::cout << "sum = " << sum_J << ", mean = " << mean_J << std::endl;
 			}
 	};
@@ -7230,7 +7307,7 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
 		CauchyStressesPostproc<dim> stresses_post(parameters,time);
 		data_out.add_data_vector(solution_total, stresses_post);
 
-		SeepageVelPostproc<dim> seepage_vel(parameters,p_fluid_component);
+  	SeepageVelPostproc<dim> seepage_vel(parameters,p_fluid_component);
 		data_out.add_data_vector(solution_total, seepage_vel);
 
 		JacobianPostproc<dim> jacobian;
