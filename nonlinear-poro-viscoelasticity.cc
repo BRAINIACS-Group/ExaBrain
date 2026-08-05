@@ -1505,8 +1505,8 @@ private:
 
 
 
-#define LINUX_SYSTEM 0
-#define MACOS_SYSTEM 1
+#define LINUX_SYSTEM 1
+#define MACOS_SYSTEM 0
 
 // We create a namespace for everything that relates to
 // the nonlinear poro-viscoelastic formulation,
@@ -5530,7 +5530,7 @@ for (unsigned int b=0; b<n_blocks; ++b)
             SparseDirectMUMPS::AdditionalData data_mumps;
             data_mumps.blr_factorization = true;
             data_mumps.output_details = false;
-            data_mumps.blr.lowrank_threshold = 1e-4; // default = 1e-8
+            data_mumps.blr.lowrank_threshold = 1e-6; // default = 1e-8
             data_mumps.blr.blr_ucfs = true;          // use UCFs
             SparseDirectMUMPS preconditioner(data_mumps, mpi_communicator);
 
@@ -14711,9 +14711,10 @@ const double scaled_height = height * this->parameters.scale;
             virtual void make_grid() override 
             {
               // import external geometry: set path to file (TODO: add to parameter file) OAS1_0002_MR1_UCD_HR.inp
-              std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_coarse.inp");
+              //std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_coarse.inp");
               //std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_noCSF_superior.inp");
               //std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_HR.inp");
+              std::ifstream input_path("/home/hpc/iwtm/iwtm107h/full-brain/indentation/OAS1_0002_MR1_UCD_noCSF_superior.inp");
               dealii::GridIn<dim> gridIn;
               gridIn.attach_triangulation(this->triangulation);
               gridIn.read_ucd(input_path);
@@ -14786,7 +14787,7 @@ const double scaled_height = height * this->parameters.scale;
             {
               // Brain bottom is fully fixed in space
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
-                                                       200, // 2 for NR, HR but 200 for LR
+                                                       2, // 2 for NR, HR but 200 for LR
                                                        Functions::ZeroFunction<dim>(this->n_components),
                                                        constraints,
                                                        (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
@@ -14814,13 +14815,13 @@ const double scaled_height = height * this->parameters.scale;
               }
               if (this->time->get_timestep() < 2) {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
-                                                          200, // 2 for NR, HR but 200 for LR
+                                                          2, // 2 for NR, HR but 200 for LR
                                                           Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
                                                           constraints,
                                                           this->fe.component_mask(this->pressure));
               } else {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
-                                                          200, // 2 for NR, HR but 200 for LR
+                                                          2, // 2 for NR, HR but 200 for LR
                                                           Functions::ZeroFunction<dim>(this->n_components),
                                                           constraints,
                                                           this->fe.component_mask(this->pressure));
