@@ -4581,7 +4581,7 @@ private:
 
             //Solve the linearized equations using a direct solver
             void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT);
-            void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, SparseDirectMUMPS &precon);
+            void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, SparseDirectMUMPS &precon, const double current_nonlinear_residual);
             void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, MUMPSPreconditioner<dim> &precon);
 
             //Retrieve the  solution
@@ -4773,7 +4773,12 @@ private:
             void print_conv_footer();
 
             #if MACOS_SYSTEM
-            MUMPSPreconditioner<dim> mumps_preconditioner;
+              MUMPSPreconditioner<dim> mumps_preconditioner;
+            #endif
+
+            #if LINUX_SYSTEM
+              SparseDirectMUMPS::AdditionalData data_mumps;
+              std::unique_ptr<SparseDirectMUMPS> preconditioner;
             #endif
 
 //NOTE: In all functions, we pass by reference (&), so these functions work on the original copy (not a clone copy),
@@ -4995,6 +5000,10 @@ private:
             mumps_preconditioner.clear();
           #endif
 
+          #if LINUX_SYSTEM
+            preconditioner.reset();
+          #endif
+
     }
 
 // @sect4{Private interface}
@@ -5192,7 +5201,7 @@ private:
 
         //DoFRenumbering::Cuthill_McKee(dof_handler_ref);  //order might need to change for block preconditioners
         //DoFRenumbering::subdomain_wise(dof_handler_ref);
-        DoFRenumbering::component_wise(dof_handler_ref, block_component);
+        //DoFRenumbering::component_wise(dof_handler_ref, block_component);
         //DoFRenumbering::Cuthill_McKee(dof_handler_ref);
 
         //hanging_node_constraints.clear();
@@ -5482,6 +5491,45 @@ for (unsigned int b=0; b<n_blocks; ++b)
                 }
             }
         }
+#if LINUX_SYSTEM
+    if (!preconditioner)
+    {
+        data_mumps.blr_factorization = true;
+        data_mumps.output_details = true;
+        data_mumps.blr.lowrank_threshold = 1e-4; 
+        data_mumps.blr.blr_ucfs = true;          
+
+        // Objekt dynamisch auf dem Heap erzeugen
+        preconditioner = std::make_unique<SparseDirectMUMPS>(data_mumps, mpi_communicator);
+
+        /*int *BLRicntl = preconditioner->get_icntl();
+        double *BLRcntl = preconditioner->get_cntl();
+
+        BLRcntl[0] = 0; // Pivoting deaktivieren
+
+        #define BLRICNTL(I) BLRicntl[(I)-1]
+        BLRICNTL(28) = 1; // Sequentielle Analyse
+        BLRICNTL(7) = 5;  // METIS Ordering
+        #undef BLRICNTL */
+
+        int *icntl = preconditioner->get_icntl();
+        double *cntl = preconditioner->get_cntl();
+
+        #define IC(I) icntl[(I)-1]
+        #define RC(I) cntl[(I)-1]
+        RC(1)  = 1e-5;   //disable pivoting
+        IC(4)  = 2;   // more output
+        IC(10) = 0;   // iterative refinement
+        IC(47) = 1;   // single precision factorization
+        //IC(35) = 1;   // BLR on (done by wrapper, but set on 2)
+        //IC(36) = 1;   // BLR with UCFs (done by wrapper)
+        IC(37) = 1;   // compress contribution blocks
+        IC(28) = 1;   // sequential analysis
+        IC(7)  = 5;   // METIS reordering
+        #undef IC
+        #undef RC
+    }
+    #endif
     }
 
     //Solve the non-linear system using a Newton-Raphson scheme
@@ -5524,7 +5572,7 @@ for (unsigned int b=0; b<n_blocks; ++b)
         //Declare and initialize iterator for the Newton-Raphson algorithm steps
         unsigned int newton_iteration = 0;
 
-        #if LINUX_SYSTEM
+       /* #if LINUX_SYSTEM
             #define BLRICNTL(I) BLRicntl[(I)-1]
 
             SparseDirectMUMPS::AdditionalData data_mumps;
@@ -5540,8 +5588,9 @@ for (unsigned int b=0; b<n_blocks; ++b)
             BLRcntl[0] = 0; // disables pivoting
 
             // BLRICNTL(40) = 1; // mixed prec BLR, only on DEV version
-            // BLRICNTL(28) = 2; //Parallel analysis
-        #endif
+            BLRICNTL(28) = 1; //Parallel analysis
+            BLRICNTL(7) = 5; // use Metis
+        #endif*/
 
         //Iterate until error is below tolerance or max number iterations are reached
         while(newton_iteration < parameters.max_iterations_NR)
@@ -5614,12 +5663,13 @@ for (unsigned int b=0; b<n_blocks; ++b)
             //Solve the linearized system
             if (this->parameters.lin_solver == "BLRNewt") {
                 #if LINUX_SYSTEM
-                    if (newton_iteration == 0) {
+                    if ((time->get_timestep() % 3 == 1) && newton_iteration == 0) {
+                    //if (newton_iteration == 0) {
                         TimerOutput::Scope timing_section(timerconsole, "Preconditioner");
                         TimerOutput::Scope timer_section(timerfile, "Preconditioner");
-                        preconditioner.initialize(tangent_matrix_nb);
+                        preconditioner->initialize(tangent_matrix_nb);
                     }
-                    solve_linear_system(newton_update, preconditioner);
+                    solve_linear_system(newton_update, *preconditioner, error_residual.norm);
                 #endif
                 #if MACOS_SYSTEM
                     // if ((time->get_timestep() % 5 == 1) && newton_iteration == 0) {
@@ -6419,11 +6469,14 @@ for (unsigned int b=0; b<n_blocks; ++b)
                 direct_solver_mumps.initialize(tangent_matrix_nb);
                 direct_solver_mumps.vmult(newton_update_nb, system_rhs_nb);
 
+                #define BLRICNTL(I) BLRicntl[(I)-1]
+
                 // Turn off the output for the GMRES bro
                 BLRICNTL(1) = 0;
                 BLRICNTL(2) = 0;
                 BLRICNTL(3) = 0;
                 BLRICNTL(4) = 0;
+		#undef BLRICNTL // Am Ende der Funktion das Makro sauber wieder aufräumen
                 SolverControl solver_control(120, 1e-12);
                 SolverGMRES<TrilinosWrappers::MPI::Vector>::AdditionalData gmres_data;
                 gmres_data.right_preconditioning = false;
@@ -6658,7 +6711,7 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
 
     //Solve the linearized equations
     template <int dim>
-    void Solid<dim>::solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, SparseDirectMUMPS &precon)
+    void Solid<dim>::solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, SparseDirectMUMPS &precon, const double current_nonlinear_residual)
     {
         TimerOutput::Scope timing_section(timerconsole, "Linear solver");
         TimerOutput::Scope timer_section(timerfile, "Linear solver");
@@ -6669,13 +6722,26 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
         newton_update_nb.reinit(locally_owned_dofs, mpi_communicator);
 
         if (this->parameters.lin_solver == "BLRNewt") {
-            SolverControl solver_control(120, 1e-12);
+            double dynamic_tolerance = std::max(1e-11, 1e-4 * current_nonlinear_residual);
+            SolverControl solver_control(120, dynamic_tolerance, true, true);
+            
+            // Wechsel von SolverGMRES auf SolverFGMRES
+            SolverFGMRES<TrilinosWrappers::MPI::Vector>::AdditionalData fgmres_data;
+            fgmres_data.max_basis_size = 30;          // Leicht erhöht, um alternde Schritte abzufangen
+                        
+            SolverFGMRES<TrilinosWrappers::MPI::Vector> solver(solver_control, fgmres_data);
+            //deallog.depth_file(0); // Verhindert übermäßiges Schreiben in Dateien
+            //deallog.depth_console(2); // Erlaubt das Drucken der Solver-Iterationen auf der Konsole
+            pcout << " (LinTol: " << dynamic_tolerance << ") " << std::flush;
+            solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb, precon);
+
+            /*SolverControl solver_control(120, 1e-12);
             SolverGMRES<TrilinosWrappers::MPI::Vector>::AdditionalData gmres_data;
             gmres_data.right_preconditioning = false;
             gmres_data.max_basis_size = 20; // default
             gmres_data.use_default_residual = true;
             SolverGMRES<TrilinosWrappers::MPI::Vector> solver(solver_control, gmres_data);
-            solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb, precon);
+            solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb, precon);*/
         }
 
         // Copy the non-block solution back to block system
