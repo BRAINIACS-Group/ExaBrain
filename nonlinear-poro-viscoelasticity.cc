@@ -37,6 +37,15 @@
 // related ones. They have been discussed in detail in previous tutorial
 // programs, so you need only refer to past tutorials for details.
 
+#include "mumps_reuse.h"
+#include "node_nd_ordering.h"
+#include "mem_probe.h"
+
+#define SACADO_ENABLE_NEW_DESIGN 0
+#define SACADO_VIEW_CUDA 0
+// Das entscheidende Flag für ältere/Standard-Sacado-Versionen:
+#define SACADO_AD_NODE_EXPRESSION_TEMPLATES 0
+
 #include <deal.II/base/function.h>
 #include <deal.II/base/parameter_handler.h>
 #include <deal.II/base/point.h>
@@ -106,6 +115,7 @@
 #include <deal.II/physics/transformations.h>
 #include <deal.II/physics/elasticity/kinematics.h>
 #include <deal.II/physics/elasticity/standard_tensors.h>
+#include <deal.II/meshworker/mesh_loop.h>
 
 #include <Amesos.h>
 #include <Teuchos_ParameterList.hpp>
@@ -115,6 +125,12 @@
 #include <EpetraExt_RowMatrixOut.h>
 #include <Epetra_RowMatrix.h>
 #include <EpetraExt_MultiVectorOut.h>
+#include <Epetra_MpiComm.h>
+#include <Epetra_Map.h>
+#include <Epetra_Export.h>
+#include <Epetra_Import.h>
+#include <Epetra_CrsMatrix.h>
+#include <Epetra_Vector.h>
 
 #include <iostream>
 #include <fstream>
@@ -123,7 +139,9 @@
 #include <string>
 #include <chrono>
 #include <functional>
-
+#include <omp.h>
+#include <sstream>
+#include <cstdlib>
 
 //EFI
 #include <vector>
@@ -2733,7 +2751,36 @@ map_support_points_to_dof_from_boundary_id(
 }
 
 
+// Hilfsfunktion zum Erzeugen der Ziel-Map auf den 24 Prozessen
+Epetra_Map create_target_map(const IndexSet &locally_owned_dofs, MPI_Comm global_comm, MPI_Comm solver_comm)
+{
+    int global_rank = dealii::Utilities::MPI::this_mpi_process(global_comm);
+    bool is_solver_process = (global_rank % 3 == 0);
 
+    std::vector<int> local_indices;
+    for (auto index : locally_owned_dofs)
+        local_indices.push_back(index);
+
+    // KORREKTUR: Die Epetra-Kommunikation muss auf solver_comm (192 Ranks) basieren!
+    Epetra_MpiComm epetra_solver_comm(solver_comm);
+
+    int num_my_elements = is_solver_process ? local_indices.size() : 0;
+    int *my_elements_ptr = is_solver_process ? local_indices.data() : nullptr;
+
+    return Epetra_Map(-1, num_my_elements, my_elements_ptr, 0, epetra_solver_comm);
+}
+
+
+// A helper for our constitutive models
+template <typename T> inline std::size_t n_deriv(const T &) { return 0; }
+template <typename T> inline std::size_t n_deriv(const Sacado::Fad::DFad<T> &x) { return x.size(); }
+
+template <int dim, typename NumberType>
+struct NeqWorkspace
+{
+  SymmetricTensor<2, dim, NumberType> tau;
+  const void *owner = nullptr;
+};
 
 // @sect3{Constitutive equation for the solid component of the biphasic material}
 
@@ -3314,12 +3361,24 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
             Tensor<2, dim, NumberType>Cinv_v_1_AD = symmetrize(invert(F) * B_e_1 * invert(transpose(F)));
 
-            this->tau_neq_1 = 0;
+            /*this->tau_neq_1 = 0;
             for (unsigned int a = 0; a < dim; ++a) {              
               SymmetricTensor<2, dim, NumberType> tau_neq_1_aux = symmetrize(outer_product(eigen_B_e_1_tr[a].second,eigen_B_e_1_tr[a].second));
               tau_neq_1_aux *=  get_beta_mode_1(lambdas_e_1_iso, a);
               this->tau_neq_1 += tau_neq_1_aux;
+            }*/
+
+            auto &nw = ws();
+            nw.owner = this;
+            for (unsigned int a = 0; a < dim; ++a) {
+              SymmetricTensor<2, dim, NumberType> tau_neq_1_aux = symmetrize(outer_product(eigen_B_e_1_tr[a].second, eigen_B_e_1_tr[a].second));
+              tau_neq_1_aux *= get_beta_mode_1(lambdas_e_1_iso, a);
+              if (a == 0) nw.tau  = tau_neq_1_aux;
+              else        nw.tau += tau_neq_1_aux;
             }
+            for (unsigned int a = 0; a < dim; ++a)
+              for (unsigned int b = a; b < dim; ++b)
+                this->tau_neq_1_val[a][b] = Tensor<0, dim, double>(nw.tau[a][b]);
 
             // Store history
             for (unsigned int a = 0; a < dim; ++a)
@@ -3335,10 +3394,11 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
 
           double get_viscous_dissipation() const override
           {
-            NumberType dissipation_term = get_tau_E_neq() * get_tau_E_neq(); //Double contract the two SymmetricTensors
+            /*NumberType dissipation_term = get_tau_E_neq() * get_tau_E_neq(); //Double contract the two SymmetricTensors
             dissipation_term /= (2*viscosity_mode_1);
 
-            return dissipation_term.val();
+            return dissipation_term.val();*/
+            return (tau_neq_1_val * tau_neq_1_val) / (2.0 * viscosity_mode_1);
           }
 
         protected:
@@ -3349,11 +3409,12 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           double viscosity_mode_1;
           SymmetricTensor<2, dim, double> Cinv_v_1;
           SymmetricTensor<2, dim, double> Cinv_v_1_converged;
-          SymmetricTensor<2, dim, NumberType> tau_neq_1;
+          //SymmetricTensor<2, dim, NumberType> tau_neq_1;
+          SymmetricTensor<2, dim, double> tau_neq_1_val;
 
           SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const override
           {
-              return ( get_tau_E_neq() + get_tau_E_eq(F) );
+              return ( get_tau_E_neq(F) + get_tau_E_eq(F) );
           }
 
           SymmetricTensor<2, dim, NumberType> get_tau_E_eq(const Tensor<2,dim, NumberType> &F) const
@@ -3381,9 +3442,27 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
         	  return tau_E_eq;
           }
 
-          SymmetricTensor<2, dim, NumberType> get_tau_E_neq() const
+          /*SymmetricTensor<2, dim, NumberType> get_tau_E_neq() const
           {
               return tau_neq_1;
+          }*/
+
+          static NeqWorkspace<dim, NumberType> &ws()
+          {
+            static thread_local NeqWorkspace<dim, NumberType> nw;
+            return nw;
+          }
+
+          SymmetricTensor<2, dim, NumberType> get_tau_E_neq(const Tensor<2, dim, NumberType> &F) const
+          {
+            const auto &nw = ws();
+            if (nw.owner == this && n_deriv(nw.tau[0][0]) == n_deriv(F[0][0]))
+              return nw.tau;
+            SymmetricTensor<2, dim, NumberType> t;
+            for (unsigned int a = 0; a < dim; ++a)
+              for (unsigned int b = a; b < dim; ++b)
+                t[a][b] = tau_neq_1_val[a][b];
+            return t;
           }
 
           NumberType get_beta_infty(Tensor<1, dim, NumberType> &lambda, const unsigned int &A) const
@@ -4510,6 +4589,170 @@ private:
 };
 
 
+/*template <int dim>
+class MUMPS24BridgePreconditioner : public dealii::Subscriptor
+{
+public:
+  MUMPS24BridgePreconditioner(const dealii::IndexSet &locally_owned_dofs,
+                              MPI_Comm global_comm,
+                              MPI_Comm solver_comm,
+                              dealii::SparseDirectMUMPS &mumps_solver)
+  : global_comm(global_comm),
+    solver_comm(solver_comm),
+    mumps_solver(mumps_solver)
+  {
+    int global_rank = dealii::Utilities::MPI::this_mpi_process(global_comm);
+    bool is_solver_process = (global_rank % 3 == 0);
+
+    // 1. Sammle Indizes für die Epetra-Maps
+    std::vector<int> local_indices;
+    for (auto index : locally_owned_dofs)
+      local_indices.push_back(index);
+
+    Epetra_MpiComm epetra_global_comm(global_comm);
+    int num_my_elements = is_solver_process ? local_indices.size() : 0;
+    int *my_elements_ptr = is_solver_process ? local_indices.data() : nullptr;
+
+    // 2. Erstelle die Maps, den Exporter und Importer [I1, I2]
+    source_map = std::make_unique<Epetra_Map>(-1, local_indices.size(), local_indices.data(), 0, epetra_global_comm);
+    target_map = std::make_unique<Epetra_Map>(-1, num_my_elements, my_elements_ptr, 0, epetra_global_comm);
+
+    exporter = std::make_unique<Epetra_Export>(*source_map, *target_map);
+    importer = std::make_unique<Epetra_Import>(*source_map, *target_map);
+
+    // 3. Puffer-Vektoren auf den 24 Prozessen vorbereiten
+    target_rhs = std::make_unique<Epetra_Vector>(*target_map);
+    target_sol = std::make_unique<Epetra_Vector>(*target_map);
+    
+    // Wrapper-Vektor für deal.II/MUMPS auf den 24 Ranks
+    // (deal.II benötigt einen eigenen Vektor-Typ für vmult)
+    if (is_solver_process)
+    {
+      // Ein leerer deal.II IndexSet, der lokal auf dem 24er-Komm die exakte Größe hält
+      dealii::IndexSet solver_owned(locally_owned_dofs.size());
+      for (auto index : locally_owned_dofs)
+        solver_owned.add_index(index);
+        
+      mumps_rhs_vector.reinit(solver_owned, solver_comm);
+      mumps_sol_vector.reinit(solver_owned, solver_comm);
+    }
+  }
+
+  // Die vmult-Funktion wird von FGMRES in JEDER Iteration auf den 192 Ranks aufgerufen!
+  void vmult(dealii::TrilinosWrappers::MPI::Vector &dst,
+             const dealii::TrilinosWrappers::MPI::Vector &src) const
+  {
+    // A. Export: Schiebe den aktuellen FGMRES-Vektor von 192 -> 24 Ranks [I2]
+    Epetra_FEVector &epetra_src = const_cast<dealii::TrilinosWrappers::MPI::Vector&>(src).trilinos_vector();
+    target_rhs->Export(epetra_src, *exporter, Add);
+
+    int global_rank = dealii::Utilities::MPI::this_mpi_process(global_comm);
+    if (global_rank % 3 == 0)
+    {
+      // KORREKTUR: Wir übergeben den Start-Pointer und den (Start + Größe)-Pointer als Endpunkt [I4.2]
+      dealii::Vector<double> local_rhs(target_rhs->Values(), target_rhs->Values() + target_map->NumMyElements());
+      dealii::Vector<double> local_sol(target_sol->Values(), target_sol->Values() + target_map->NumMyElements());
+
+      // MUMPS aufrufen (Rein lokal, 0 MPI-Kommunikation!)
+      mumps_solver.vmult(local_sol, local_rhs);
+    }
+
+    // C. Import: Streue das Ergebnis blitzschnell von 24 -> 192 Ranks zurück [I2]
+    Epetra_FEVector &epetra_dst = dst.trilinos_vector();
+    epetra_dst.Import(*target_sol, *importer, Insert);
+  }
+
+private:
+  MPI_Comm global_comm;
+  MPI_Comm solver_comm;
+  dealii::SparseDirectMUMPS &mumps_solver;
+
+  std::unique_ptr<Epetra_Map> source_map;
+  std::unique_ptr<Epetra_Map> target_map;
+  std::unique_ptr<Epetra_Export> exporter;
+  std::unique_ptr<Epetra_Import> importer;
+
+  std::unique_ptr<Epetra_Vector> target_rhs;
+  std::unique_ptr<Epetra_Vector> target_sol;
+
+  mutable dealii::TrilinosWrappers::MPI::Vector mumps_rhs_vector;
+  mutable dealii::TrilinosWrappers::MPI::Vector mumps_sol_vector;
+};*/
+
+/*template <int dim>
+class MUMPS24BridgePreconditioner : public dealii::Subscriptor
+{
+public:
+  MUMPS24BridgePreconditioner(const dealii::IndexSet &locally_owned_dofs,
+                              MPI_Comm global_comm,
+                              MPI_Comm solver_comm,
+                              dealii::SparseDirectMUMPS &mumps_solver)
+  : global_comm(global_comm),
+    solver_comm(solver_comm),
+    mumps_solver(mumps_solver)
+  {
+    int global_rank = dealii::Utilities::MPI::this_mpi_process(global_comm);
+    Epetra_MpiComm epetra_global_comm(global_comm);
+
+    std::vector<int> local_indices;
+    for (auto index : locally_owned_dofs)
+      local_indices.push_back(index);
+
+    // Maps und Exporter erstellen (vollständig parallel, alle 576 Ranks machen mit!)
+    source_map = std::make_unique<Epetra_Map>(-1, local_indices.size(), local_indices.data(), 0, epetra_global_comm);
+    target_map = std::make_unique<Epetra_Map>(create_target_map(locally_owned_dofs, global_comm, solver_comm));
+
+    exporter = std::make_unique<Epetra_Export>(*source_map, *target_map);
+    importer = std::make_unique<Epetra_Import>(*source_map, *target_map);
+
+    target_rhs = std::make_unique<Epetra_Vector>(*target_map);
+    target_sol = std::make_unique<Epetra_Vector>(*target_map);
+    
+    // KORREKTUR: Die deal.II Vektoren mumps_rhs_vector und mumps_sol_vector 
+    // wurden hier restlos gelöscht! Keine riskanten Kollektive mehr im Konstruktor!
+  }
+
+    void vmult(dealii::TrilinosWrappers::MPI::Vector &dst,
+             const dealii::TrilinosWrappers::MPI::Vector &src) const
+  {
+    Epetra_FEVector &epetra_src = const_cast<dealii::TrilinosWrappers::MPI::Vector&>(src).trilinos_vector();
+    target_rhs->Export(epetra_src, *exporter, Add);
+
+    int global_rank = dealii::Utilities::MPI::this_mpi_process(global_comm);
+    if (global_rank % 3 == 0)
+    {
+      // 1. REIN LOKALE WRAPPER (std::vector-Äquivalent in deal.II)
+      // Diese Konstruktion nimmt nur das nackte C-Array und die Größe auf dem Prozess [I4.2].
+      // Es wird KEIN MPI-Aufruf abgesetzt, es gibt keine Deadlocks!
+       dealii::Vector<double> local_rhs(target_rhs->Values(), target_rhs->Values() + target_map->NumMyElements());
+      dealii::Vector<double> local_sol(target_sol->Values(), target_sol->Values() + target_map->NumMyElements());
+
+      // MUMPS aufrufen (Rein lokal, 0 MPI-Kommunikation!)
+      mumps_solver.vmult(local_sol, local_rhs);
+    }
+
+    Epetra_FEVector &epetra_dst = dst.trilinos_vector();
+    epetra_dst.Import(*target_sol, *importer, Insert);
+  }
+
+
+private:
+  MPI_Comm global_comm;
+  MPI_Comm solver_comm;
+  dealii::SparseDirectMUMPS &mumps_solver;
+
+  std::unique_ptr<Epetra_Map> source_map;
+  std::unique_ptr<Epetra_Map> target_map;
+  std::unique_ptr<Epetra_Export> exporter;
+  std::unique_ptr<Epetra_Import> importer;
+
+  std::unique_ptr<Epetra_Vector> target_rhs;
+  std::unique_ptr<Epetra_Vector> target_sol;
+};*/
+
+
+
+
 // @sect3{Nonlinear poro-viscoelastic solid}
 // The Solid class is the central class as it represents the problem at hand:
 // the nonlinear poro-viscoelastic solid
@@ -4581,8 +4824,12 @@ private:
 
             //Solve the linearized equations using a direct solver
             void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT);
-            void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, SparseDirectMUMPS &precon, const double current_nonlinear_residual);
+            //void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, SparseDirectMUMPS &precon, const double current_nonlinear_residual);
+            void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, MumpsReuse &precon, const double current_nonlinear_residual);
             void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, MUMPSPreconditioner<dim> &precon);
+            //void solve_linear_system(dealii::TrilinosWrappers::MPI::BlockVector &newton_update,
+            //             const MUMPS24BridgePreconditioner<dim>    &bridge_preconditioner,
+            //             const double                               residual_norm);
 
             //Retrieve the  solution
             TrilinosWrappers::MPI::BlockVector
@@ -4719,7 +4966,7 @@ private:
 
             //Declare an instance of dealii classes necessary for FE system set-up and assembly
             //Store elements of tangent matrix (indicated by SparsityPattern class) as sparse matrix (more efficient)
-            TrilinosWrappers::BlockSparseMatrix tangent_matrix;
+            //TrilinosWrappers::BlockSparseMatrix tangent_matrix;
             //Right hand side vector of forces
             TrilinosWrappers::MPI::BlockVector  system_rhs;
             //Total displacement values + pressure (accumulated solution to FE system)
@@ -4728,7 +4975,7 @@ private:
 
             // Non-block system for the direct solver. We will copy the block system into these to solve the linearized system of equations.
             TrilinosWrappers::SparseMatrix tangent_matrix_nb;
-            TrilinosWrappers::SparseMatrix tangent_matrix_precon_nb;
+            //TrilinosWrappers::SparseMatrix tangent_matrix_precon_nb;
             TrilinosWrappers::MPI::Vector  system_rhs_nb;
 
             //We define variables to store norms and update norms and normalisation factors.
@@ -4767,6 +5014,7 @@ private:
             void get_error_update
                  (const TrilinosWrappers::MPI::BlockVector &newton_update_IN,
                   Errors                                   &error_update_OUT);
+            void print_assembly_checksums() const;
 
             // Print information to screen
             void print_conv_header();
@@ -4777,8 +5025,10 @@ private:
             #endif
 
             #if LINUX_SYSTEM
-              SparseDirectMUMPS::AdditionalData data_mumps;
-              std::unique_ptr<SparseDirectMUMPS> preconditioner;
+              //SparseDirectMUMPS::AdditionalData data_mumps;
+              //std::unique_ptr<SparseDirectMUMPS> preconditioner;
+              MumpsReuse::AdditionalData data_mumps;
+              std::unique_ptr<MumpsReuse> preconditioner;
             #endif
 
 //NOTE: In all functions, we pass by reference (&), so these functions work on the original copy (not a clone copy),
@@ -4982,6 +5232,8 @@ private:
                                      tracked_vertices,
                                      pointfile);
 
+              MemProbe::report("end_time_step", mpi_communicator);
+
               //Increment the time step (=load step)
               time->increment_time(det_F_min);
             }
@@ -5053,9 +5305,11 @@ private:
         std::vector<std::vector<Tensor<1,dim>>>          Nx;
         std::vector<std::vector<double>>                 Nx_p_fluid;
         //shape function gradients
-        std::vector<std::vector<Tensor<2,dim, NumberType>>>          grad_Nx;
+        //std::vector<std::vector<Tensor<2,dim, NumberType>>>          grad_Nx;
         std::vector<std::vector<SymmetricTensor<2,dim, NumberType>>> symm_grad_Nx;
         std::vector<std::vector<Tensor<1,dim, NumberType>>>          grad_Nx_p_fluid;
+
+        std::vector<NumberType> residual_ad;
 
         ScratchData_ASM(const FiniteElement<dim> &fe_cell,
                         const QGauss<dim> &qf_cell, const UpdateFlags uf_cell,
@@ -5076,12 +5330,12 @@ private:
           solution_grads_face_p_fluid_total(qf_face.size()),
           Nx(qf_cell.size(), std::vector<Tensor<1,dim>>(fe_cell.dofs_per_cell)),
           Nx_p_fluid(qf_cell.size(), std::vector<double>(fe_cell.dofs_per_cell)),
-          grad_Nx(qf_cell.size(), std::vector<Tensor<2, dim, NumberType>>(fe_cell.dofs_per_cell)),
+          //grad_Nx(qf_cell.size(), std::vector<Tensor<2, dim, NumberType>>(fe_cell.dofs_per_cell)),
           symm_grad_Nx(qf_cell.size(), std::vector<SymmetricTensor<2, dim, NumberType>> (fe_cell.dofs_per_cell)),
           grad_Nx_p_fluid(qf_cell.size(), std::vector<Tensor<1, dim, NumberType>>(fe_cell.dofs_per_cell))
-        {}
+         {}
 
-        ScratchData_ASM(const ScratchData_ASM &rhs)
+/*        ScratchData_ASM(const ScratchData_ASM &rhs)
           :
           solution_total (rhs.solution_total),
           fe_values_ref(rhs.fe_values_ref.get_fe(),
@@ -5101,6 +5355,33 @@ private:
           symm_grad_Nx(rhs.symm_grad_Nx),
           grad_Nx_p_fluid(rhs.grad_Nx_p_fluid)
         {}
+*/
+ScratchData_ASM(const ScratchData_ASM &rhs)
+          :
+          solution_total (rhs.solution_total),
+          fe_values_ref(rhs.fe_values_ref.get_fe(),
+                        rhs.fe_values_ref.get_quadrature(),
+                        rhs.fe_values_ref.get_update_flags()),
+          fe_face_values_ref(rhs.fe_face_values_ref.get_fe(),
+                             rhs.fe_face_values_ref.get_quadrature(),
+                             rhs.fe_face_values_ref.get_update_flags()),
+          // WICHTIG: Wir erzeugen komplett frische Vektoren mit der richtigen Größe,
+          // anstatt Sacados fehlerhafte Kopier-Innereien zu triggern!
+          local_dof_values(rhs.local_dof_values.size()),
+          solution_grads_u_total(rhs.solution_grads_u_total.size()),
+          solution_values_p_fluid_total(rhs.solution_values_p_fluid_total.size()),
+          solution_grads_p_fluid_total(rhs.solution_grads_p_fluid_total.size()),
+          solution_grads_face_p_fluid_total(rhs.solution_grads_face_p_fluid_total.size()),
+          
+          // Reine double-Vektoren können normal instanziiert werden
+          Nx(rhs.Nx),
+          Nx_p_fluid(rhs.Nx_p_fluid),
+          
+          // Bei den verschachtelten AD-Vektoren erzeugen wir die exakte Matrix-Struktur komplett FRISCH!
+          //grad_Nx(rhs.grad_Nx.size(), std::vector<Tensor<2, dim, NumberType>>(rhs.grad_Nx[0].size())),
+          symm_grad_Nx(rhs.symm_grad_Nx.size(), std::vector<SymmetricTensor<2, dim, NumberType>>(rhs.symm_grad_Nx[0].size())),
+          grad_Nx_p_fluid(rhs.grad_Nx_p_fluid.size(), std::vector<Tensor<1, dim, NumberType>>(rhs.grad_Nx_p_fluid[0].size()))
+        {}
 
         void reset()
         {
@@ -5119,27 +5400,27 @@ private:
           Assert(solution_grads_p_fluid_total.size() == n_q_points, ExcInternalError());
 
           Assert(Nx.size() == n_q_points, ExcInternalError());
-          Assert(grad_Nx.size() == n_q_points, ExcInternalError());
+          //Assert(grad_Nx.size() == n_q_points, ExcInternalError());
           Assert(symm_grad_Nx.size() == n_q_points, ExcInternalError());
 
           for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
             {
               Assert( Nx[q_point].size() == n_dofs_per_cell, ExcInternalError());
-              Assert( grad_Nx[q_point].size() == n_dofs_per_cell, ExcInternalError());
+              //Assert( grad_Nx[q_point].size() == n_dofs_per_cell, ExcInternalError());
               Assert( symm_grad_Nx[q_point].size() == n_dofs_per_cell, ExcInternalError());
 
               solution_grads_u_total[q_point] = 0.0;
               solution_values_p_fluid_total[q_point] = 0.0;
               solution_grads_p_fluid_total[q_point] = 0.0;
 
-              for (unsigned int k = 0; k < n_dofs_per_cell; ++k)
+             /* for (unsigned int k = 0; k < n_dofs_per_cell; ++k)
                 {
                   Nx[q_point][k] = 0.0;
                   Nx_p_fluid[q_point][k] = 0.0;
                   grad_Nx[q_point][k] = 0.0;
                   symm_grad_Nx[q_point][k] = 0.0;
                   grad_Nx_p_fluid[q_point][k] = 0.0;
-                }
+                } */
             }
 
           const unsigned int n_f_q_points = solution_grads_face_p_fluid_total.size();
@@ -5147,6 +5428,8 @@ private:
 
           for (unsigned int f_q_point = 0; f_q_point < n_f_q_points; ++f_q_point)
               solution_grads_face_p_fluid_total[f_q_point] = 0.0;
+
+          residual_ad.assign(local_dof_values.size(), NumberType(0.0));
         }
     };
 
@@ -5198,6 +5481,7 @@ private:
 
         // The DOF handler is initialised and we renumber the grid in an efficient manner.
         dof_handler_ref.distribute_dofs(fe);
+        MemProbe::report("distribute_dofs", mpi_communicator);
 
         //DoFRenumbering::Cuthill_McKee(dof_handler_ref);  //order might need to change for block preconditioners
         //DoFRenumbering::subdomain_wise(dof_handler_ref);
@@ -5359,21 +5643,21 @@ for (unsigned int b=0; b<n_blocks; ++b)
 
         // We optimise the sparsity pattern to reflect this structure and prevent
         // unnecessary data creation for the right-diagonal block components.
-        Table<2, DoFTools::Coupling> coupling(n_components, n_components);
-        for (unsigned int ii = 0; ii < n_components; ++ii)
-          for (unsigned int jj = 0; jj < n_components; ++jj)
+        //Table<2, DoFTools::Coupling> coupling(n_components, n_components);
+        //for (unsigned int ii = 0; ii < n_components; ++ii)
+        //  for (unsigned int jj = 0; jj < n_components; ++jj)
 
             //Identify "zero" matrix components of FE-system (The two components do not couple)
-            if (((ii == p_fluid_component) && (jj < p_fluid_component))
-                || ((ii < p_fluid_component) && (jj == p_fluid_component)) )
-              coupling[ii][jj] = DoFTools::none;
+        //    if (((ii == p_fluid_component) && (jj < p_fluid_component))
+        //        || ((ii < p_fluid_component) && (jj == p_fluid_component)) )
+        //      coupling[ii][jj] = DoFTools::none;
 
             //The rest of components always couple
-            else
-              coupling[ii][jj] = DoFTools::always;
+        //    else
+        //      coupling[ii][jj] = DoFTools::always;
 
-        TrilinosWrappers::BlockSparsityPattern bsp (locally_owned_partitioning,
-                                                    mpi_communicator);
+        //TrilinosWrappers::BlockSparsityPattern bsp (locally_owned_partitioning,
+        //                                            mpi_communicator);
 
         hanging_node_constraints.clear();
         const IndexSet &locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler_ref);
@@ -5382,16 +5666,16 @@ for (unsigned int b=0; b<n_blocks; ++b)
         DoFTools::make_hanging_node_constraints(dof_handler_ref,hanging_node_constraints);
         hanging_node_constraints.close();
 
-        DoFTools::make_sparsity_pattern (dof_handler_ref, bsp, hanging_node_constraints,
-                                         false, this_mpi_process);
-        bsp.compress();
+        //DoFTools::make_sparsity_pattern (dof_handler_ref, bsp, hanging_node_constraints,
+        //                                 false, this_mpi_process);
+        //bsp.compress();
 
         //Reinitialize the (sparse) tangent matrix with the given sparsity pattern.
-        tangent_matrix.reinit (bsp);
+        //tangent_matrix.reinit (bsp);
 
-        pcout << "Memory consumption:" << std::endl;
-        pcout << "  Triangulation: " << triangulation.memory_consumption() / 1024 / 1024 << " MB" << std::endl;
-        pcout << "  Matrix (local): " << tangent_matrix.memory_consumption() / 1024 / 1024 << " MB" << std::endl;
+        //pcout << "Memory consumption:" << std::endl;
+        //pcout << "  Triangulation: " << triangulation.memory_consumption() / 1024 / 1024 << " MB" << std::endl;
+        //pcout << "  Matrix (local): " << tangent_matrix.memory_consumption() / 1024 / 1024 << " MB" << std::endl;
 
         //Initialize the right hand side and solution vectors with number of DoFs
         system_rhs.reinit(locally_owned_partitioning, mpi_communicator);
@@ -5410,11 +5694,18 @@ for (unsigned int b=0; b<n_blocks; ++b)
                                          false, this_mpi_process);
         sp.compress();
         tangent_matrix_nb.reinit (sp);
-        tangent_matrix_precon_nb.reinit (sp);
+        //tangent_matrix_precon_nb.reinit (sp);
         system_rhs_nb.reinit(locally_owned_dofs, mpi_communicator);
+        MemProbe::report("system_setup", mpi_communicator);
 
         //Set up the quadrature point history
         setup_qph();
+        MemProbe::report("qp-history", mpi_communicator);
+
+        const auto mem = dealii::Utilities::MPI::min_max_avg(
+                   tangent_matrix_nb.memory_consumption() / 1.0e6, mpi_communicator);
+        pcout << "  tangent_matrix_nb: sum " << mem.sum << " MB, max/rank " << mem.max
+              << " MB, nnz " << tangent_matrix_nb.n_nonzero_elements() << std::endl;
     }
 
     //Component extractors: used to extract sub-blocks from the global matrix
@@ -5500,17 +5791,8 @@ for (unsigned int b=0; b<n_blocks; ++b)
         data_mumps.blr.blr_ucfs = true;          
 
         // Objekt dynamisch auf dem Heap erzeugen
-        preconditioner = std::make_unique<SparseDirectMUMPS>(data_mumps, mpi_communicator);
-
-        /*int *BLRicntl = preconditioner->get_icntl();
-        double *BLRcntl = preconditioner->get_cntl();
-
-        BLRcntl[0] = 0; // Pivoting deaktivieren
-
-        #define BLRICNTL(I) BLRicntl[(I)-1]
-        BLRICNTL(28) = 1; // Sequentielle Analyse
-        BLRICNTL(7) = 5;  // METIS Ordering
-        #undef BLRICNTL */
+        //preconditioner = std::make_unique<SparseDirectMUMPS>(data_mumps, mpi_communicator);
+        preconditioner = std::make_unique<MumpsReuse>(data_mumps, mpi_communicator); 
 
         int *icntl = preconditioner->get_icntl();
         double *cntl = preconditioner->get_cntl();
@@ -5518,14 +5800,27 @@ for (unsigned int b=0; b<n_blocks; ++b)
         #define IC(I) icntl[(I)-1]
         #define RC(I) cntl[(I)-1]
         RC(1)  = 1e-5;   //disable pivoting
-        IC(4)  = 2;   // more output
+        IC(4)  = 1;   // more output
         IC(10) = 0;   // iterative refinement
         IC(47) = 1;   // single precision factorization
         //IC(35) = 1;   // BLR on (done by wrapper, but set on 2)
         //IC(36) = 1;   // BLR with UCFs (done by wrapper)
         IC(37) = 1;   // compress contribution blocks
-        IC(28) = 1;   // sequential analysis
+        //IC(38) = 250; // BLR compression estimation
+        //IC(39) = 350; // BLR compression estimation
+        IC(28) = 1;   // sequential(1) or parallel(2) analysis
         IC(7)  = 5;   // METIS reordering
+        IC(29) = 2;   // ParMETIS reordering
+        IC(6)  = 0;   // max. transveral off
+        IC(48) = 1;   // Tree-OMP on
+        //IC(49) = 1;
+        //IC(13) = 9999;   // no parallel root node
+        //IC(16) = 9;   // threads from environment
+        IC(40) = 0;   // adaptive precision
+        //IC(22) = 1;   // out-of-core mode
+        IC(14) = 20;   // memory relaxation
+        //IC(23) = 3000; // RAM per MPI process (in MB)
+        IC(58) = 2;   // efficient symbolic factorization
         #undef IC
         #undef RC
     }
@@ -5599,7 +5894,7 @@ for (unsigned int b=0; b<n_blocks; ++b)
             outfile   << " " << std::setw(2) << newton_iteration << " " << std::flush;
 
             //Initialize global stiffness matrix and global force vector to zero
-            tangent_matrix = 0.0;
+            //tangent_matrix = 0.0;
             system_rhs = 0.0;
 
             tangent_matrix_nb = 0.0;
@@ -5608,6 +5903,7 @@ for (unsigned int b=0; b<n_blocks; ++b)
             //Apply boundary conditions
             make_constraints(newton_iteration);
             assemble_system(solution_delta_OUT);
+            MemProbe::report("assemble_system", mpi_communicator);
 
             //Compute the rhs residual (error between external and internal forces in FE system)
             get_error_residual(error_residual);
@@ -5660,6 +5956,174 @@ for (unsigned int b=0; b<n_blocks; ++b)
 //            	error_residual_norm_last = error_residual_norm;
 //            }
 
+// 1. Die deal.II Matrix-Hülle als Zeiger deklarieren (wird mit nullptr initialisiert)
+//std::unique_ptr<dealii::TrilinosWrappers::SparseMatrix> dealii_target_matrix;
+
+//pcout << "Here1" << std::endl;
+
+/*#if LINUX_SYSTEM
+    MPI_Comm global_comm = MPI_COMM_WORLD;
+    int global_rank = dealii::Utilities::MPI::this_mpi_process(global_comm);
+    bool is_solver_process = (global_rank % 3 == 0);
+
+    // TESTPUNKT A
+    std::cerr << "--- RANK " << global_rank << ": VOR COMM_SPLIT ---" << std::endl;
+    std::cerr << std::flush;
+
+    MPI_Comm solver_comm;
+    MPI_Comm_split(global_comm, is_solver_process ? 1 : MPI_UNDEFINED, global_rank, &solver_comm);
+
+    // TESTPUNKT B
+    std::cerr << "--- RANK " << global_rank << ": VOR MAP_CREATION ---" << std::endl;
+    std::cerr << std::flush;
+
+    Epetra_Map target_map = create_target_map(locally_owned_dofs, global_comm, solver_comm);
+    Epetra_CrsMatrix epetra_tmp(Epetra_DataAccess::Copy, target_map, 0);
+
+    // TESTPUNKT C
+    std::cerr << "--- RANK " << global_rank << ": VOR EXPORT_BLOCK ---" << std::endl;
+    std::cerr << std::flush;
+
+    if ((time->get_timestep() % 3 == 1) && newton_iteration == 0)
+    {
+        std::cerr << "--- RANK " << global_rank << ": IN EXPORT_BLOCK ---" << std::endl;
+        std::flush(std::cerr);
+
+        const Epetra_CrsMatrix &epetra_source_matrix = tangent_matrix_nb.trilinos_matrix();
+        Epetra_Export exporter(epetra_source_matrix.RowMap(), target_map);
+
+        epetra_tmp.Export(epetra_source_matrix, exporter, Add);
+        epetra_tmp.FillComplete();
+
+        if (is_solver_process)
+        {
+            dealii_target_matrix = std::make_unique<dealii::TrilinosWrappers::SparseMatrix>();
+            dealii_target_matrix->reinit(epetra_tmp);
+        }
+    }
+
+    std::cerr << "--- RANK " << global_rank << ": ERREICHT HERE2 ---" << std::endl;
+    std::cerr << std::flush;
+
+
+
+pcout << "Here2" << std::endl;
+
+
+// 2. MUMPS REIN AUF DEN 24 PROZESSEN INITIALISIEREN (NUR BEIM ALLERERSTEN AUFRUF)
+if (is_solver_process && !preconditioner)
+{
+    data_mumps.blr_factorization = true;
+    data_mumps.output_details = true;
+    data_mumps.blr.lowrank_threshold = 1e-4;
+    data_mumps.blr.blr_ucfs = true;
+
+    // MUMPS hört STRENG auf solver_comm (24 Ranks) [I2]
+    preconditioner = std::make_unique<SparseDirectMUMPS>(data_mumps, solver_comm);
+
+    int *icntl = preconditioner->get_icntl();
+    double *cntl = preconditioner->get_cntl();
+    #define IC(I) icntl[(I)-1]
+    #define RC(I) cntl[(I)-1]
+    RC(1)  = 1e-5; IC(4)  = 2; IC(10) = 0; IC(47) = 1; IC(37) = 1;
+    IC(28) = 1; IC(7)  = 5; IC(48) = 1; IC(16) = 3; IC(40) = 1;
+    #undef IC
+    #undef RC
+}
+
+pcout << "Here3" << std::endl;
+
+// Alle Prozesse synchronisieren, nachdem MUMPS-Speicher steht
+MPI_Barrier(global_comm);
+
+// 3. TEURE MUMPS-FAKTORISIERUNG RECHNEN (NUR ALLE 3 ZEITSCHRITTE)
+
+    if (is_solver_process && dealii_target_matrix)
+    {
+        TimerOutput::Scope timing_section(timerconsole, "MUMPS Factorization");
+        // KORREKTUR: Wir übergeben das deal.II-Wrapper-Objekt, das der Linker nun fehlerfrei findet!
+        preconditioner->initialize(*dealii_target_matrix);
+    }
+
+MPI_Barrier(global_comm); */
+/*
+// 1. Die Matrix-Hülle ganz oben auf dem unzerstörbaren globalen Kommunikator deklarieren
+std::unique_ptr<dealii::TrilinosWrappers::SparseMatrix> dealii_target_matrix;
+
+pcout << "Here1" << std::endl;
+
+// 2. REIN LOKALE LOGIK: Keine MPI-Netzwerksignale, 0 % Deadlock-Risiko!
+int global_rank = dealii::Utilities::MPI::this_mpi_process(mpi_communicator);
+bool is_solver_process = (global_rank % 3 == 0);
+
+if ((time->get_timestep() % 3 == 1) && newton_iteration == 0)
+{
+    pcout << " EXPORT_MATRIX_GLOBAL_SYNCHRONOUS " << std::flush;
+
+    // Wir initialisieren die Matrix für ALLE Ranks absolut synchron auf mpi_communicator [I3.1]
+    dealii_target_matrix = std::make_unique<dealii::TrilinosWrappers::SparseMatrix>(locally_owned_dofs, mpi_communicator);
+
+    // Wir nutzen das globale, unbeschädigte Layout
+    Epetra_CrsMatrix &raw_target_matrix = const_cast<Epetra_CrsMatrix &>(dealii_target_matrix->trilinos_matrix());
+    const Epetra_CrsMatrix &epetra_source_matrix = tangent_matrix_nb.trilinos_matrix();
+    
+    Epetra_Export exporter(epetra_source_matrix.RowMap(), raw_target_matrix.RowMap());
+    raw_target_matrix.Export(epetra_source_matrix, exporter, Add);
+    raw_target_matrix.FillComplete();
+}
+
+pcout << "Here2" << std::endl;
+
+// 3. INITIALISIERUNG VON MUMPS: Alle 72 Ranks betreten dies absolut synchron!
+if (!preconditioner)
+{
+    data_mumps.blr_factorization = true;
+    data_mumps.output_details = true;
+    data_mumps.blr.lowrank_threshold = 1e-4;
+    data_mumps.blr.blr_ucfs = true;
+
+    // MUMPS hört starr auf den sicheren mpi_communicator (kein Split!) [I3.1]
+    preconditioner = std::make_unique<SparseDirectMUMPS>(data_mumps, mpi_communicator);
+
+    int *icntl = preconditioner->get_icntl();
+    double *cntl = preconditioner->get_cntl();
+    #define IC(I) icntl[(I)-1]
+    #define RC(I) cntl[(I)-1]
+    RC(1)  = 1e-5; IC(4)  = 2; IC(10) = 0; IC(47) = 1; IC(37) = 1;
+    IC(28) = 1; IC(7)  = 5; IC(48) = 1; IC(16) = 3; IC(40) = 1; IC(46) = 24;
+
+    // DIE RETTUNG FÜR DIE BLR-NUMERIK:
+    // Wir zwingen MUMPS, das BLR-Clustering rein mathematisch über die Matrixstruktur
+    // zu berechnen. Die leeren Ranks zerstören die BLR-Statistik damit NICHT mehr!
+    IC(18) = 0; 
+
+    #undef IC
+    #undef RC
+}
+
+if (dealii_target_matrix && ((time->get_timestep() % 3 == 1) && newton_iteration == 0))
+{
+    TimerOutput::Scope timing_section(timerconsole, "MUMPS Factorization");
+    // Alle Ranks rufen das absolut synchron auf. Ein Einrieren ist ausgeschlossen.
+    preconditioner->initialize(*dealii_target_matrix);
+}
+
+pcout << "Here4" << std::endl;
+
+// 4. FGMRES-LÖSER AUF DEN FULL RANKS STARTEN
+if (this->parameters.lin_solver == "BLRNewt")
+{
+    // Die Brücke läuft ebenfalls unzerstörbar auf dem globalen mpi_communicator
+    MUMPS24BridgePreconditioner<dim> bridge_preconditioner(locally_owned_dofs, mpi_communicator, mpi_communicator, *preconditioner);
+    solve_linear_system(newton_update, *preconditioner, error_residual.norm);
+}
+else
+{
+    solve_linear_system(newton_update);
+}*/
+
+
+
             //Solve the linearized system
             if (this->parameters.lin_solver == "BLRNewt") {
                 #if LINUX_SYSTEM
@@ -5667,6 +6131,14 @@ for (unsigned int b=0; b<n_blocks; ++b)
                     //if (newton_iteration == 0) {
                         TimerOutput::Scope timing_section(timerconsole, "Preconditioner");
                         TimerOutput::Scope timer_section(timerfile, "Preconditioner");
+                        if (!preconditioner->analysis_is_done())
+                          {
+                          MemProbe::report("compute_permutation_1", mpi_communicator);
+                          NodeND::Options nd;                 // Standard: seed -1, symmetrize true
+                          preconditioner->set_user_ordering(
+                          NodeND::compute_permutation(dof_handler_ref, tangent_matrix_nb, mpi_communicator, nd));
+                          MemProbe::report("compute_permutation_2", mpi_communicator);
+                          }
                         preconditioner->initialize(tangent_matrix_nb);
                     }
                     solve_linear_system(newton_update, *preconditioner, error_residual.norm);
@@ -5832,6 +6304,27 @@ for (unsigned int b=0; b<n_blocks; ++b)
         error_update_OUT.p_fluid = error_ud.block(p_fluid_block).l2_norm();
     }
 
+    template <int dim>
+    void Solid<dim>::print_assembly_checksums() const
+    {
+      std::ostringstream os;
+      os << std::scientific << std::setprecision(16);
+
+      os << "[CHK] rhs_l2      = " << system_rhs.l2_norm()      << '\n'
+         << "[CHK] rhs_linf    = " << system_rhs.linfty_norm()  << '\n'
+         << "[CHK] rhs_nb_l2   = " << system_rhs_nb.l2_norm()   << '\n';
+
+      //for (unsigned int i = 0; i < tangent_matrix.n_block_rows(); ++i)
+      //  for (unsigned int j = 0; j < tangent_matrix.n_block_cols(); ++j)
+      //    os << "[CHK] K("    << i << "," << j << ")_frob = "
+      //       << tangent_matrix.block(i, j).frobenius_norm()    << '\n';
+             
+      os << "[CHK] K_nb_frob = "
+         << tangent_matrix_nb.frobenius_norm() << '\n';
+
+      pcout << os.str() << std::flush;
+    }
+
     //Compute the total solution, which is valid at any Newton step. This is required as, to reduce
     //computational error, the total solution is only updated at the end of the timestep.
     template <int dim>
@@ -5888,7 +6381,7 @@ for (unsigned int b=0; b<n_blocks; ++b)
         endc (IteratorFilters::LocallyOwnedCell(),
               dof_handler_ref.end());
 
-        for (; cell != endc; ++cell)
+/*        for (; cell != endc; ++cell)
           {
             Assert(cell->is_locally_owned(), ExcInternalError());
             Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
@@ -5896,12 +6389,79 @@ for (unsigned int b=0; b<n_blocks; ++b)
             assemble_system_one_cell(cell, scratch_data, per_task_data);
             copy_local_to_global_system(per_task_data);
           }
-	
-        tangent_matrix.compress(VectorOperation::add);
-        system_rhs.compress(VectorOperation::add);
+*/
+
+	// =====================================================================
+	using CellIterator = typename DoFHandler<dim>::active_cell_iterator;
+
+// 1) Alle lokal besessenen Zellen einsammeln
+std::vector<CellIterator> local_cells;
+local_cells.reserve(triangulation.n_locally_owned_active_cells());
+for (auto it = cell; it != endc; ++it)
+  local_cells.push_back(it);                 // FilteredIterator wird zu active_cell_iterator
+
+// 2) Parallele Assembly
+std::exception_ptr first_exception;
+const std::ptrdiff_t n_cells = static_cast<std::ptrdiff_t>(local_cells.size());
+
+#pragma omp parallel num_threads(MultithreadInfo::n_threads())
+{
+  // Pro Thread eigene Kopien (Kopierkonstruktoren der Samples)
+  ScratchData_ASM<ADNumberType> scratch(scratch_data);
+  PerTaskData_ASM               data(per_task_data);
+
+  #pragma omp for schedule(dynamic, 4)
+  for (std::ptrdiff_t i = 0; i < n_cells; ++i)
+    {
+      bool ok = true;
+      try
+        {
+          assemble_system_one_cell(local_cells[i], scratch, data);
+        }
+      catch (...)
+        {
+          ok = false;
+          #pragma omp critical(exception_section)
+          if (!first_exception)
+            first_exception = std::current_exception();
+        }
+
+      if (ok)
+        {
+          #pragma omp critical(copier_section)
+          {
+            try
+              {
+                copy_local_to_global_system(data);
+              }
+            catch (...)
+              {
+                #pragma omp critical(exception_section)
+                if (!first_exception)
+                  first_exception = std::current_exception();
+              }
+          }
+        }
+    }
+}
+
+if (first_exception)
+  std::rethrow_exception(first_exception);
+        // =====================================================================
+
+        
+        //tangent_matrix.compress(VectorOperation::add);
+        //system_rhs.compress(VectorOperation::add);
 	
         tangent_matrix_nb.compress(VectorOperation::add);
         system_rhs_nb.compress(VectorOperation::add);
+
+        for (const auto i : locally_owned_dofs)
+          system_rhs(i) = system_rhs_nb(i);
+        system_rhs.compress(VectorOperation::insert);
+
+        if (std::getenv("ASM_CHECKSUMS") != nullptr)
+          print_assembly_checksums();
     }
 
     //Add the local elemental contribution to the global stiffness tensor
@@ -5909,11 +6469,11 @@ for (unsigned int b=0; b<n_blocks; ++b)
     template <int dim>
     void Solid<dim>::copy_local_to_global_system (const PerTaskData_ASM &data)
     {
-        constraints.distribute_local_to_global(data.cell_matrix,
-            data.cell_rhs,
-            data.local_dof_indices,
-            tangent_matrix,
-            system_rhs);
+        //constraints.distribute_local_to_global(data.cell_matrix,
+        //    data.cell_rhs,
+        //    data.local_dof_indices,
+        //    tangent_matrix,
+        //    system_rhs);
 
         constraints.distribute_local_to_global(data.cell_matrix,
             data.cell_rhs,
@@ -6014,10 +6574,11 @@ for (unsigned int b=0; b<n_blocks; ++b)
                   {
                     scratch.Nx[q_point][i] =
                         scratch.fe_values_ref[u_fe].value(i, q_point);
-                    scratch.grad_Nx[q_point][i] =
+                    //scratch.grad_Nx[q_point][i] =
+                    const Tensor<2, dim, ADNumberType> grad_Nx_i =     
                         scratch.fe_values_ref[u_fe].gradient(i, q_point)*F_inv_AD;
                     scratch.symm_grad_Nx[q_point][i] =
-                        symmetrize(scratch.grad_Nx[q_point][i]);
+                        symmetrize(grad_Nx_i);
                   }
                 else if  (i_group == p_fluid_block)
                   {
@@ -6033,7 +6594,8 @@ for (unsigned int b=0; b<n_blocks; ++b)
 
         //TimerOutput local_timer (std::cout, TimerOutput::summary, TimerOutput::wall_times);  
         //Assemble the stiffness matrix and rhs vector
-        std::vector<ADNumberType> residual_ad (dofs_per_cell, ADNumberType(0.0));
+        //std::vector<ADNumberType> residual_ad (dofs_per_cell, ADNumberType(0.0));
+        std::vector<ADNumberType> &residual_ad = scratch.residual_ad;
         for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
           {
             //TimerOutput::Scope timing_section(assembly_timer, "Assemble stiffness matrix and RHS");
@@ -6235,20 +6797,25 @@ for (unsigned int b=0; b<n_blocks; ++b)
             //local_timer.leave_subsection();
 
             //local_timer.enter_subsection ("6");
+
+            const SymmetricTensor<2, dim, ADNumberType> tau_total = tau_E + tau_fluid_vol;
+            const ADNumberType vol_term = det_F_AD - det_F_converged;
             for (unsigned int i = 0; i < dofs_per_cell; ++i)
               {
                 const unsigned int i_group = fe.system_to_base_index(i).first.first;
 
                 if (i_group == u_block)
                   {
-                    residual_ad[i] += symm_grad_Nu[i] * ( tau_E + tau_fluid_vol ) * JxW;
+                    //residual_ad[i] += symm_grad_Nu[i] * ( tau_E + tau_fluid_vol ) * JxW;
+                    residual_ad[i] += symm_grad_Nu[i] * tau_total * JxW;
                     residual_ad[i] -= Nu[i] * overall_body_force * JxW;
                   }
                 else if (i_group == p_fluid_block)
                   {
                     //const Tensor<1, dim, ADNumberType> seepage_vel_current
                     //    = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p);
-                    residual_ad[i] += Np[i] * (det_F_AD - det_F_converged) * JxW;
+                    //residual_ad[i] += Np[i] * (det_F_AD - det_F_converged) * JxW;
+                    residual_ad[i] += Np[i] * vol_term * JxW;
                     residual_ad[i] -= delta_t * grad_Np[i] * seepage_vel_current * JxW;
                     //residual_ad[i] -= time->get_delta_t() * grad_Np[i]
                     //                  * seepage_vel_current * JxW;
@@ -6711,7 +7278,7 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
 
     //Solve the linearized equations
     template <int dim>
-    void Solid<dim>::solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, SparseDirectMUMPS &precon, const double current_nonlinear_residual)
+    void Solid<dim>::solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, MumpsReuse &precon, const double current_nonlinear_residual)
     {
         TimerOutput::Scope timing_section(timerconsole, "Linear solver");
         TimerOutput::Scope timer_section(timerfile, "Linear solver");
@@ -6750,7 +7317,55 @@ if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
                 newton_update_OUT(idx_i) = newton_update_nb(idx_i);
             }
         newton_update_OUT.compress(VectorOperation::insert);
+       
+        preconditioner->print_solve_stats(pcout);
     }
+
+//Solve the linearized equations
+/*    template <int dim>
+void Solid<dim>::solve_linear_system(dealii::TrilinosWrappers::MPI::BlockVector &newton_update_OUT,
+                                     const MUMPS24BridgePreconditioner<dim>    &bridge_preconditioner,
+                                     const double                               current_nonlinear_residual)
+{
+        TimerOutput::Scope timing_section(timerconsole, "Linear solver");
+        TimerOutput::Scope timer_section(timerfile, "Linear solver");
+        pcout     << " SLV " << std::flush;
+        outfile   << " SLV " << std::flush;
+
+        TrilinosWrappers::MPI::Vector newton_update_nb;
+        newton_update_nb.reinit(locally_owned_dofs, mpi_communicator);
+
+        if (this->parameters.lin_solver == "BLRNewt") {
+            double dynamic_tolerance = std::max(1e-11, 1e-4 * current_nonlinear_residual);
+            SolverControl solver_control(120, dynamic_tolerance, true, true);
+
+            // Wechsel von SolverGMRES auf SolverFGMRES
+            SolverFGMRES<TrilinosWrappers::MPI::Vector>::AdditionalData fgmres_data;
+            fgmres_data.max_basis_size = 30;          // Leicht erhöht, um alternde Schritte abzufangen
+
+            SolverFGMRES<TrilinosWrappers::MPI::Vector> solver(solver_control, fgmres_data);
+            //deallog.depth_file(0); // Verhindert übermäßiges Schreiben in Dateien
+            //deallog.depth_console(2); // Erlaubt das Drucken der Solver-Iterationen auf der Konsole
+            pcout << " (LinTol: " << dynamic_tolerance << ") " << std::flush;
+            solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb, bridge_preconditioner);
+
+            SolverControl solver_control(120, 1e-12);
+            SolverGMRES<TrilinosWrappers::MPI::Vector>::AdditionalData gmres_data;
+            gmres_data.right_preconditioning = false;
+            gmres_data.max_basis_size = 20; // default
+            gmres_data.use_default_residual = true;
+            SolverGMRES<TrilinosWrappers::MPI::Vector> solver(solver_control, gmres_data);
+            solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb, precon);
+        }
+
+        // Copy the non-block solution back to block system
+        for (unsigned int i=0; i<locally_owned_dofs.n_elements(); ++i) {
+                const types::global_dof_index idx_i = locally_owned_dofs.nth_index_in_set(i);
+                newton_update_OUT(idx_i) = newton_update_nb(idx_i);
+            }
+        newton_update_OUT.compress(VectorOperation::insert);
+    }
+*/
 
     template <int dim>
     void Solid<dim>::solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, MUMPSPreconditioner<dim> &precon)
@@ -14983,10 +15598,17 @@ int main (int argc, char *argv[])
   using namespace NonLinearPoroViscoElasticity;
 
   //const unsigned int n_tbb_processes = 1;
-  const unsigned int n_tbb_processes = dealii::Utilities::string_to_int(std::string(argv[1]));
+ // const unsigned int n_tbb_processes = dealii::Utilities::string_to_int(std::string(argv[1]));
  // std::cout << "argc = " << argc << ", argv[1] " << argv[1] << ", argv[2] " << argv[2] << ", tbb " << n_tbb_processes << std::endl;
-  dealii::Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, n_tbb_processes);
+ // dealii::Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, n_tbb_processes);
  // dealii::Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, numbers::invalid_unsigned_int);
+    // 1. MPI ganz normal initialisieren (n_tbb_processes wird bei TBB=OFF ignoriert)
+  const unsigned int n_threads_per_rank = dealii::Utilities::string_to_int(std::string(argv[1]));
+  dealii::Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, n_threads_per_rank);
+
+  // 2. DER DURCHBRUCH FÜR TASKFLOW: Zwinge deal.II auf die 2 Threads!
+  // Da Sie im Slurm-Skript über argv[1] eine "2" übergeben können, wird das hier dynamisch gesetzt.
+  dealii::MultithreadInfo::set_thread_limit(n_threads_per_rank);
   try
     {
 	  std::string parameters_in (argv[2]);
