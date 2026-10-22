@@ -2,6 +2,7 @@
 /test
 /CMakeFiles
 nonlinear-poro-viscoelasticity
+nonlinear-poro-viscoelasticity_O2
 .project
 .cproject
 .vscode
@@ -9,6 +10,6 @@ compile_commands.json
 .DS_Store
 CMakeCache.txt
 CMakeFiles/
-MakeFile
+Makefile
 cmake_install.cmake
 cmake_logs/

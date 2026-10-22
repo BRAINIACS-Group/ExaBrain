@@ -37,6 +37,7 @@
 // related ones. They have been discussed in detail in previous tutorial
 // programs, so you need only refer to past tutorials for details.
 
+#include "phase_probe.h"
 #include "mumps_reuse.h"
 #include "node_nd_ordering.h"
 #include "mem_probe.h"
@@ -3342,6 +3343,7 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
               if (iteration > 15)
                 AssertThrow(false, ExcMessage("No convergence in local Newton iteration for the viscoelastic exponential time integration algorithm."));
             }
+            PhaseProbe::count_newton(iteration);
 
             NumberType aux_J_e_1 = 1.0;
             for (unsigned int a = 0; a < dim; ++a) {
@@ -5237,6 +5239,7 @@ private:
               //Increment the time step (=load step)
               time->increment_time(det_F_min);
             }
+          PhaseProbe::report(mpi_communicator, "Gesamtlauf");
 
           //Print the footers and close files
           if (this_mpi_process == 0)
@@ -6474,12 +6477,13 @@ if (first_exception)
         //    data.local_dof_indices,
         //    tangent_matrix,
         //    system_rhs);
-
+        PhaseProbe::Lap lap;
         constraints.distribute_local_to_global(data.cell_matrix,
             data.cell_rhs,
             data.local_dof_indices,
             tangent_matrix_nb,
             system_rhs_nb);
+        lap(PhaseProbe::COPY_GLOBAL);
     }
 
     //Compute stiffness matrix and corresponding rhs for one element
@@ -6492,12 +6496,12 @@ if (first_exception)
         //TimerOutput assembly_timer (pcout, TimerOutput::summary,TimerOutput::wall_times);
 
         Assert(cell->is_locally_owned(), ExcInternalError());
-
+        PhaseProbe::Lap lap;
         data.reset();
         scratch.reset();
         scratch.fe_values_ref.reinit(cell);
         cell->get_dof_indices(data.local_dof_indices);
-
+        lap(PhaseProbe::RESET_REINIT);
         // Setup automatic differentiation
         for (unsigned int k = 0; k < dofs_per_cell; ++k)
           {
@@ -6507,6 +6511,7 @@ if (first_exception)
             // Mark this cell DoF as an independent variable
             scratch.local_dof_values[k].diff(k, dofs_per_cell);
           }
+        lap(PhaseProbe::AD_SEED);
 
         // Update the quadrature point solution
         // Compute the values and gradients of the solution in terms of the AD variables
@@ -6547,6 +6552,7 @@ if (first_exception)
                   Assert(k_group <= p_fluid_block, ExcInternalError());
               }
           }
+        lap(PhaseProbe::QP_SOLUTION);
 
         //Set up pointer "lgph" to the PointHistory object of this element
         const std::vector<std::shared_ptr<const PointHistory<dim, ADNumberType> > >
@@ -6591,6 +6597,7 @@ if (first_exception)
                   Assert(i_group <= p_fluid_block, ExcInternalError());
               }
           }
+        lap(PhaseProbe::PRECALC);
 
         //TimerOutput local_timer (std::cout, TimerOutput::summary, TimerOutput::wall_times);  
         //Assemble the stiffness matrix and rhs vector
@@ -6598,10 +6605,6 @@ if (first_exception)
         std::vector<ADNumberType> &residual_ad = scratch.residual_ad;
         for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
           {
-            //TimerOutput::Scope timing_section(assembly_timer, "Assemble stiffness matrix and RHS");
-            
-
-            //local_timer.enter_subsection ("1");
             Tensor<2, dim, ADNumberType> F_AD = scratch.solution_grads_u_total[q_point];
             F_AD += Tensor<2, dim,double>(Physics::Elasticity::StandardTensors<dim>::I);
             const ADNumberType det_F_AD = determinant(F_AD);
@@ -6610,27 +6613,22 @@ if (first_exception)
             const Tensor<2, dim, ADNumberType> F_inv_AD = invert(F_AD); //inverse of def. gradient tensor
 
             const ADNumberType p_fluid = scratch.solution_values_p_fluid_total[q_point];
-            //local_timer.leave_subsection();
-
-            //local_timer.enter_subsection ("2");
+            lap(PhaseProbe::KINEMATICS);
             {
               PointHistory<dim, ADNumberType> *lqph_q_point_nc =
                  const_cast<PointHistory<dim, ADNumberType>*>(lqph[q_point].get());
               lqph_q_point_nc->update_internal_equilibrium(F_AD);
             }
-            //local_timer.leave_subsection();
-
+            lap(PhaseProbe::MAT_UPDATE);
+            
             //Get some info from constitutive model of solid
-            //local_timer.enter_subsection ("3");
             static const SymmetricTensor< 2, dim, double>
                 I (Physics::Elasticity::StandardTensors<dim>::I);
             const SymmetricTensor<2, dim, ADNumberType>
                 tau_E = lqph[q_point]->get_tau_E(F_AD);
             SymmetricTensor<2, dim, ADNumberType> tau_fluid_vol (I);
             tau_fluid_vol *= -1.0 * p_fluid * det_F_AD;
-            //local_timer.leave_subsection();
-
-            //local_timer.enter_subsection ("if");
+            
             if (parameters.eigenvalue_analysis) {
             	const Point<dim> q_point_coord = scratch.fe_values_ref.quadrature_point(q_point);
 
@@ -6770,18 +6768,15 @@ if (first_exception)
 						<< std::setw(16) << cauchy_E_ext_func[2][2] << "," << std::endl;
             	cauchy_vol.close();
             }
-            //local_timer.leave_subsection();
-            
+                        
             //Get some info from constitutive model of fluid
-            //local_timer.enter_subsection ("4");
             const ADNumberType det_F_aux =  lqph[q_point]->get_converged_det_F();
             const double det_F_converged = Tensor<0,dim,double>(det_F_aux); //Needs to be double, not AD number
             const Tensor<1, dim, ADNumberType> overall_body_force
                 = lqph[q_point]->get_overall_body_force(F_AD, parameters);
-            //local_timer.leave_subsection();    
+            lap(PhaseProbe::MAT_STRESS);            
 
             // Define some aliases to make the assembly process easier to follow
-            //local_timer.enter_subsection ("5");
             const std::vector<Tensor<1,dim>> &Nu = scratch.Nx[q_point];
             const std::vector<SymmetricTensor<2, dim, ADNumberType>>
                 &symm_grad_Nu = scratch.symm_grad_Nx[q_point];
@@ -6794,9 +6789,7 @@ if (first_exception)
             const Tensor<1, dim, ADNumberType> seepage_vel_current
                         = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p);
             const double delta_t = time->get_delta_t();
-            //local_timer.leave_subsection();
-
-            //local_timer.enter_subsection ("6");
+            lap(PhaseProbe::DARCY);            
 
             const SymmetricTensor<2, dim, ADNumberType> tau_total = tau_E + tau_fluid_vol;
             const ADNumberType vol_term = det_F_AD - det_F_converged;
@@ -6823,7 +6816,7 @@ if (first_exception)
                 else
                   Assert(i_group <= p_fluid_block, ExcInternalError());
               }
-            //local_timer.leave_subsection();  
+            lap(PhaseProbe::RESIDUAL);  
           }
 
           // Assemble the Neumann contribution (external force contribution).
@@ -6873,6 +6866,7 @@ if (first_exception)
                     }
                 }
             }
+          lap(PhaseProbe::NEUMANN);
 
         // Linearise the residual
         for (unsigned int i = 0; i < dofs_per_cell; ++i)
@@ -6884,6 +6878,8 @@ if (first_exception)
             for (unsigned int j=0; j<dofs_per_cell; ++j)
               data.cell_matrix(i,j) += R_i.fastAccessDx(j);
           }
+        lap(PhaseProbe::LINEARIZE);
+        lap.count_cell();
     }
 
     //Store the converged values of the internal variables
