@@ -5074,6 +5074,8 @@ private:
                  (const TrilinosWrappers::MPI::BlockVector &newton_update_IN,
                   Errors                                   &error_update_OUT);
             void print_assembly_checksums() const;
+            IndexSet owned_u_dofs, owned_p_dofs;
+            double field_l2_norm(const TrilinosWrappers::MPI::BlockVector &v, const IndexSet &s) const;
 
             // Print information to screen
             void print_conv_header();
@@ -5395,28 +5397,7 @@ private:
           grad_Nx_p_fluid(qf_cell.size(), std::vector<Tensor<1, dim, NumberType>>(fe_cell.dofs_per_cell))
          {}
 
-/*        ScratchData_ASM(const ScratchData_ASM &rhs)
-          :
-          solution_total (rhs.solution_total),
-          fe_values_ref(rhs.fe_values_ref.get_fe(),
-                        rhs.fe_values_ref.get_quadrature(),
-                        rhs.fe_values_ref.get_update_flags()),
-          fe_face_values_ref(rhs.fe_face_values_ref.get_fe(),
-                             rhs.fe_face_values_ref.get_quadrature(),
-                             rhs.fe_face_values_ref.get_update_flags()),
-          local_dof_values(rhs.local_dof_values),
-          solution_grads_u_total(rhs.solution_grads_u_total),
-          solution_values_p_fluid_total(rhs.solution_values_p_fluid_total),
-          solution_grads_p_fluid_total(rhs.solution_grads_p_fluid_total),
-          solution_grads_face_p_fluid_total(rhs.solution_grads_face_p_fluid_total),
-          Nx(rhs.Nx),
-          Nx_p_fluid(rhs.Nx_p_fluid),
-          grad_Nx(rhs.grad_Nx),
-          symm_grad_Nx(rhs.symm_grad_Nx),
-          grad_Nx_p_fluid(rhs.grad_Nx_p_fluid)
-        {}
-*/
-ScratchData_ASM(const ScratchData_ASM &rhs)
+        ScratchData_ASM(const ScratchData_ASM &rhs)
           :
           solution_total (rhs.solution_total),
           fe_values_ref(rhs.fe_values_ref.get_fe(),
@@ -5438,7 +5419,6 @@ ScratchData_ASM(const ScratchData_ASM &rhs)
           Nx_p_fluid(rhs.Nx_p_fluid),
           
           // Bei den verschachtelten AD-Vektoren erzeugen wir die exakte Matrix-Struktur komplett FRISCH!
-          //grad_Nx(rhs.grad_Nx.size(), std::vector<Tensor<2, dim, NumberType>>(rhs.grad_Nx[0].size())),
           symm_grad_Nx(rhs.symm_grad_Nx.size(), std::vector<SymmetricTensor<2, dim, NumberType>>(rhs.symm_grad_Nx[0].size())),
           grad_Nx_p_fluid(rhs.grad_Nx_p_fluid.size(), std::vector<Tensor<1, dim, NumberType>>(rhs.grad_Nx_p_fluid[0].size()))
         {}
@@ -5460,27 +5440,16 @@ ScratchData_ASM(const ScratchData_ASM &rhs)
           Assert(solution_grads_p_fluid_total.size() == n_q_points, ExcInternalError());
 
           Assert(Nx.size() == n_q_points, ExcInternalError());
-          //Assert(grad_Nx.size() == n_q_points, ExcInternalError());
           Assert(symm_grad_Nx.size() == n_q_points, ExcInternalError());
 
           for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
             {
               Assert( Nx[q_point].size() == n_dofs_per_cell, ExcInternalError());
-              //Assert( grad_Nx[q_point].size() == n_dofs_per_cell, ExcInternalError());
               Assert( symm_grad_Nx[q_point].size() == n_dofs_per_cell, ExcInternalError());
 
               solution_grads_u_total[q_point] = 0.0;
               solution_values_p_fluid_total[q_point] = 0.0;
               solution_grads_p_fluid_total[q_point] = 0.0;
-
-             /* for (unsigned int k = 0; k < n_dofs_per_cell; ++k)
-                {
-                  Nx[q_point][k] = 0.0;
-                  Nx_p_fluid[q_point][k] = 0.0;
-                  grad_Nx[q_point][k] = 0.0;
-                  symm_grad_Nx[q_point][k] = 0.0;
-                  grad_Nx_p_fluid[q_point][k] = 0.0;
-                } */
             }
 
           const unsigned int n_f_q_points = solution_grads_face_p_fluid_total.size();
@@ -5530,12 +5499,12 @@ ScratchData_ASM(const ScratchData_ASM &rhs)
     void Solid<dim>::system_setup(TrilinosWrappers::MPI::BlockVector &solution_delta_OUT)
     {
         std::cout << "Lokale Zellen auf Prozess " << this_mpi_process 
-      << ": " << triangulation.n_locally_owned_active_cells() << std::endl;
+        << ": " << triangulation.n_locally_owned_active_cells() << std::endl;
 
         TimerOutput::Scope timing_section(timerconsole, "Setup system");
         TimerOutput::Scope timer_section(timerfile, "Setup system");
 
-        //Determine number of components per block
+        // Determine number of components per block
         std::vector<unsigned int> block_component(n_components, u_block);
         block_component[p_fluid_component] = p_fluid_block;
 
@@ -5543,199 +5512,84 @@ ScratchData_ASM(const ScratchData_ASM &rhs)
         dof_handler_ref.distribute_dofs(fe);
         MemProbe::report("distribute_dofs", mpi_communicator);
 
-        //DoFRenumbering::Cuthill_McKee(dof_handler_ref);  //order might need to change for block preconditioners
-        //DoFRenumbering::subdomain_wise(dof_handler_ref);
-        //DoFRenumbering::component_wise(dof_handler_ref, block_component);
-        //DoFRenumbering::Cuthill_McKee(dof_handler_ref);
+        dofs_per_block = DoFTools::count_dofs_per_fe_block(dof_handler_ref, block_component);
 
-        //hanging_node_constraints.clear();
-        //DoFTools::make_hanging_node_constraints(dof_handler_ref,hanging_node_constraints);
-        //hanging_node_constraints.close();
-
-        // Count the number of DoFs in each block
-        // dofs_per_block.clear();
-        // dofs_per_block.resize(n_blocks);
-        // DoFTools::count_dofs_per_block(dof_handler_ref, dofs_per_block, block_component);
-
-        dofs_per_block =
-        DoFTools::count_dofs_per_fe_block(dof_handler_ref, block_component);
-
-        // Setup the sparsity pattern and tangent matrix
-        // all_locally_owned_dofs = DoFTools::locally_owned_dofs_per_subdomain (dof_handler_ref);
-        // std::vector<IndexSet> all_locally_relevant_dofs
-        // = DoFTools::locally_relevant_dofs_per_subdomain (dof_handler_ref);
-        // std::cout << "Here2! " << std::endl;
-        // locally_owned_dofs.clear();
-        // locally_owned_partitioning.clear();
-        // Assert(all_locally_owned_dofs.size() > this_mpi_process, ExcInternalError());
-        // locally_owned_dofs = all_locally_owned_dofs[this_mpi_process];
-        // std::cout << "Here3! " << std::endl;
-        // locally_relevant_dofs.clear();
-        // locally_relevant_partitioning.clear();
-        // Assert(all_locally_relevant_dofs.size() > this_mpi_process, ExcInternalError());
-        // locally_relevant_dofs = all_locally_relevant_dofs[this_mpi_process];
         // 1. Hole direkt das IndexSet für diesen Prozess
         locally_owned_dofs = dof_handler_ref.locally_owned_dofs();
-
+        owned_u_dofs.clear(); owned_u_dofs.set_size(dof_handler_ref.n_dofs());
+        owned_p_dofs.clear(); owned_p_dofs.set_size(dof_handler_ref.n_dofs());
+        {
+          std::vector<types::global_dof_index> ldi(fe.dofs_per_cell), u_idx, p_idx;
+          for (const auto &cell : dof_handler_ref.active_cell_iterators())
+            if (cell->is_locally_owned())
+              {
+                cell->get_dof_indices(ldi);
+                for (unsigned int i = 0; i < fe.dofs_per_cell; ++i)
+                  if (locally_owned_dofs.is_element(ldi[i]))
+                    (fe.system_to_component_index(i).first == p_fluid_component ? p_idx : u_idx).push_back(ldi[i]);
+              }
+          owned_u_dofs.add_indices(u_idx.begin(), u_idx.end());
+          owned_p_dofs.add_indices(p_idx.begin(), p_idx.end());
+          owned_u_dofs.compress();
+          owned_p_dofs.compress();
+        }
+        
         // 2. Extrahiere die relevanten (Ghost) DoFs
         locally_relevant_dofs.clear();
         DoFTools::extract_locally_relevant_dofs(dof_handler_ref, locally_relevant_dofs);
 
-        // locally_owned_partitioning.reserve(n_blocks);
-        // locally_relevant_partitioning.reserve(n_blocks);
-        // std::cout << "Here5! " << std::endl;
-        // for (unsigned int b=0; b<n_blocks; ++b)
-        //   {
-        //     const types::global_dof_index idx_begin
-        //     = std::accumulate(dofs_per_block.begin(),
-        //                       std::next(dofs_per_block.begin(),b), 0);
-        //     const types::global_dof_index idx_end
-        //     = std::accumulate(dofs_per_block.begin(),
-        //                       std::next(dofs_per_block.begin(),b+1), 0);
-        //     locally_owned_partitioning.push_back(locally_owned_dofs.get_view(idx_begin, idx_end));
-        //     locally_relevant_partitioning.push_back(locally_relevant_dofs.get_view(idx_begin, idx_end));
-        //   }
-        
         locally_owned_partitioning.clear();
-locally_relevant_partitioning.clear();
+        locally_relevant_partitioning.clear();
 
-// Wir berechnen die Offsets der Blöcke basierend auf dofs_per_block
-for (unsigned int b=0; b<n_blocks; ++b)
-  {
-    const types::global_dof_index idx_begin
-      = std::accumulate(dofs_per_block.begin(),
-                        std::next(dofs_per_block.begin(), b), 0);
-    const types::global_dof_index idx_end
-      = std::accumulate(dofs_per_block.begin(),
-                        std::next(dofs_per_block.begin(), b + 1), 0);
-
-    // Jetzt erstellen wir die Teilansichten für den aktuellen Block
-    locally_owned_partitioning.push_back(locally_owned_dofs.get_view(idx_begin, idx_end));
-    locally_relevant_partitioning.push_back(locally_relevant_dofs.get_view(idx_begin, idx_end));
-  }
-
-        // //Print information on screen
-        // pcout  << "\nTriangulation:\n"
-        //        << "  Number of active cells: "
-        //        << triangulation.n_active_cells()
-        //        << " (by partition:";
-        // for (unsigned int p=0; p<n_mpi_processes; ++p)
-        //   pcout  << (p==0 ? ' ' : '+')
-        //          << (GridTools::count_cells_with_subdomain_association (triangulation,p));
-        // pcout << ")"
-        //       << std::endl;
-        // pcout << "  Number of degrees of freedom: "
-        //       << dof_handler_ref.n_dofs()
-        //       << " (by partition:";
-        // for (unsigned int p=0; p<n_mpi_processes; ++p)
-        //   pcout  << (p==0 ? ' ' : '+')
-        //          << (DoFTools::count_dofs_with_subdomain_association (dof_handler_ref,p));
-        // pcout << ")"
-        //       << std::endl;
-        // pcout   << "  Number of degrees of freedom per block: "
-        //     << "[n_u, n_p_fluid] = ["
-        //     << dofs_per_block[u_block]
-        //     << ", "
-        //     << dofs_per_block[p_fluid_block]
-        //     << "]"
-        //     << std::endl;
-
-        // //Print information to file
-        // outfile  << "\nTriangulation:\n"
-        //          <<  "  Number of active cells: "
-        //         << triangulation.n_active_cells()
-        //         << " (by partition:";
-        // for (unsigned int p=0; p<n_mpi_processes; ++p)
-        //   outfile << (p==0 ? ' ' : '+')
-        //           << (GridTools::count_cells_with_subdomain_association (triangulation,p));
-        // outfile << ")"
-        //         << std::endl;
-        // outfile << "  Number of degrees of freedom: "
-        //         << dof_handler_ref.n_dofs()
-        //         << " (by partition:";
-        // for (unsigned int p=0; p<n_mpi_processes; ++p)
-        //   outfile  << (p==0 ? ' ' : '+')
-        //            << (DoFTools::count_dofs_with_subdomain_association (dof_handler_ref,p));
-        // outfile << ")"
-        //         << std::endl;
-        // outfile << "  Number of degrees of freedom per block: "
-        //     << "[n_u, n_p_fluid] = ["
-        //     << dofs_per_block[u_block]
-        //     << ", "
-        //     << dofs_per_block[p_fluid_block]
-        //     << "]"
-        //     << std::endl;
-
-        // 1. Zellen pro Partition sammeln
-        unsigned int local_cells = triangulation.n_locally_owned_active_cells();
-        // gather gibt auf dem root_process (hier 0) einen std::vector zurück
-        std::vector<unsigned int> cells_per_partition = 
-            dealii::Utilities::MPI::gather(mpi_communicator, local_cells, 0);
-
-        // 2. DoFs pro Partition sammeln
-        unsigned int local_dofs = dof_handler_ref.n_locally_owned_dofs();
-        std::vector<unsigned int> dofs_per_partition = 
-            dealii::Utilities::MPI::gather(mpi_communicator, local_dofs, 0);
-
-        // 3. Ausgabe (pcout sorgt dafür, dass nur Rank 0 schreibt)
-        // WICHTIG: Da gather nur auf Rank 0 den vollen Vektor hat, 
-        // darf der Loop über cells_per_partition nur auf Rank 0 ausgeführt werden.
-        if (this_mpi_process == 0)
+        // Wir berechnen die Offsets der Blöcke basierend auf dofs_per_block
+        for (unsigned int b=0; b<n_blocks; ++b)
         {
-            std::cout << "\nTriangulation:\n"
-                      << "  Number of active cells: " << triangulation.n_global_active_cells()
-                      << " (by partition:";
-            for (unsigned int p=0; p<n_mpi_processes; ++p)
-                std::cout << (p==0 ? " " : "+") << cells_per_partition[p];
-            std::cout << ")" << std::endl;
+          const types::global_dof_index idx_begin
+            = std::accumulate(dofs_per_block.begin(),
+                              std::next(dofs_per_block.begin(), b), 0);
+          const types::global_dof_index idx_end
+            = std::accumulate(dofs_per_block.begin(),
+                              std::next(dofs_per_block.begin(), b + 1), 0);
 
-            std::cout << "  Number of degrees of freedom: " << dof_handler_ref.n_dofs()
-                      << " (by partition:";
-            for (unsigned int p=0; p<n_mpi_processes; ++p)
-                std::cout << (p==0 ? " " : "+") << dofs_per_partition[p];
-            std::cout << ")" << std::endl;
+          // Jetzt erstellen wir die Teilansichten für den aktuellen Block
+          locally_owned_partitioning.push_back(locally_owned_dofs.get_view(idx_begin, idx_end));
+          locally_relevant_partitioning.push_back(locally_relevant_dofs.get_view(idx_begin, idx_end));
         }
 
-        // n_u und n_p_fluid können alle ausgeben, da dofs_per_block überall gleich ist
-        pcout << "  Number of degrees of freedom per block: "
-              << "[n_u, n_p_fluid] = [" << dofs_per_block[u_block]
-              << ", " << dofs_per_block[p_fluid_block] << "]" << std::endl;
+        const unsigned int local_cells = triangulation.n_locally_owned_active_cells();
+        const auto cells_per_partition =
+          dealii::Utilities::MPI::gather(mpi_communicator, local_cells, 0);
+        const unsigned int local_dofs = dof_handler_ref.n_locally_owned_dofs();
+        const auto dofs_per_partition =
+          dealii::Utilities::MPI::gather(mpi_communicator, local_dofs, 0);
 
-        // We optimise the sparsity pattern to reflect this structure and prevent
-        // unnecessary data creation for the right-diagonal block components.
-        //Table<2, DoFTools::Coupling> coupling(n_components, n_components);
-        //for (unsigned int ii = 0; ii < n_components; ++ii)
-        //  for (unsigned int jj = 0; jj < n_components; ++jj)
-
-            //Identify "zero" matrix components of FE-system (The two components do not couple)
-        //    if (((ii == p_fluid_component) && (jj < p_fluid_component))
-        //        || ((ii < p_fluid_component) && (jj == p_fluid_component)) )
-        //      coupling[ii][jj] = DoFTools::none;
-
-            //The rest of components always couple
-        //    else
-        //      coupling[ii][jj] = DoFTools::always;
-
-        //TrilinosWrappers::BlockSparsityPattern bsp (locally_owned_partitioning,
-        //                                            mpi_communicator);
+        // Write some output to console
+        if (this_mpi_process == 0)
+        {
+          auto print_info = [&](std::ostream &os)
+          {
+            os << "\nTriangulation:\n"
+               << "  Number of active cells: " << triangulation.n_global_active_cells()
+               << " (by partition:";
+            for (unsigned int p = 0; p < n_mpi_processes; ++p)
+            os << (p == 0 ? " " : "+") << cells_per_partition[p];
+            os << ")\n"
+               << "  Number of degrees of freedom: " << dof_handler_ref.n_dofs()
+               << " (by partition:";
+            for (unsigned int p = 0; p < n_mpi_processes; ++p)
+              os << (p == 0 ? " " : "+") << dofs_per_partition[p];
+                os << ")\n"
+                   << "  Number of degrees of freedom per block: [n_u, n_p_fluid] = ["
+                   << dofs_per_block[u_block] << ", " << dofs_per_block[p_fluid_block] << "]\n";
+          };
+          print_info(std::cout);
+          print_info(outfile);
+        }
 
         hanging_node_constraints.clear();
-        const IndexSet &locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler_ref);
-        hanging_node_constraints.reinit(dof_handler_ref.locally_owned_dofs(),
-                                                    locally_relevant_dofs);
-        DoFTools::make_hanging_node_constraints(dof_handler_ref,hanging_node_constraints);
+        hanging_node_constraints.reinit(locally_owned_dofs, locally_relevant_dofs);
+        DoFTools::make_hanging_node_constraints(dof_handler_ref, hanging_node_constraints);
         hanging_node_constraints.close();
-
-        //DoFTools::make_sparsity_pattern (dof_handler_ref, bsp, hanging_node_constraints,
-        //                                 false, this_mpi_process);
-        //bsp.compress();
-
-        //Reinitialize the (sparse) tangent matrix with the given sparsity pattern.
-        //tangent_matrix.reinit (bsp);
-
-        //pcout << "Memory consumption:" << std::endl;
-        //pcout << "  Triangulation: " << triangulation.memory_consumption() / 1024 / 1024 << " MB" << std::endl;
-        //pcout << "  Matrix (local): " << tangent_matrix.memory_consumption() / 1024 / 1024 << " MB" << std::endl;
 
         //Initialize the right hand side and solution vectors with number of DoFs
         system_rhs.reinit(locally_owned_partitioning, mpi_communicator);
@@ -5766,6 +5620,22 @@ for (unsigned int b=0; b<n_blocks; ++b)
                    tangent_matrix_nb.memory_consumption() / 1.0e6, mpi_communicator);
         pcout << "  tangent_matrix_nb: sum " << mem.sum << " MB, max/rank " << mem.max
               << " MB, nnz " << tangent_matrix_nb.n_nonzero_elements() << std::endl;
+        if (this_mpi_process == 0)
+          outfile << "  tangent_matrix_nb: sum " << mem.sum << " MB, max/rank " << mem.max
+                  << " MB, nnz " << tangent_matrix_nb.n_nonzero_elements() << "\n";
+    }
+
+    template <int dim>
+    double Solid<dim>::field_l2_norm(const TrilinosWrappers::MPI::BlockVector &v,
+                                     const IndexSet &s) const
+    {
+      double sum = 0.0;
+      for (const types::global_dof_index i : s)
+        {
+          const double x = v(i);
+          sum += x * x;
+        }
+      return std::sqrt(dealii::Utilities::MPI::sum(sum, mpi_communicator));
     }
 
     //Component extractors: used to extract sub-blocks from the global matrix
@@ -6339,15 +6209,12 @@ else
     template <int dim>
     void Solid<dim>::get_error_residual(Errors &error_residual_OUT)
     {
-        //TimerOutput::Scope timing_section(timerconsole, "Get error residual");
-        //TimerOutput::Scope timer_section(timerfile, "Get error residual");
-
         TrilinosWrappers::MPI::BlockVector error_res(system_rhs);
         constraints.set_zero(error_res);
 
         error_residual_OUT.norm = error_res.l2_norm();
-        error_residual_OUT.u = error_res.block(u_block).l2_norm();
-        error_residual_OUT.p_fluid = error_res.block(p_fluid_block).l2_norm();
+        error_residual_OUT.u       = field_l2_norm(error_res, owned_u_dofs);
+        error_residual_OUT.p_fluid = field_l2_norm(error_res, owned_p_dofs);
     }
 
     //Determine the true Newton update error for the problem
@@ -6360,8 +6227,8 @@ else
         constraints.set_zero(error_ud);
 
         error_update_OUT.norm = error_ud.l2_norm();
-        error_update_OUT.u = error_ud.block(u_block).l2_norm();
-        error_update_OUT.p_fluid = error_ud.block(p_fluid_block).l2_norm();
+        error_update_OUT.u       = field_l2_norm(error_ud, owned_u_dofs);
+        error_update_OUT.p_fluid = field_l2_norm(error_ud, owned_p_dofs);
     }
 
     template <int dim>
@@ -6550,15 +6417,20 @@ if (first_exception)
               ScratchData_ASM<ADNumberType>                        &scratch,
               PerTaskData_ASM                                      &data) const
     {
-        //TimerOutput assembly_timer (pcout, TimerOutput::summary,TimerOutput::wall_times);
-
         Assert(cell->is_locally_owned(), ExcInternalError());
         PhaseProbe::Lap lap;
         data.reset();
         scratch.reset();
         scratch.fe_values_ref.reinit(cell);
         cell->get_dof_indices(data.local_dof_indices);
+std::vector<unsigned char> dof_group(dofs_per_cell), dof_comp(dofs_per_cell);
+for (unsigned int k = 0; k < dofs_per_cell; ++k)
+  {
+    dof_group[k] = fe.system_to_base_index(k).first.first;
+    dof_comp[k]  = fe.system_to_component_index(k).first;
+  }
         lap(PhaseProbe::RESET_REINIT);
+        
         // Setup automatic differentiation
         for (unsigned int k = 0; k < dofs_per_cell; ++k)
           {
@@ -6572,6 +6444,33 @@ if (first_exception)
 
         // Update the quadrature point solution
         // Compute the values and gradients of the solution in terms of the AD variables
+        
+for (unsigned int q = 0; q < n_q_points; ++q)
+  for (unsigned int k = 0; k < dofs_per_cell; ++k)
+    {
+      if (dof_group[k] == u_block)
+        {
+          const Tensor<1, dim> grad_N = scratch.fe_values_ref.shape_grad(k, q);
+          const unsigned int c = dof_comp[k];
+          for (unsigned int ee = 0; ee < dim; ++ee)
+            scratch.solution_grads_u_total[q][c][ee]
+              += scratch.local_dof_values[k] * grad_N[ee];
+        }
+      else if (dof_group[k] == p_fluid_block)
+        {
+          const double Nx_p = scratch.fe_values_ref.shape_value(k, q);
+          const Tensor<1, dim> Grad_Nx_p = scratch.fe_values_ref.shape_grad(k, q);
+          scratch.solution_values_p_fluid_total[q] += scratch.local_dof_values[k] * Nx_p;
+          for (unsigned int dd = 0; dd < dim; ++dd)
+            scratch.solution_grads_p_fluid_total[q][dd]
+              += scratch.local_dof_values[k] * Grad_Nx_p[dd];
+        }
+      else
+        Assert(dof_group[k] <= p_fluid_block, ExcInternalError());
+    }
+lap(PhaseProbe::QP_SOLUTION);
+
+        /*
         for (unsigned int q = 0; q < n_q_points; ++q)
           {
             //TimerOutput::Scope timing_section(assembly_timer, "Update QP solution");
@@ -6610,6 +6509,7 @@ if (first_exception)
               }
           }
         lap(PhaseProbe::QP_SOLUTION);
+        */
 
         //Set up pointer "lgph" to the PointHistory object of this element
         const std::vector<std::shared_ptr<const PointHistory<dim, ADNumberType> > >
@@ -6617,6 +6517,7 @@ if (first_exception)
         Assert(lqph.size() == n_q_points, ExcInternalError());
 
 
+        /*
         //Precalculate the element shape function values and gradients
         for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
           {
@@ -6655,8 +6556,8 @@ if (first_exception)
               }
           }
         lap(PhaseProbe::PRECALC);
+        */
 
-        //TimerOutput local_timer (std::cout, TimerOutput::summary, TimerOutput::wall_times);  
         //Assemble the stiffness matrix and rhs vector
         //std::vector<ADNumberType> residual_ad (dofs_per_cell, ADNumberType(0.0));
         std::vector<ADNumberType> &residual_ad = scratch.residual_ad;
@@ -6683,6 +6584,9 @@ if (first_exception)
                 I (Physics::Elasticity::StandardTensors<dim>::I);
             const SymmetricTensor<2, dim, ADNumberType>
                 tau_E = lqph[q_point]->get_tau_E(F_AD);
+            AssertThrow(n_deriv(tau_E[0][0]) == n_deriv(F_AD[0][0]),
+                        ExcMessage("tau_E hat nicht dieselbe Ableitungsanzahl wie F: "
+                                   "Aufrufreihenfolge update_internal_equilibrium / get_tau_E verletzt."));
             SymmetricTensor<2, dim, ADNumberType> tau_fluid_vol (I);
             tau_fluid_vol *= -1.0 * p_fluid * det_F_AD;
             
@@ -6848,6 +6752,51 @@ if (first_exception)
             const double delta_t = time->get_delta_t();
             lap(PhaseProbe::DARCY);            
 
+const SymmetricTensor<2, dim, ADNumberType> tau_total = tau_E + tau_fluid_vol;
+const ADNumberType vol_term = det_F_AD - det_F_converged;
+
+// P = tau_total * F^{-T}  und  q_ref = F^{-1} * q
+Tensor<2, dim, ADNumberType> P;
+Tensor<1, dim, ADNumberType> q_ref;
+for (unsigned int c = 0; c < dim; ++c)
+  {
+    for (unsigned int k = 0; k < dim; ++k)
+      {
+        P[c][k] = tau_total[c][0] * F_inv_AD[k][0];
+        for (unsigned int j = 1; j < dim; ++j)
+          P[c][k] += tau_total[c][j] * F_inv_AD[k][j];
+      }
+    q_ref[c] = F_inv_AD[c][0] * seepage_vel_current[0];
+    for (unsigned int j = 1; j < dim; ++j)
+      q_ref[c] += F_inv_AD[c][j] * seepage_vel_current[j];
+  }
+lap(PhaseProbe::PRECALC);
+
+const double delta_t_JxW = delta_t * JxW;
+for (unsigned int i = 0; i < dofs_per_cell; ++i)
+  {
+    const Tensor<1, dim> gradN = scratch.fe_values_ref.shape_grad(i, q_point);
+    const double         Ni    = scratch.fe_values_ref.shape_value(i, q_point);
+
+    if (dof_group[i] == u_block)
+      {
+        const unsigned int c = dof_comp[i];
+        for (unsigned int k = 0; k < dim; ++k)
+          residual_ad[i] += (JxW * gradN[k]) * P[c][k];
+        residual_ad[i] -= (Ni * JxW) * overall_body_force[c];
+      }
+    else if (dof_group[i] == p_fluid_block)
+      {
+        residual_ad[i] += (Ni * JxW) * vol_term;
+        for (unsigned int k = 0; k < dim; ++k)
+          residual_ad[i] -= (delta_t_JxW * gradN[k]) * q_ref[k];
+      }
+    else
+      Assert(dof_group[i] <= p_fluid_block, ExcInternalError());
+  }
+lap(PhaseProbe::RESIDUAL);
+
+            /*
             const SymmetricTensor<2, dim, ADNumberType> tau_total = tau_E + tau_fluid_vol;
             const ADNumberType vol_term = det_F_AD - det_F_converged;
             for (unsigned int i = 0; i < dofs_per_cell; ++i)
@@ -6873,7 +6822,8 @@ if (first_exception)
                 else
                   Assert(i_group <= p_fluid_block, ExcInternalError());
               }
-            lap(PhaseProbe::RESIDUAL);  
+            lap(PhaseProbe::RESIDUAL);
+            */  
           }
 
           // Assemble the Neumann contribution (external force contribution).
