@@ -2,7 +2,7 @@
 /test
 /CMakeFiles
 nonlinear-poro-viscoelasticity
-nonlinear-poro-viscoelasticity_O2
+nonlinear-poro-viscoelasticity_*
 .project
 .cproject
 .vscode
