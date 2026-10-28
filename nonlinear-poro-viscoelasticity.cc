@@ -41,6 +41,7 @@
 #include "mumps_reuse.h"
 #include "node_nd_ordering.h"
 #include "mem_probe.h"
+#include "diag_gap.h"
 
 #define SACADO_ENABLE_NEW_DESIGN 0
 #define SACADO_VIEW_CUDA 0
@@ -3279,6 +3280,17 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
             // compute eigenvalues and eigenvectors of the elastic left Cauchy-Green trial strain
             const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B_e_1_tr = eigenvectors(B_e_1_tr, this->eigen_solver);
 
+{
+  double l[dim];
+  for (unsigned int a = 0; a < dim; ++a)
+    l[a] = Tensor<0, dim, double>(eigen_B_e_1_tr[a].first);
+  double gap = 1e300;
+  for (unsigned int a = 0; a < dim; ++a)
+    for (unsigned int b = a + 1; b < dim; ++b)
+      gap = std::min(gap, std::abs(l[a] - l[b]));
+  DiagGap::count(gap);
+}
+
             NumberType J_e_1;
 
             // compute elastic principal stretches and logrithmic elastic principal stretches
@@ -5717,7 +5729,7 @@ private:
     {
         data_mumps.blr_factorization = true;
         data_mumps.output_details = true;
-        data_mumps.blr.lowrank_threshold = 1e-4; 
+        data_mumps.blr.lowrank_threshold = 1e-6; 
         data_mumps.blr.blr_ucfs = true;          
 
         // Objekt dynamisch auf dem Heap erzeugen
@@ -5796,26 +5808,8 @@ private:
 
         //Declare and initialize iterator for the Newton-Raphson algorithm steps
         unsigned int newton_iteration = 0;
-
-       /* #if LINUX_SYSTEM
-            #define BLRICNTL(I) BLRicntl[(I)-1]
-
-            SparseDirectMUMPS::AdditionalData data_mumps;
-            data_mumps.blr_factorization = true;
-            data_mumps.output_details = false;
-            data_mumps.blr.lowrank_threshold = 1e-6; // default = 1e-8
-            data_mumps.blr.blr_ucfs = true;          // use UCFs
-            SparseDirectMUMPS preconditioner(data_mumps, mpi_communicator);
-
-            int *BLRicntl = preconditioner.get_icntl();
-            double *BLRcntl = preconditioner.get_cntl();
-
-            BLRcntl[0] = 0; // disables pivoting
-
-            // BLRICNTL(40) = 1; // mixed prec BLR, only on DEV version
-            BLRICNTL(28) = 1; //Parallel analysis
-            BLRICNTL(7) = 5; // use Metis
-        #endif*/
+        double rhs_l2_0 = 0.0;
+        const double tol_rhs_rel = 1e-8;
 
         //Iterate until error is below tolerance or max number iterations are reached
         while(newton_iteration < parameters.max_iterations_NR)
@@ -5839,8 +5833,11 @@ private:
             get_error_residual(error_residual);
 
             //error_residual in first iteration is stored to normalize posterior error measures
-            if (newton_iteration == 0)
+            const double rhs_l2 = system_rhs.l2_norm();
+            if (newton_iteration == 0) {
               error_residual_0 = error_residual;
+              rhs_l2_0 = rhs_l2;
+            }
 
             // Determine the normalised residual error
             error_residual_norm = error_residual;
@@ -5855,7 +5852,7 @@ private:
                   && (error_residual_norm.u <= parameters.tol_f)
                   && (error_residual_norm.p_fluid  <= parameters.tol_f))
                ||(   (newton_iteration > 0)
-                  && system_rhs.l2_norm() <= parameters.tol_f) )
+                  && rhs_l2 <= std::max(parameters.tol_f, tol_rhs_rel * rhs_l2_0)) )
               {
                 pcout   << "\n ***** CONVERGED! *****     "
                         << system_rhs.l2_norm() << "      "
@@ -5885,174 +5882,6 @@ private:
 //            } else {
 //            	error_residual_norm_last = error_residual_norm;
 //            }
-
-// 1. Die deal.II Matrix-Hülle als Zeiger deklarieren (wird mit nullptr initialisiert)
-//std::unique_ptr<dealii::TrilinosWrappers::SparseMatrix> dealii_target_matrix;
-
-//pcout << "Here1" << std::endl;
-
-/*#if LINUX_SYSTEM
-    MPI_Comm global_comm = MPI_COMM_WORLD;
-    int global_rank = dealii::Utilities::MPI::this_mpi_process(global_comm);
-    bool is_solver_process = (global_rank % 3 == 0);
-
-    // TESTPUNKT A
-    std::cerr << "--- RANK " << global_rank << ": VOR COMM_SPLIT ---" << std::endl;
-    std::cerr << std::flush;
-
-    MPI_Comm solver_comm;
-    MPI_Comm_split(global_comm, is_solver_process ? 1 : MPI_UNDEFINED, global_rank, &solver_comm);
-
-    // TESTPUNKT B
-    std::cerr << "--- RANK " << global_rank << ": VOR MAP_CREATION ---" << std::endl;
-    std::cerr << std::flush;
-
-    Epetra_Map target_map = create_target_map(locally_owned_dofs, global_comm, solver_comm);
-    Epetra_CrsMatrix epetra_tmp(Epetra_DataAccess::Copy, target_map, 0);
-
-    // TESTPUNKT C
-    std::cerr << "--- RANK " << global_rank << ": VOR EXPORT_BLOCK ---" << std::endl;
-    std::cerr << std::flush;
-
-    if ((time->get_timestep() % 3 == 1) && newton_iteration == 0)
-    {
-        std::cerr << "--- RANK " << global_rank << ": IN EXPORT_BLOCK ---" << std::endl;
-        std::flush(std::cerr);
-
-        const Epetra_CrsMatrix &epetra_source_matrix = tangent_matrix_nb.trilinos_matrix();
-        Epetra_Export exporter(epetra_source_matrix.RowMap(), target_map);
-
-        epetra_tmp.Export(epetra_source_matrix, exporter, Add);
-        epetra_tmp.FillComplete();
-
-        if (is_solver_process)
-        {
-            dealii_target_matrix = std::make_unique<dealii::TrilinosWrappers::SparseMatrix>();
-            dealii_target_matrix->reinit(epetra_tmp);
-        }
-    }
-
-    std::cerr << "--- RANK " << global_rank << ": ERREICHT HERE2 ---" << std::endl;
-    std::cerr << std::flush;
-
-
-
-pcout << "Here2" << std::endl;
-
-
-// 2. MUMPS REIN AUF DEN 24 PROZESSEN INITIALISIEREN (NUR BEIM ALLERERSTEN AUFRUF)
-if (is_solver_process && !preconditioner)
-{
-    data_mumps.blr_factorization = true;
-    data_mumps.output_details = true;
-    data_mumps.blr.lowrank_threshold = 1e-4;
-    data_mumps.blr.blr_ucfs = true;
-
-    // MUMPS hört STRENG auf solver_comm (24 Ranks) [I2]
-    preconditioner = std::make_unique<SparseDirectMUMPS>(data_mumps, solver_comm);
-
-    int *icntl = preconditioner->get_icntl();
-    double *cntl = preconditioner->get_cntl();
-    #define IC(I) icntl[(I)-1]
-    #define RC(I) cntl[(I)-1]
-    RC(1)  = 1e-5; IC(4)  = 2; IC(10) = 0; IC(47) = 1; IC(37) = 1;
-    IC(28) = 1; IC(7)  = 5; IC(48) = 1; IC(16) = 3; IC(40) = 1;
-    #undef IC
-    #undef RC
-}
-
-pcout << "Here3" << std::endl;
-
-// Alle Prozesse synchronisieren, nachdem MUMPS-Speicher steht
-MPI_Barrier(global_comm);
-
-// 3. TEURE MUMPS-FAKTORISIERUNG RECHNEN (NUR ALLE 3 ZEITSCHRITTE)
-
-    if (is_solver_process && dealii_target_matrix)
-    {
-        TimerOutput::Scope timing_section(timerconsole, "MUMPS Factorization");
-        // KORREKTUR: Wir übergeben das deal.II-Wrapper-Objekt, das der Linker nun fehlerfrei findet!
-        preconditioner->initialize(*dealii_target_matrix);
-    }
-
-MPI_Barrier(global_comm); */
-/*
-// 1. Die Matrix-Hülle ganz oben auf dem unzerstörbaren globalen Kommunikator deklarieren
-std::unique_ptr<dealii::TrilinosWrappers::SparseMatrix> dealii_target_matrix;
-
-pcout << "Here1" << std::endl;
-
-// 2. REIN LOKALE LOGIK: Keine MPI-Netzwerksignale, 0 % Deadlock-Risiko!
-int global_rank = dealii::Utilities::MPI::this_mpi_process(mpi_communicator);
-bool is_solver_process = (global_rank % 3 == 0);
-
-if ((time->get_timestep() % 3 == 1) && newton_iteration == 0)
-{
-    pcout << " EXPORT_MATRIX_GLOBAL_SYNCHRONOUS " << std::flush;
-
-    // Wir initialisieren die Matrix für ALLE Ranks absolut synchron auf mpi_communicator [I3.1]
-    dealii_target_matrix = std::make_unique<dealii::TrilinosWrappers::SparseMatrix>(locally_owned_dofs, mpi_communicator);
-
-    // Wir nutzen das globale, unbeschädigte Layout
-    Epetra_CrsMatrix &raw_target_matrix = const_cast<Epetra_CrsMatrix &>(dealii_target_matrix->trilinos_matrix());
-    const Epetra_CrsMatrix &epetra_source_matrix = tangent_matrix_nb.trilinos_matrix();
-    
-    Epetra_Export exporter(epetra_source_matrix.RowMap(), raw_target_matrix.RowMap());
-    raw_target_matrix.Export(epetra_source_matrix, exporter, Add);
-    raw_target_matrix.FillComplete();
-}
-
-pcout << "Here2" << std::endl;
-
-// 3. INITIALISIERUNG VON MUMPS: Alle 72 Ranks betreten dies absolut synchron!
-if (!preconditioner)
-{
-    data_mumps.blr_factorization = true;
-    data_mumps.output_details = true;
-    data_mumps.blr.lowrank_threshold = 1e-4;
-    data_mumps.blr.blr_ucfs = true;
-
-    // MUMPS hört starr auf den sicheren mpi_communicator (kein Split!) [I3.1]
-    preconditioner = std::make_unique<SparseDirectMUMPS>(data_mumps, mpi_communicator);
-
-    int *icntl = preconditioner->get_icntl();
-    double *cntl = preconditioner->get_cntl();
-    #define IC(I) icntl[(I)-1]
-    #define RC(I) cntl[(I)-1]
-    RC(1)  = 1e-5; IC(4)  = 2; IC(10) = 0; IC(47) = 1; IC(37) = 1;
-    IC(28) = 1; IC(7)  = 5; IC(48) = 1; IC(16) = 3; IC(40) = 1; IC(46) = 24;
-
-    // DIE RETTUNG FÜR DIE BLR-NUMERIK:
-    // Wir zwingen MUMPS, das BLR-Clustering rein mathematisch über die Matrixstruktur
-    // zu berechnen. Die leeren Ranks zerstören die BLR-Statistik damit NICHT mehr!
-    IC(18) = 0; 
-
-    #undef IC
-    #undef RC
-}
-
-if (dealii_target_matrix && ((time->get_timestep() % 3 == 1) && newton_iteration == 0))
-{
-    TimerOutput::Scope timing_section(timerconsole, "MUMPS Factorization");
-    // Alle Ranks rufen das absolut synchron auf. Ein Einrieren ist ausgeschlossen.
-    preconditioner->initialize(*dealii_target_matrix);
-}
-
-pcout << "Here4" << std::endl;
-
-// 4. FGMRES-LÖSER AUF DEN FULL RANKS STARTEN
-if (this->parameters.lin_solver == "BLRNewt")
-{
-    // Die Brücke läuft ebenfalls unzerstörbar auf dem globalen mpi_communicator
-    MUMPS24BridgePreconditioner<dim> bridge_preconditioner(locally_owned_dofs, mpi_communicator, mpi_communicator, *preconditioner);
-    solve_linear_system(newton_update, *preconditioner, error_residual.norm);
-}
-else
-{
-    solve_linear_system(newton_update);
-}*/
-
-
 
             //Solve the linearized system
             if (this->parameters.lin_solver == "BLRNewt") {
@@ -6389,6 +6218,7 @@ if (first_exception)
 
         if (std::getenv("ASM_CHECKSUMS") != nullptr)
           print_assembly_checksums();
+        DiagGap::report_and_reset(mpi_communicator, "asm");
     }
 
     //Add the local elemental contribution to the global stiffness tensor
@@ -6887,6 +6717,20 @@ lap(PhaseProbe::RESIDUAL);
           }
         lap(PhaseProbe::LINEARIZE);
         lap.count_cell();
+
+{
+  static std::atomic<int> n_big{0};
+  double cmax = 0.0;
+  for (unsigned int i = 0; i < data.cell_matrix.m(); ++i)
+    for (unsigned int j = 0; j < data.cell_matrix.n(); ++j)
+      cmax = std::max(cmax, std::abs(data.cell_matrix(i, j)));
+  if (cmax > 1e10 && n_big++ < 20)
+    std::cout << "[K-BIG] rank " << this_mpi_process
+              << " cell " << cell->active_cell_index()
+              << " center " << cell->center()
+              << " max|K_loc|=" << cmax << std::endl;
+}
+
     }
 
     //Store the converged values of the internal variables
@@ -8964,6 +8808,7 @@ void Solid<dim>::solve_linear_system(dealii::TrilinosWrappers::MPI::BlockVector 
       Functions::FEFieldFunction<dim, TrilinosWrappers::MPI::BlockVector> 
           find_solution(dof_handler_ref, solution_relevant);
 
+      /*
       // 3. Lokale Datensammlung
       std::vector<double> local_updates(tracked_vertices_IN.size() * (dim + 1), 0.0);
 
@@ -8977,19 +8822,41 @@ void Solid<dim>::solve_linear_system(dealii::TrilinosWrappers::MPI::BlockVector 
               find_solution.vector_value(pt_ref, update);
               for (unsigned int d = 0; d < (dim + 1); ++d)
                   local_updates[p * (dim + 1) + d] = (std::abs(update[d]) < 1.5 * parameters.tol_u) ? 0.0 : update[d];
-          } catch (...) { /* Punkt nicht hier */ }
+          } catch (...) {  Punkt nicht hier  }
       }
 
       // 4. Globale Reduktion (nur die kleinen Ergebnis-Arrays werden übertragen)
       std::vector<double> global_updates(local_updates.size());
       dealii::Utilities::MPI::sum(local_updates, mpi_communicator, global_updates);
+      */
+
+const unsigned int n_pts = tracked_vertices_IN.size();
+std::vector<double> local_updates(n_pts*(dim+1), 0.0), local_count(n_pts, 0.0);
+for (unsigned int p = 0; p < n_pts; ++p)
+{
+  const Point<dim> pt_ref(tracked_vertices_IN[p][0], tracked_vertices_IN[p][1], tracked_vertices_IN[p][2]);
+  Vector<double> update(dim+1);
+  try {
+    find_solution.vector_value(pt_ref, update);
+    for (unsigned int d = 0; d < dim+1; ++d)
+      local_updates[p*(dim+1)+d] = (std::abs(update[d]) < 1.5*parameters.tol_u) ? 0.0 : update[d];
+    local_count[p] = 1.0;
+  } catch (const dealii::ExceptionBase &) { /* Punkt nicht hier */ }
+}
+std::vector<double> global_updates(local_updates.size()), global_count(n_pts);
+dealii::Utilities::MPI::sum(local_updates, mpi_communicator, global_updates);
+dealii::Utilities::MPI::sum(local_count,   mpi_communicator, global_count);
+if (n_pts > 0)
+  AssertThrow(*std::min_element(global_count.begin(), global_count.end()) > 0,
+              ExcMessage("tracked point not found on any rank"));
 
       // 5. Nur Prozess 0 speichert final
       if (this_mpi_process == 0)
       {
           for (unsigned int p = 0; p < tracked_vertices_IN.size(); ++p)
               for (unsigned int d = 0; d < (dim + 1); ++d)
-                  solution_vertices[p][d] = global_updates[p * (dim + 1) + d];
+                  //solution_vertices[p][d] = global_updates[p * (dim + 1) + d];
+                  solution_vertices[p][d] = global_updates[p*(dim+1)+d] / global_count[p];
       }
 
 
@@ -15398,7 +15265,8 @@ const double scaled_height = height * this->parameters.scale;
               //std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_coarse.inp");
               //std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_noCSF_superior.inp");
               //std::ifstream input_path("/Users/alexandergreiner/Desktop/Promotion/simulations/full_brain/indentation_brains/OAS1_0002_MR1_UCD_HR.inp");
-              std::ifstream input_path("/home/hpc/iwtm/iwtm107h/full-brain/indentation/OAS1_0002_MR1_UCD_noCSF_superior.inp");
+              //std::ifstream input_path("/home/hpc/iwtm/iwtm107h/full-brain/indentation/OAS1_0002_MR1_UCD_noCSF_superior.inp");
+              std::ifstream input_path("/home/hpc/iwtm/iwtm107h/full-brain/indentation/OAS1_0002_MR1_UCD_HR.inp");
               dealii::GridIn<dim> gridIn;
               gridIn.attach_triangulation(this->triangulation);
               gridIn.read_ucd(input_path);
@@ -15471,7 +15339,7 @@ const double scaled_height = height * this->parameters.scale;
             {
               // Brain bottom is fully fixed in space
               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
-                                                       2, // 2 for NR, HR but 200 for LR
+                                                       200, // 2 for NR, but 200 for HR,LR
                                                        Functions::ZeroFunction<dim>(this->n_components),
                                                        constraints,
                                                        (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
@@ -15499,13 +15367,13 @@ const double scaled_height = height * this->parameters.scale;
               }
               if (this->time->get_timestep() < 2) {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
-                                                          2, // 2 for NR, HR but 200 for LR
+                                                          200, // 2 for NR, but 200 for HR,LR
                                                           Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
                                                           constraints,
                                                           this->fe.component_mask(this->pressure));
               } else {
                   VectorTools::interpolate_boundary_values(this->dof_handler_ref,
-                                                          2, // 2 for NR, HR but 200 for LR
+                                                          200, // 2 for NR, but 200 for HR,LR
                                                           Functions::ZeroFunction<dim>(this->n_components),
                                                           constraints,
                                                           this->fe.component_mask(this->pressure));
@@ -15514,7 +15382,7 @@ const double scaled_height = height * this->parameters.scale;
               // Apply displacement to loaded top surface
               if (this->parameters.load_type == "displacement") {
                   const std::vector<double> value = get_dirichlet_load(1,1);
-
+                  
                   VectorTools::interpolate_boundary_values(
                       this->dof_handler_ref,
                           1,
@@ -15574,7 +15442,7 @@ const double scaled_height = height * this->parameters.scale;
                     const double final_load_time = this->parameters.end_load_time;
                     const double current_time = this->time->get_current();
                     const double delta_time = this->time->get_delta_t();
-
+                    
                     double current_displ = 0.0;
                     double previous_displ = 0.0;
 
