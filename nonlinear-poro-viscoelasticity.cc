@@ -4900,6 +4900,12 @@ private:
                      get_reaction_boundary_id_for_output () const = 0;
             virtual std::pair<types::boundary_id,types::boundary_id>
                      get_drained_boundary_id_for_output () const = 0;
+            // Pairs of boundary ids whose common edge is a singular line (e.g. glued face meets free surface)
+            virtual std::vector<std::pair<types::boundary_id,types::boundary_id>>
+                     get_singular_edge_boundary_ids_for_output () const
+            {
+                return {};
+            }
             virtual std::vector<double> get_dirichlet_load
                     (const types::boundary_id   &boundary_id,
                      const int                  &direction) const = 0;
@@ -4931,20 +4937,33 @@ private:
             //Post-processing and writing data to files
             void output_results_to_vtu(const unsigned int timestep,
                                        const double current_time,
-                                       TrilinosWrappers::MPI::BlockVector solution) const;
+                                       const TrilinosWrappers::MPI::BlockVector &solution) const;
             void output_bcs_to_vtu(const unsigned int timestep,
                                    const double current_time,
-                                   TrilinosWrappers::MPI::BlockVector solution) const;
+                                   const TrilinosWrappers::MPI::BlockVector &solution) const;
             void output_results_to_plot(const unsigned int timestep,
                                         const double current_time,
-                                        TrilinosWrappers::MPI::BlockVector solution,
+                                        const TrilinosWrappers::MPI::BlockVector &solution,
                                         std::vector<Point<dim> > &tracked_vertices,
                                         std::ofstream &pointfile) const;
             void output_results_averaged_on_nodes(const unsigned int timestep,
-            									  const double current_time,
-												  TrilinosWrappers::MPI::BlockVector solution,
-												  std::vector<Point<dim> > &tracked_vertices,
-												  std::ofstream &nodefile) const;
+            									                    const double current_time,
+												                          TrilinosWrappers::MPI::BlockVector solution,
+												                          std::vector<Point<dim> > &tracked_vertices,
+												                          std::ofstream &nodefile) const;
+            
+            // Cell-wise volume averages of the quadrature point quantities (Paraview output)
+            struct CellOutputFields
+            {
+                std::vector<std::string>    names;
+                std::vector<Vector<double>> values;          // values[k](active_cell_index)
+                Vector<double>              current_volume;  // v_e = int_{Omega_e} J dV
+            };
+            CellOutputFields compute_cell_output_fields(const TrilinosWrappers::MPI::BlockVector &solution_total) const;
+
+            // Distance of the cell centers to the singular edges (reference configuration), computed once
+            void compute_singular_edge_distance();
+            Vector<double> singular_edge_distance;
 
             // Headers and footer for the output files
             void print_console_file_header( std::ofstream &outfile) const;
@@ -5225,6 +5244,7 @@ private:
 
           //Assign DOFs and create the stiffness and right-hand-side force vector
           system_setup(solution_delta);
+          compute_singular_edge_distance();
           //initialize();
           //Define points for post-processing
           std::vector<Point<dim> > tracked_vertices (2);
@@ -5249,9 +5269,13 @@ private:
           }
           else if (parameters.outfiles_requested == "solution")
           {
-                output_results_to_vtu(time->get_timestep(),
-                                      time->get_current(),
-                                      solution_n           );
+            {
+            TimerOutput::Scope timing_section(timerconsole, "Paraview output");
+            TimerOutput::Scope timer_section(timerfile, "Paraview output");
+            output_results_to_vtu(time->get_timestep(),
+                                  time->get_current(),
+                                  solution_n           );
+            }
           }
           else if (parameters.outfiles_requested == "bcs")
           {
@@ -5324,9 +5348,13 @@ private:
                 }
                 else if (parameters.outfiles_requested == "solution")
                 {
-                      output_results_to_vtu(time->get_timestep(),
-                                            time->get_current(),
-                                            solution_n           );
+                  {
+                  TimerOutput::Scope timing_section(timerconsole, "Paraview output");
+                  TimerOutput::Scope timer_section(timerfile, "Paraview output");
+                  output_results_to_vtu(time->get_timestep(),
+                                        time->get_current(),
+                                        solution_n           );
+                  }
                 }
                 else if (parameters.outfiles_requested == "bcs")
                 {
@@ -7292,692 +7320,164 @@ void Solid<dim>::solve_linear_system(dealii::TrilinosWrappers::MPI::BlockVector 
     }
 
 
-    //Class to compute gradient of the pressure
-	template <int dim>
-	class PressGradPostproc : public DataPostprocessorVector<dim>
-	{
-		public:
-			PressGradPostproc (const unsigned int p_fluid_component)
-			:
-			DataPostprocessorVector<dim> ("pressure_gradient",
-										  update_gradients),
-			p_fluid_component (p_fluid_component)
-			{}
-
-			virtual ~PressGradPostproc(){}
-
-			virtual void
-			evaluate_vector_field
-				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const override
-			{
-				AssertDimension (input_data.solution_gradients.size(),
-								 computed_quantities.size());
-				const unsigned int max_points = input_data.solution_gradients.size();
-				for (unsigned int p=0; p<max_points; ++p)
-				{
-					AssertDimension (computed_quantities[p].size(), dim);
-					for (unsigned int d=0; d<dim; ++d)
-						computed_quantities[p][d]
-						    = input_data.solution_gradients[p][p_fluid_component][d];
-				}
-			}
-
-		private:
-			const unsigned int  p_fluid_component;
-	};
-
-	//Class to compute stresses
-	template <int dim>
-	class CauchyStressesPostproc : public DataPostprocessor<dim>
-	{
-		public:
-			CauchyStressesPostproc (const Parameters::AllParameters &parameters,
-									const std::shared_ptr<Time>     time)
-			:
-			parameters(parameters),
-			time(time)
-		  	{}
-
-			virtual ~CauchyStressesPostproc(){}
-
-			virtual void
-			evaluate_vector_field
-				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const override
-			{
-				AssertDimension (input_data.solution_gradients.size(),
-								 computed_quantities.size());
-				const unsigned int max_points = input_data.solution_values.size();
-				for (unsigned int p=0; p<max_points; ++p)
-					{
-					//Compute deformation gradient tensor of the point
-					Tensor<2, dim> grad_u;
-					for (unsigned int d = 0; d < dim; ++d)
-						grad_u[d] = input_data.solution_gradients[p][d];
-
-					const Tensor<2,dim,ADNumberType> F_AD = Physics::Elasticity::Kinematics::F(grad_u);
-          Tensor<2,dim,ADNumberType> F_AD_post = F_AD;
-
-          double det_F = Tensor<0,dim,double>(determinant(F_AD));
-					
-					// Angenommen, J_cp liegt z.B. bei 0.2 (das Limit der Feststoffkompression).
-					// Wenn die Extrapolierung an den Knoten zu nahe an J_cp heranschiebt, 
-					// zwingen wir det_F auf einen sicheren Mindestabstand (z.B. J_cp + 0.02).
-					const double J_cp = this->parameters.compaction_point; // <- Setzen Sie hier Ihren exakten 'J_cp'-Wert ein!
-					const double safety_puffer = 0.05; 
-
-					if (det_F <= (J_cp + safety_puffer)) {
-						// Wenn die Extrapolierung kollabiert, skalieren wir das F_AD sphärisch hoch,
-						// sodass det(F_new) exakt dem sicheren Mindestwert entspricht.
-						// Da det(c * F) = c^dim * det(F), ist der Skalierungsfaktor c = (det_target / det_current)^(1/dim)
-						double target_det = J_cp + safety_puffer;
-						double scale_factor = std::pow(target_det / det_F, 1.0 / double(dim));
-						
-						F_AD_post *= scale_factor;
-					}
-
-					//Extract pressure value of the point
-					const double p_fluid =  input_data.solution_values[p][dim];
-
-					//Compute stresses at the point
-					std::shared_ptr< Material_Hyperelastic<dim, ADNumberType>> solid_material;
-
-					if (parameters.mat_type == "Neo-Hooke")
-						solid_material.reset(new NeoHooke<dim,ADNumberType>(parameters,time));
-					else if (parameters.mat_type == "Neo-Hooke-PS")
-						solid_material.reset(new NeoHookePS<dim,ADNumberType>(parameters,time));
-					else if (parameters.mat_type == "Neo-Hooke-Ehlers")
-						solid_material.reset(new NeoHookeEhlers<dim,ADNumberType>(parameters,time));
-					else if (parameters.mat_type == "Ogden")
-						solid_material.reset(new Ogden<dim,ADNumberType>(parameters,time));
-					else if (parameters.mat_type == "OgdenIso")
-						solid_material.reset(new OgdenIso<dim,ADNumberType>(parameters,time));
-					else if (parameters.mat_type == "visco-Ogden")
-						solid_material.reset(new visco_Ogden<dim,ADNumberType>(parameters,time));
-          else if (parameters.mat_type == "visco-OgdenIso")
-						solid_material.reset(new visco_OgdenIso<dim,ADNumberType>(parameters,time));
-					else if (parameters.mat_type == "visco2-Ogden")
-						solid_material.reset(new visco2_Ogden<dim,ADNumberType>(parameters,time));
-					else
-						Assert (false, ExcMessage("Material type not implemented"));
-
-					//const SymmetricTensor<2,dim,ADNumberType> sigma_E_AD = solid_material->get_Cauchy_E(F_AD);
-          const SymmetricTensor<2,dim,ADNumberType> sigma_E_base_AD = solid_material->get_Cauchy_E_base(F_AD);
-          const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = solid_material->get_Cauchy_E_ext_func(F_AD_post);
-
-					static const SymmetricTensor<2,dim,double>
-					  I (Physics::Elasticity::StandardTensors<dim>::I);
-
-					// SymmetricTensor<2,dim> sigma_E;
-					// for (unsigned int i=0; i<dim; ++i)
-					// 	for (unsigned int j=0; j<dim; ++j)
-					// 	   sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
-
-          SymmetricTensor<2,dim> sigma_E_base;
-					for (unsigned int i=0; i<dim; ++i)
-						for (unsigned int j=0; j<dim; ++j)
-						   sigma_E_base[i][j] = Tensor<0,dim,double>(sigma_E_base_AD[i][j]);
-
-          SymmetricTensor<2,dim> sigma_E_ext_func;
-					for (unsigned int i=0; i<dim; ++i)
-						for (unsigned int j=0; j<dim; ++j)
-						   sigma_E_ext_func[i][j] = Tensor<0,dim,double>(sigma_E_ext_func_AD[i][j]);
-
-          SymmetricTensor<2,dim> tau_E_base = sigma_E_base * det_F;
-
-					SymmetricTensor<2,dim> sigma_fluid_vol (I);
-					sigma_fluid_vol *= -p_fluid;
-					// const SymmetricTensor<2,dim> sigma = sigma_E + sigma_fluid_vol;
-          const SymmetricTensor<2,dim> sigma = sigma_E_base + sigma_E_ext_func + sigma_fluid_vol;
-          const SymmetricTensor<2,dim> sigma_E = sigma_E_base + sigma_E_ext_func;
-
-					computed_quantities[p](0) = sigma[0][0];
-					computed_quantities[p](1) = sigma[1][1];
-					computed_quantities[p](2) = sigma[2][2];
-					computed_quantities[p](3) = sigma[0][1];
-					computed_quantities[p](4) = sigma[0][2];
-					computed_quantities[p](5) = sigma[1][2];
-
-					computed_quantities[p](6)  = sigma_E[0][0];
-					computed_quantities[p](7)  = sigma_E[1][1];
-					computed_quantities[p](8)  = sigma_E[2][2];
-					computed_quantities[p](9)  = sigma_E[0][1];
-					computed_quantities[p](10) = sigma_E[0][2];
-					computed_quantities[p](11) = sigma_E[1][2];
-
-					computed_quantities[p](12) = sigma_fluid_vol[0][0];
-					computed_quantities[p](13) = sigma_fluid_vol[1][1];
-					computed_quantities[p](14) = sigma_fluid_vol[2][2];
-					computed_quantities[p](15) = sigma_fluid_vol[0][1];
-					computed_quantities[p](16) = sigma_fluid_vol[0][2];
-					computed_quantities[p](17) = sigma_fluid_vol[1][2];
-
-          computed_quantities[p](18) = sigma_E_base[0][0];
-					computed_quantities[p](19) = sigma_E_base[1][1];
-					computed_quantities[p](20) = sigma_E_base[2][2];
-					computed_quantities[p](21) = sigma_E_base[0][1];
-					computed_quantities[p](22) = sigma_E_base[0][2];
-					computed_quantities[p](23) = sigma_E_base[1][2];
-
-          computed_quantities[p](24) = sigma_E_ext_func[0][0];
-					computed_quantities[p](25) = sigma_E_ext_func[1][1];
-					computed_quantities[p](26) = sigma_E_ext_func[2][2];
-					computed_quantities[p](27) = sigma_E_ext_func[0][1];
-					computed_quantities[p](28) = sigma_E_ext_func[0][2];
-					computed_quantities[p](29) = sigma_E_ext_func[1][2];
-
-          computed_quantities[p](30) = tau_E_base[0][0];
-					computed_quantities[p](31) = tau_E_base[1][1];
-					computed_quantities[p](32) = tau_E_base[2][2];
-					computed_quantities[p](33) = tau_E_base[0][1];
-					computed_quantities[p](34) = tau_E_base[0][2];
-					computed_quantities[p](35) = tau_E_base[1][2];
-				}
-			}
-
-			virtual std::vector<std::string> get_names() const override
-			{
-				std::vector<std::string> solution_names;
-				solution_names.emplace_back("total_cauchy_stress_xx");
-				solution_names.emplace_back("total_cauchy_stress_yy");
-				solution_names.emplace_back("total_cauchy_stress_zz");
-				solution_names.emplace_back("total_cauchy_stress_xy");
-				solution_names.emplace_back("total_cauchy_stress_xz");
-				solution_names.emplace_back("total_cauchy_stress_yz");
-
-				solution_names.emplace_back("extra_cauchy_stress_xx");
-				solution_names.emplace_back("extra_cauchy_stress_yy");
-				solution_names.emplace_back("extra_cauchy_stress_zz");
-				solution_names.emplace_back("extra_cauchy_stress_xy");
-				solution_names.emplace_back("extra_cauchy_stress_xz");
-				solution_names.emplace_back("extra_cauchy_stress_yz");
-
-				solution_names.emplace_back("fluid_cauchy_stress_xx");
-				solution_names.emplace_back("fluid_cauchy_stress_yy");
-				solution_names.emplace_back("fluid_cauchy_stress_zz");
-				solution_names.emplace_back("fluid_cauchy_stress_xy");
-				solution_names.emplace_back("fluid_cauchy_stress_xz");
-				solution_names.emplace_back("fluid_cauchy_stress_yz");
-
-        solution_names.emplace_back("base_cauchy_stress_xx");
-				solution_names.emplace_back("base_cauchy_stress_yy");
-				solution_names.emplace_back("base_cauchy_stress_zz");
-				solution_names.emplace_back("base_cauchy_stress_xy");
-				solution_names.emplace_back("base_cauchy_stress_xz");
-				solution_names.emplace_back("base_cauchy_stress_yz");
-
-        solution_names.emplace_back("volumetric_cauchy_stress_xx");
-				solution_names.emplace_back("volumetric_cauchy_stress_yy");
-				solution_names.emplace_back("volumetric_cauchy_stress_zz");
-				solution_names.emplace_back("volumetric_cauchy_stress_xy");
-				solution_names.emplace_back("volumetric_cauchy_stress_xz");
-				solution_names.emplace_back("volumetric_cauchy_stress_yz");
-
-        solution_names.emplace_back("base_tau_stress_xx");
-				solution_names.emplace_back("base_tau_stress_yy");
-				solution_names.emplace_back("base_tau_stress_zz");
-				solution_names.emplace_back("base_tau_stress_xy");
-				solution_names.emplace_back("base_tau_stress_xz");
-				solution_names.emplace_back("base_tau_stress_yz");
-				return solution_names;
-			}
-
-			virtual std::vector<DataComponentInterpretation::DataComponentInterpretation>get_data_component_interpretation() const override
-			{
-			    std::vector<DataComponentInterpretation::DataComponentInterpretation> interpretation(this->get_names().size(),DataComponentInterpretation::component_is_scalar);
-			    return interpretation;
-			}
-
-			virtual UpdateFlags get_needed_update_flags() const override
-			{
-				return (update_values | update_gradients | update_JxW_values);
-			}
-
-		private:
-			const Parameters::AllParameters parameters;
-			const std::shared_ptr<Time>     time;
-			using ADNumberType = Sacado::Fad::DFad<double>;
-	};
-
-	//Class to compute the seepage velocity
-	template <int dim>
-	class SeepageVelPostproc : public DataPostprocessorVector<dim>
-	{
-		public:
-			SeepageVelPostproc (const Parameters::AllParameters &parameters,
-								const unsigned int              p_fluid_component)
-			:
-			DataPostprocessorVector<dim> ("seepage_velocity",
-										  update_gradients),
-			parameters(parameters),
-			p_fluid_component(p_fluid_component)
-			{}
-
-			virtual ~SeepageVelPostproc(){}
-
-			virtual void
-			evaluate_vector_field
-				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const override
-			{
-				AssertDimension (input_data.solution_gradients.size(),
-							 	 computed_quantities.size());
-				const unsigned int max_points = input_data.solution_gradients.size();
-				for (unsigned int p=0; p<max_points; ++p)
-				{
-					//Compute deformation gradient tensor of the point
-					Tensor<2, dim> grad_u;
-					for (unsigned int d = 0; d < dim; ++d)
-						grad_u[d] = input_data.solution_gradients[p][d];
-
-					const Tensor<2,dim,ADNumberType>
-						F_AD = Physics::Elasticity::Kinematics::F(grad_u);
-
-					//Extract pressure gradient at the point
-					Tensor<1, dim> grad_p_AD = input_data.solution_gradients[p][p_fluid_component];
-
-					//Compute seepage velocity
-					std::shared_ptr< Material_Darcy_Fluid<dim, ADNumberType> > fluid_material;
-					fluid_material.reset(new Material_Darcy_Fluid<dim,ADNumberType>(parameters));
-
-					const Tensor<1,dim,ADNumberType> seepage_vel_AD = fluid_material->get_seepage_velocity_current(F_AD,grad_p_AD);
-
-					AssertDimension (computed_quantities[p].size(), dim);
-					for (unsigned int d=0; d<dim; ++d)
-						computed_quantities[p][d] = Tensor<0,dim,double>(seepage_vel_AD[d]);
-				}
-			}
-
-		private:
-			const Parameters::AllParameters parameters;
-			const unsigned int  p_fluid_component;
-			using ADNumberType = Sacado::Fad::DFad<double>;
-	};
-
-	//Class to compute the Jacobian, det(F)
-	template <int dim>
-	class JacobianPostproc : public DataPostprocessorScalar<dim>
-	{
-		public:
-			JacobianPostproc ()
-			:
-			DataPostprocessorScalar<dim> ("jacobian",
-										  update_gradients)
-			{}
-
-			virtual ~JacobianPostproc(){}
-
-			virtual void
-			evaluate_vector_field
-				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const override
-			{
-				AssertDimension (input_data.solution_gradients.size(),
-								 computed_quantities.size());
-				const unsigned int max_points = input_data.solution_gradients.size();
-        double sum_J = 0;
-				for (unsigned int p=0; p<max_points; ++p)
-				{
-					//Compute deformation gradient tensor of the point
-					Tensor<2, dim> grad_u;
-					for (unsigned int d = 0; d < dim; ++d)
-						grad_u[d] = input_data.solution_gradients[p][d];
-
-					const Tensor<2,dim> F = Physics::Elasticity::Kinematics::F(grad_u);
-					computed_quantities[p]= determinant(F);
-
-          // sum_J += computed_quantities[p][0];
-          //std::cout << "computed_quantities[" << p << "] = " << computed_quantities[p][0] << std::endl; 
-				}
-         
-        // double mean_J = sum_J / computed_quantities.size();
-        // for (unsigned int p=0; p<max_points; ++p)
-				// {
-        // computed_quantities[p] = mean_J;
-        // }
-        //std::cout << "sum = " << sum_J << ", mean = " << mean_J << std::endl;
-			}
-	};
-
-	//Class to compute the solid volume fraction, n_s
-	template <int dim>
-	class SolidVolFracPostproc : public DataPostprocessorScalar<dim>
-	{
-		public:
-			SolidVolFracPostproc (double n_0s)
-			:
-			DataPostprocessorScalar<dim> ("solid_volume_fraction",
-										  update_gradients),
-			n_0s(n_0s)
-			{}
-
-			virtual ~SolidVolFracPostproc(){}
-
-			virtual void
-			evaluate_vector_field
-				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const override
-			{
-				AssertDimension (input_data.solution_gradients.size(),
-								 computed_quantities.size());
-				const unsigned int max_points = input_data.solution_gradients.size();
-				for (unsigned int p=0; p<max_points; ++p)
-				{
-					//Compute deformation gradient tensor of the point
-					Tensor<2, dim> grad_u;
-					for (unsigned int d = 0; d < dim; ++d)
-						grad_u[d] = input_data.solution_gradients[p][d];
-
-					const Tensor<2,dim> F = Physics::Elasticity::Kinematics::F(grad_u);
-					computed_quantities[p]= n_0s/determinant(F);
-				}
-			}
-
-		private:
-			const double  n_0s;
-	};
-
-	//Class to compute the stretches
-	template <int dim>
-	class StretchesPostproc : public DataPostprocessorVector<dim>
-	{
-		public:
-			StretchesPostproc ()
-			:
-			DataPostprocessorVector<dim> ("stretches",
-										  update_gradients)
-			{}
-
-			virtual ~StretchesPostproc(){}
-
-			virtual void
-			evaluate_vector_field
-				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const override
-			{
-				AssertDimension (input_data.solution_gradients.size(),
-								 computed_quantities.size());
-				const unsigned int max_points = input_data.solution_gradients.size();
-				for (unsigned int p=0; p<max_points; ++p)
-				{
-					//Compute deformation gradient tensor of the point
-					Tensor<2, dim> grad_u;
-					for (unsigned int d = 0; d < dim; ++d)
-						grad_u[d] = input_data.solution_gradients[p][d];
-
-					const Tensor<2,dim> F = Physics::Elasticity::Kinematics::F(grad_u);
-
-					//Green-Lagrange strain
-					const Tensor<2,dim> E_strain = Physics::Elasticity::Kinematics::E(F);
-
-					AssertDimension (computed_quantities[p].size(), dim);
-					for (unsigned int d=0; d<dim; ++d)
-						computed_quantities[p][d] = std::sqrt(1.0+2.0*E_strain[d][d]);
-				}
-			}
-	};
-
-	//Class to compute dissipations
-	template <int dim>
-	class DissipPostproc : public DataPostprocessor<dim>
-	{
-		public:
-			DissipPostproc (const Parameters::AllParameters &parameters,
-							const std::shared_ptr<Time>     time,
-							const unsigned int              p_fluid_component):
-			parameters(parameters),
-			time(time),
-			p_fluid_component(p_fluid_component)
-		  	{}
-
-			virtual ~DissipPostproc(){}
-
-			virtual void
-			evaluate_vector_field
-				(const DataPostprocessorInputs::Vector<dim> &input_data,
-				 std::vector<Vector<double> >               &computed_quantities) const override
-			{
-				AssertDimension (input_data.solution_gradients.size(),
-								 computed_quantities.size());
-				const unsigned int max_points = input_data.solution_values.size();
-				for (unsigned int p=0; p<max_points; ++p)
-				{
-					//Compute deformation gradient tensor of the point
-					Tensor<2, dim> grad_u;
-					for (unsigned int d = 0; d < dim; ++d)
-						grad_u[d] = input_data.solution_gradients[p][d];
-
-					const Tensor<2,dim,ADNumberType>
-						F_AD = Physics::Elasticity::Kinematics::F(grad_u);
-
-					//Extract pressure value of the point
-					//const double p_fluid =  input_data.solution_values[p][dim];
-					//Extract pressure gradient at the point
-					Tensor<1, dim> grad_p_AD = input_data.solution_gradients[p][p_fluid_component];
-
-					//Compute porous dissipation
-					std::shared_ptr< Material_Darcy_Fluid<dim, ADNumberType> > fluid_material;
-					fluid_material.reset(new Material_Darcy_Fluid<dim,ADNumberType>(parameters));
-
-					const double poro_dissip = fluid_material->get_porous_dissipation(F_AD,grad_p_AD);
-
-					//Compute viscous dissipation
-					std::shared_ptr< Material_Hyperelastic<dim, ADNumberType>> solid_material;
-
-					if (parameters.mat_type == "Neo-Hooke")
-						solid_material.reset(new NeoHooke<dim,ADNumberType>(parameters,time));
-					else if (parameters.mat_type == "Neo-Hooke-PS")
-						solid_material.reset(new NeoHookePS<dim,ADNumberType>(parameters,time));
-					else if (parameters.mat_type == "Neo-Hooke-Ehlers")
-						solid_material.reset(new NeoHookeEhlers<dim,ADNumberType>(parameters,time));
-					else if (parameters.mat_type == "Ogden")
-						solid_material.reset(new Ogden<dim,ADNumberType>(parameters,time));
-					else if (parameters.mat_type == "OgdenIso")
-						solid_material.reset(new OgdenIso<dim,ADNumberType>(parameters,time));
-					else if (parameters.mat_type == "visco-Ogden")
-						solid_material.reset(new visco_Ogden<dim,ADNumberType>(parameters,time));
-          else if (parameters.mat_type == "visco-OgdenIso")
-						solid_material.reset(new visco_OgdenIso<dim,ADNumberType>(parameters,time));
-					else if (parameters.mat_type == "visco2-Ogden")
-						solid_material.reset(new visco2_Ogden<dim,ADNumberType>(parameters,time));
-					else
-						Assert (false, ExcMessage("Material type not implemented"));
-
-					const SymmetricTensor<2,dim,ADNumberType> sigma_E_AD = solid_material->get_Cauchy_E(F_AD);
-
-					const double visco_dissip = solid_material->get_viscous_dissipation();
-
-					computed_quantities[p](0) = poro_dissip;
-					computed_quantities[p](1) = visco_dissip;
-				}
-			}
-
-			virtual std::vector<std::string> get_names() const override
-			{
-				std::vector<std::string> solution_names;
-				solution_names.emplace_back("porous_dissipation");
-				solution_names.emplace_back("viscous_dissipation");
-				return solution_names;
-			}
-
-			virtual std::vector<DataComponentInterpretation::DataComponentInterpretation>get_data_component_interpretation() const override
-			{
-				std::vector<DataComponentInterpretation::DataComponentInterpretation> interpretation(2,DataComponentInterpretation::component_is_scalar);
-				return interpretation;
-			}
-
-			virtual UpdateFlags get_needed_update_flags() const override
-			{
-				return (update_values | update_gradients);
-			}
-
-		private:
-			const Parameters::AllParameters parameters;
-			const std::shared_ptr<Time>     time;
-			const unsigned int              p_fluid_component;
-			using ADNumberType = Sacado::Fad::DFad<double>;
-	};
-
-
-    //Print results to vtu file
+     //Print results to vtu file
     template <int dim> void Solid<dim>::output_results_to_vtu
 		(const unsigned int timestep,
 		 const double current_time,
-		 TrilinosWrappers::MPI::BlockVector solution_IN) const
-		{
-
-    	TrilinosWrappers::MPI::BlockVector solution_total(locally_owned_partitioning,
-    													  locally_relevant_partitioning,
-														  mpi_communicator,
-														  false);
-    	solution_total = solution_IN;
-    	Vector<double> material_id;
-    	material_id.reinit(triangulation.n_active_cells());
-    	std::vector<types::subdomain_id> partition_int(triangulation.n_active_cells());
-
-    	//Iterate through elements (cells) to obtain material ID for each
-    	dealii::FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
-    		cell(IteratorFilters::LocallyOwnedCell(),
-    			 dof_handler_ref.begin_active()),
-			endc(IteratorFilters::LocallyOwnedCell(),
-				 dof_handler_ref.end());
-    		for (; cell!=endc; ++cell) {
-    			Assert(cell->is_locally_owned(), ExcInternalError());
-    			Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
-
-    			material_id(cell->active_cell_index()) = static_cast<int>(cell->material_id());
-    		}
-
-    	// Add the results to the solution to create the output file for Paraview
-    	DataOut<dim> data_out;
-    	std::vector<DataComponentInterpretation::DataComponentInterpretation>
-    		comp_type(dim,
-    				  DataComponentInterpretation::component_is_part_of_vector);
-    	comp_type.push_back(DataComponentInterpretation::component_is_scalar);
-
-    	GridTools::get_subdomain_association(triangulation, partition_int);
-
-    	std::vector<std::string> solution_name(dim, "displacement");
-    	solution_name.push_back("pore_pressure");
-
-    	data_out.attach_dof_handler(dof_handler_ref);
-    	data_out.add_data_vector(solution_total,
-    							 solution_name,
-								 DataOut<dim>::type_dof_data,
-								 comp_type);
-
-    	const Vector<double> partitioning(partition_int.begin(),
-    									  partition_int.end());
-
-		data_out.add_data_vector(partitioning, "partitioning");
-		data_out.add_data_vector(material_id, "material_id");
-
-		PressGradPostproc<dim> pres_grad(p_fluid_component);
-		data_out.add_data_vector(solution_total,pres_grad);
-
-		CauchyStressesPostproc<dim> stresses_post(parameters,time);
-		data_out.add_data_vector(solution_total, stresses_post);
-
-  	SeepageVelPostproc<dim> seepage_vel(parameters,p_fluid_component);
-		data_out.add_data_vector(solution_total, seepage_vel);
-
-		JacobianPostproc<dim> jacobian;
-		data_out.add_data_vector(solution_total,jacobian);
-
-		SolidVolFracPostproc<dim> n0s(parameters.solid_vol_frac);
-		data_out.add_data_vector(solution_total,n0s);
-
-		StretchesPostproc<dim> stretches;
-		data_out.add_data_vector(solution_total,stretches);
-
-		DissipPostproc<dim> dissipations(parameters,time,p_fluid_component);
-		data_out.add_data_vector(solution_total, dissipations);
-
-    Vector<double> b_ids(triangulation.n_active_cells());
-    unsigned int i = 0;
-    for (const auto &cell : triangulation.active_cell_iterators())
+		 const TrilinosWrappers::MPI::BlockVector &solution_IN) const
     {
-        double max_b_id = -1.0; // Standardwert für "kein Rand"
-        for (const auto &face : cell->face_iterators())
+      TrilinosWrappers::MPI::BlockVector solution_total(locally_owned_partitioning,
+                                                        locally_relevant_partitioning,
+                                                        mpi_communicator,
+                                                        false);
+      solution_total = solution_IN;
+
+      // Cell data: material id, partitioning, largest boundary id of the cell faces
+      Vector<double> material_id(triangulation.n_active_cells());
+      Vector<double> partitioning(triangulation.n_active_cells());
+      Vector<double> b_ids(triangulation.n_active_cells());
+      for (const auto &cell : triangulation.active_cell_iterators())
+        if (cell->is_locally_owned())
+        {
+          const unsigned int k = cell->active_cell_index();
+          material_id(k)  = cell->material_id();
+          partitioning(k) = this_mpi_process;
+          b_ids(k)        = -1.0;   // no boundary face
+          for (const auto &face : cell->face_iterators())
             if (face->at_boundary())
-                max_b_id = static_cast<double>(face->boundary_id());
-        
-        b_ids(i++) = max_b_id;
-    }
-    data_out.add_data_vector(b_ids, "ManualBoundaryID", DataOut<dim>::type_cell_data);
+              b_ids(k) = std::max(b_ids(k), static_cast<double>(face->boundary_id()));
+        }
 
-		//data_out.build_patches(degree_displ);
-		data_out.build_patches(mapping,
-							   degree_displ,
-							   DataOut<dim>::curved_boundary);
+      // Quadrature point quantities, volume averaged per cell
+      const CellOutputFields cell_fields = compute_cell_output_fields(solution_total);
 
-		struct Filename
-		{
-			static std::string get_filename_vtu(unsigned int process,
-												unsigned int timestep,
-												const unsigned int n_digits = 5)
-			{
-				std::ostringstream filename_vtu;
-				filename_vtu
-				<< "solution."
-				<< dealii::Utilities::int_to_string(process, n_digits)
-				<< "."
-				<< dealii::Utilities::int_to_string(timestep, n_digits)
-				<< ".vtu";
-				return filename_vtu.str();
-			}
+      // Optional continuous vertex values: volume-weighted average of the cell values of all cells
+      // sharing the vertex, sigma_a = sum_e v_e sigma_e / sum_e v_e. Declared before data_out,
+      // since data_out keeps pointers to the DoFHandler and the vector.
+      const std::vector<std::string> nodal_field_names
+        = {"cauchy_stress_total_xx", "cauchy_stress_total_yy", "cauchy_stress_total_zz",
+           "cauchy_stress_total_xy", "cauchy_stress_total_xz", "cauchy_stress_total_yz",
+           "von_mises_stress", "mean_extra_stress", "max_principal_stress_total"};
+      std::vector<unsigned int> nodal_fields;
+      for (unsigned int k=0; k<cell_fields.names.size(); ++k)
+        if (std::find(nodal_field_names.begin(), nodal_field_names.end(), cell_fields.names[k])
+            != nodal_field_names.end())
+          nodal_fields.push_back(k);
+      const unsigned int n_nodal = nodal_fields.size();
 
-			static std::string get_filename_pvtu(unsigned int timestep,
-												 const unsigned int n_digits = 5)
-			{
-				std::ostringstream filename_vtu;
-				filename_vtu
-				<< "solution."
-				<< dealii::Utilities::int_to_string(timestep, n_digits)
-				<< ".pvtu";
-				return filename_vtu.str();
-			}
+      const FESystem<dim> fe_nodal(FE_Q<dim>(1), n_nodal + 1);   // last component: summed cell volumes
+      DoFHandler<dim> dof_handler_nodal(triangulation);
+      TrilinosWrappers::MPI::Vector nodal_values;
 
-			static std::string get_filename_pvd (void)
-			{
-				std::ostringstream filename_vtu;
-				filename_vtu
-				<< "solution.pvd";
-				return filename_vtu.str();
-			}
-		};
+      if (parameters.outtype == "nodes")
+      {
+        dof_handler_nodal.distribute_dofs(fe_nodal);
+        const IndexSet owned    = dof_handler_nodal.locally_owned_dofs();
+        const IndexSet relevant = DoFTools::extract_locally_relevant_dofs(dof_handler_nodal);
 
-		const std::string filename_vtu = Filename::get_filename_vtu(this_mpi_process,
-																	timestep);
-		std::ofstream output(parameters.output_directory + "/" + filename_vtu.c_str());
-		data_out.write_vtu(output);
+        // Sum v_e * value_e and v_e over the cells of each vertex, one communication in compress()
+        TrilinosWrappers::MPI::Vector nodal_sum;
+        nodal_sum.reinit(owned, relevant, mpi_communicator, true);   // writable ghost entries
+        std::vector<types::global_dof_index> dof_indices(fe_nodal.dofs_per_cell);
+        Vector<double> cell_contribution(fe_nodal.dofs_per_cell);
+        for (const auto &cell : dof_handler_nodal.active_cell_iterators())
+          if (cell->is_locally_owned())
+          {
+            const unsigned int k   = cell->active_cell_index();
+            const double       v_e = cell_fields.current_volume(k);
+            for (unsigned int i=0; i<fe_nodal.dofs_per_cell; ++i)
+            {
+              const unsigned int comp = fe_nodal.system_to_component_index(i).first;
+              cell_contribution(i) = (comp < n_nodal ? v_e * cell_fields.values[nodal_fields[comp]](k) : v_e);
+            }
+            cell->get_dof_indices(dof_indices);
+            nodal_sum.add(dof_indices, cell_contribution);
+          }
+        nodal_sum.compress(VectorOperation::add);
 
-		// We have a collection of files written in parallel
-		// This next set of steps should only be performed by master process
-		if (this_mpi_process == 0)
-		{
-			// List of all files written out at this timestep by all processors
-			std::vector<std::string> parallel_filenames_vtu;
-			for (unsigned int p=0; p<n_mpi_processes; ++p)
-			{
-				parallel_filenames_vtu.push_back(Filename::get_filename_vtu(p, timestep));
-			}
+        TrilinosWrappers::MPI::Vector nodal_owned(owned, mpi_communicator);
+        for (const auto &cell : dof_handler_nodal.active_cell_iterators())
+          if (cell->is_locally_owned())
+            for (unsigned int v=0; v<GeometryInfo<dim>::vertices_per_cell; ++v)
+            {
+              const types::global_dof_index i_w = cell->vertex_dof_index(v, n_nodal);
+              if (!owned.is_element(i_w))
+                continue;
+              const double w = nodal_sum(i_w);
+              for (unsigned int comp=0; comp<n_nodal; ++comp)
+              {
+                const types::global_dof_index i = cell->vertex_dof_index(v, comp);
+                nodal_owned(i) = nodal_sum(i) / w;
+              }
+              nodal_owned(i_w) = w;
+            }
+        nodal_owned.compress(VectorOperation::insert);
 
-			const std::string filename_pvtu(Filename::get_filename_pvtu(timestep));
-			std::ofstream pvtu_master(parameters.output_directory + "/" + filename_pvtu.c_str());
-			data_out.write_pvtu_record(pvtu_master,
-									   parallel_filenames_vtu);
+        nodal_values.reinit(owned, relevant, mpi_communicator);
+        nodal_values = nodal_owned;
+      }
 
-			// Time dependent data master file
-			static std::vector<std::pair<double,std::string>> time_and_name_history;
-			time_and_name_history.push_back(std::make_pair(current_time,
-														   filename_pvtu));
-			const std::string filename_pvd(Filename::get_filename_pvd());
-			std::ofstream pvd_output(parameters.output_directory + "/" + filename_pvd.c_str());
-			DataOutBase::write_pvd_record(pvd_output, time_and_name_history);
-		}
-	}
+      // Add the results to create the output file for Paraview
+      DataOut<dim> data_out;
+      data_out.attach_dof_handler(dof_handler_ref);
+
+      std::vector<DataComponentInterpretation::DataComponentInterpretation>
+        comp_type(dim, DataComponentInterpretation::component_is_part_of_vector);
+      comp_type.push_back(DataComponentInterpretation::component_is_scalar);
+      std::vector<std::string> solution_name(dim, "displacement");
+      solution_name.push_back("pore_pressure");
+      data_out.add_data_vector(solution_total, solution_name, DataOut<dim>::type_dof_data, comp_type);
+
+      data_out.add_data_vector(partitioning, "partitioning", DataOut<dim>::type_cell_data);
+      data_out.add_data_vector(material_id,  "material_id",  DataOut<dim>::type_cell_data);
+      data_out.add_data_vector(b_ids,        "ManualBoundaryID", DataOut<dim>::type_cell_data);
+      if (singular_edge_distance.size() == triangulation.n_active_cells())
+        data_out.add_data_vector(singular_edge_distance, "singular_edge_distance", DataOut<dim>::type_cell_data);
+
+      for (unsigned int k=0; k<cell_fields.names.size(); ++k)
+        data_out.add_data_vector(cell_fields.values[k], cell_fields.names[k], DataOut<dim>::type_cell_data);
+
+      if (parameters.outtype == "nodes")
+      {
+        std::vector<std::string> nodal_names;
+        for (const unsigned int k : nodal_fields)
+          nodal_names.push_back("nodal_" + cell_fields.names[k]);
+        nodal_names.push_back("nodal_averaging_volume");
+        data_out.add_data_vector(dof_handler_nodal, nodal_values, nodal_names);
+      }
+
+      // One Lagrange cell per element instead of (degree)^dim linear sub-cells, fast compression
+      DataOutBase::VtkFlags flags;
+      flags.write_higher_order_cells = true;
+#if DEAL_II_VERSION_GTE(9,5,0)
+      flags.compression_level = DataOutBase::CompressionLevel::best_speed;
+#else
+      flags.compression_level = DataOutBase::VtkFlags::ZlibCompressionLevel::best_speed;
+#endif
+      data_out.set_flags(flags);
+
+      data_out.build_patches(mapping, degree_displ);
+
+      // One file per compute node (MPI-IO within each group) instead of one file per rank
+      MPI_Comm node_comm;
+      MPI_Comm_split_type(mpi_communicator, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &node_comm);
+      const unsigned int is_node_leader = (dealii::Utilities::MPI::this_mpi_process(node_comm) == 0) ? 1 : 0;
+      MPI_Comm_free(&node_comm);
+      const unsigned int n_nodes = dealii::Utilities::MPI::sum(is_node_leader, mpi_communicator);
+
+      const std::string filename_pvtu
+        = data_out.write_vtu_with_pvtu_record(parameters.output_directory + "/", "solution",
+                                              timestep, mpi_communicator, 5, n_nodes);
+
+      // Time dependent data master file
+      if (this_mpi_process == 0)
+      {
+        static std::vector<std::pair<double,std::string>> time_and_name_history;
+        time_and_name_history.emplace_back(current_time, filename_pvtu);
+        std::ofstream pvd_output(parameters.output_directory + "/solution.pvd");
+        DataOutBase::write_pvd_record(pvd_output, time_and_name_history);
+      }
+    }  
 
       //Print boundary conditions to vtu file
       //This function os analogous to the output_results_to_vtu function,
@@ -7991,7 +7491,7 @@ void Solid<dim>::solve_linear_system(dealii::TrilinosWrappers::MPI::BlockVector 
       template <int dim> void Solid<dim>::output_bcs_to_vtu
                             (const unsigned int timestep,
                              const double current_time,
-                             TrilinosWrappers::MPI::BlockVector solution_IN) const
+                             const TrilinosWrappers::MPI::BlockVector &solution_IN) const
       {
         TrilinosWrappers::MPI::BlockVector solution_total(locally_owned_partitioning,
                                                           locally_relevant_partitioning,
@@ -8437,13 +7937,210 @@ void Solid<dim>::solve_linear_system(dealii::TrilinosWrappers::MPI::BlockVector 
         return result;
       }
 
+      // Distance of each locally owned cell center to the singular edges (reference configuration).
+      // Edge vertices lie on a face of id a and on a face of id b of a pair. Owned and ghost cells
+      // contain all boundary faces touching the vertices of the owned cells.
+      template <int dim>
+      void Solid<dim>::compute_singular_edge_distance()
+      {
+        const auto edge_ids = get_singular_edge_boundary_ids_for_output();
+        if (edge_ids.empty())
+            return;
+
+        std::map<types::boundary_id, std::set<unsigned int>> vertices_on_id;
+        for (const auto &cell : triangulation.active_cell_iterators())
+            if (!cell->is_artificial())
+                for (const auto &face : cell->face_iterators())
+                    if (face->at_boundary())
+                        for (unsigned int v=0; v<GeometryInfo<dim>::vertices_per_face; ++v)
+                            vertices_on_id[face->boundary_id()].insert(face->vertex_index(v));
+
+        std::vector<Point<dim>> local_edge_points;
+        for (const auto &ids : edge_ids)
+            for (const unsigned int v : vertices_on_id[ids.first])
+                if (vertices_on_id[ids.second].count(v) > 0)
+                    local_edge_points.push_back(triangulation.get_vertices()[v]);
+
+        std::vector<Point<dim>> edge_points;
+        for (const auto &points : dealii::Utilities::MPI::all_gather(mpi_communicator, local_edge_points))
+            edge_points.insert(edge_points.end(), points.begin(), points.end());
+
+        singular_edge_distance.reinit(triangulation.n_active_cells());
+        for (const auto &cell : triangulation.active_cell_iterators())
+            if (cell->is_locally_owned())
+            {
+                const Point<dim> center = cell->center();
+                double d2 = std::numeric_limits<double>::max();
+                for (const auto &x : edge_points)
+                    d2 = std::min(d2, center.distance_square(x));
+                singular_edge_distance(cell->active_cell_index()) = std::sqrt(d2);
+            }
+      }      
+
+      // Volume averages of the quadrature point quantities per cell, same material state as in the
+      // assembly (incl. tau_neq of the last converged update). Cauchy quantities are averaged over the
+      // current cell volume: sigma_e = int tau dV / int J dV.
+      template <int dim>
+      typename Solid<dim>::CellOutputFields
+      Solid<dim>::compute_cell_output_fields(const TrilinosWrappers::MPI::BlockVector &solution_total) const
+      {
+        static const std::array<std::string,6> suffix = {{"xx","yy","zz","xy","xz","yz"}};
+        static const std::array<std::pair<unsigned int,unsigned int>,6>
+          ij = {{{0,0},{1,1},{2,2},{0,1},{0,2},{1,2}}};
+
+        CellOutputFields out;
+        const auto add_tensor = [&out](const std::string &name)
+        {
+            const unsigned int first = out.names.size();
+            for (const auto &s : suffix)
+                out.names.push_back(name + "_" + s);
+            return first;
+        };
+        const auto add_vector = [&out](const std::string &name)
+        {
+            const unsigned int first = out.names.size();
+            for (const char *s : {"x","y","z"})
+                out.names.push_back(name + "_" + s);
+            return first;
+        };
+        const auto add_scalar = [&out](const std::string &name)
+        {
+            out.names.push_back(name);
+            return static_cast<unsigned int>(out.names.size() - 1);
+        };
+
+        const unsigned int i_sigma     = add_tensor("cauchy_stress_total");
+        const unsigned int i_sigma_eq  = add_tensor("cauchy_stress_extra_eq");
+        const unsigned int i_sigma_neq = add_tensor("cauchy_stress_extra_neq");
+        const unsigned int i_sigma_vol = add_scalar("cauchy_stress_extra_vol");
+        const unsigned int i_mises     = add_scalar("von_mises_stress");
+        const unsigned int i_mean_E    = add_scalar("mean_extra_stress");
+        const unsigned int i_s1        = add_scalar("max_principal_stress_total");
+        const unsigned int i_J         = add_scalar("jacobian");
+        const unsigned int i_J_min     = add_scalar("jacobian_min_qp");
+        const unsigned int i_D_visco   = add_scalar("viscous_dissipation");
+        const unsigned int i_D_poro    = add_scalar("porous_dissipation");
+        const unsigned int i_w         = add_vector("seepage_velocity");
+        const unsigned int i_lambda    = add_vector("stretch");
+
+        out.values.assign(out.names.size(), Vector<double>(triangulation.n_active_cells()));
+        out.current_volume.reinit(triangulation.n_active_cells());
+
+        std::vector<typename DoFHandler<dim>::active_cell_iterator> local_cells;
+        local_cells.reserve(triangulation.n_locally_owned_active_cells());
+        for (const auto &cell : dof_handler_ref.active_cell_iterators())
+            if (cell->is_locally_owned())
+                local_cells.push_back(cell);
+
+        const SymmetricTensor<2,dim> I = Physics::Elasticity::StandardTensors<dim>::I;
+        const std::ptrdiff_t n_cells = static_cast<std::ptrdiff_t>(local_cells.size());
+
+        #pragma omp parallel num_threads(MultithreadInfo::n_threads())
+        {
+          FEValues<dim> fe_values(mapping, fe, qf_cell, update_values | update_gradients | update_JxW_values);
+          std::vector<Tensor<2,dim>> grads_u(n_q_points);
+          std::vector<double>        values_p(n_q_points);
+          std::vector<Tensor<1,dim>> grads_p(n_q_points);
+
+          #pragma omp for schedule(dynamic, 16)
+          for (std::ptrdiff_t c = 0; c < n_cells; ++c)
+          {
+            const auto &cell = local_cells[c];
+            fe_values.reinit(cell);
+            fe_values[u_fe].get_function_gradients(solution_total, grads_u);
+            fe_values[p_fluid_fe].get_function_values(solution_total, values_p);
+            fe_values[p_fluid_fe].get_function_gradients(solution_total, grads_p);
+
+            const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>>
+                lqph = quadrature_point_history.get_data(cell);
+            Assert(lqph.size() == n_q_points, ExcInternalError());
+
+            SymmetricTensor<2,dim> int_tau, int_tau_eq, int_tau_neq;
+            Tensor<1,dim>          int_Jw, int_lambda;
+            double V_e = 0.0, v_e = 0.0, int_tau_vol = 0.0, int_D_visco = 0.0, int_D_poro = 0.0;
+            double J_min = std::numeric_limits<double>::max();
+
+            for (unsigned int q=0; q<n_q_points; ++q)
+            {
+                const Tensor<2,dim> F     = Physics::Elasticity::Kinematics::F(grads_u[q]);
+                const Tensor<2,dim> F_inv = invert(F);
+                const double        det_F = determinant(F);
+                const double        JxW   = fe_values.JxW(q);
+                const Tensor<2,dim,ADNumberType> F_AD = F;
+
+                // Kirchhoff stress parts as in compute_consistent_boundary_quantities
+                const SymmetricTensor<2,dim> tau_base = det_F * SymmetricTensor<2,dim,double>(lqph[q]->get_Cauchy_E_base(F_AD));
+                const SymmetricTensor<2,dim> tau_vol  = det_F * SymmetricTensor<2,dim,double>(lqph[q]->get_Cauchy_E_ext_func(F_AD));
+                const SymmetricTensor<2,dim> tau_neq  = lqph[q]->get_tau_E_neq_stored();
+                const SymmetricTensor<2,dim> tau_eq   = tau_base - tau_neq;
+                const SymmetricTensor<2,dim> tau      = tau_base + tau_vol - (values_p[q] * det_F) * I;
+
+                // Spatial pressure gradient grad p = Grad p F^-1 (as in the assembly)
+                const Tensor<1,dim,ADNumberType> grad_p_AD = grads_p[q] * F_inv;
+                const Tensor<1,dim,ADNumberType> w_AD
+                    = lqph[q]->get_seepage_velocity_current(F_AD, grad_p_AD);
+                const double D_poro  = lqph[q]->get_porous_dissipation(F_AD, grad_p_AD);
+                const double D_visco = lqph[q]->get_viscous_dissipation();
+                const SymmetricTensor<2,dim> C = Physics::Elasticity::Kinematics::C(F);
+
+                V_e         += JxW;
+                v_e         += det_F * JxW;
+                int_tau     += tau     * JxW;
+                int_tau_eq  += tau_eq  * JxW;
+                int_tau_neq += tau_neq * JxW;
+                int_tau_vol += tau_vol[0][0] * JxW;       // tau_vol = s J I is isotropic
+                int_D_visco += D_visco * det_F * JxW;     // weighting as in output_results_to_plot
+                int_D_poro  += D_poro  * det_F * JxW;
+                J_min        = std::min(J_min, det_F);
+                for (unsigned int d=0; d<dim; ++d)
+                {
+                    int_Jw[d]     += Tensor<0,dim,double>(w_AD[d]) * det_F * JxW;
+                    int_lambda[d] += std::sqrt(C[d][d]) * JxW;
+                }
+            }
+
+            const SymmetricTensor<2,dim> sigma     = int_tau     / v_e;
+            const SymmetricTensor<2,dim> sigma_eq  = int_tau_eq  / v_e;
+            const SymmetricTensor<2,dim> sigma_neq = int_tau_neq / v_e;
+            const double                 sigma_vol = int_tau_vol / v_e;
+            const SymmetricTensor<2,dim> sigma_E   = sigma_eq + sigma_neq + sigma_vol * I;
+            const SymmetricTensor<2,dim> dev_sigma = deviator(sigma);
+            const std::array<double,dim> principal = eigenvalues(sigma);   // descending
+
+            const unsigned int k = cell->active_cell_index();
+            for (unsigned int a=0; a<6; ++a)
+            {
+                const unsigned int i = ij[a].first, j = ij[a].second;
+                out.values[i_sigma     + a](k) = sigma[i][j];
+                out.values[i_sigma_eq  + a](k) = sigma_eq[i][j];
+                out.values[i_sigma_neq + a](k) = sigma_neq[i][j];
+            }
+            out.values[i_sigma_vol](k) = sigma_vol;
+            out.values[i_mises](k)     = std::sqrt(1.5 * (dev_sigma * dev_sigma));
+            out.values[i_mean_E](k)    = trace(sigma_E) / 3.0;
+            out.values[i_s1](k)        = principal[0];
+            out.values[i_J](k)         = v_e / V_e;
+            out.values[i_J_min](k)     = J_min;
+            out.values[i_D_visco](k)   = int_D_visco / v_e;
+            out.values[i_D_poro](k)    = int_D_poro  / v_e;
+            for (unsigned int d=0; d<dim; ++d)
+            {
+                out.values[i_w      + d](k) = int_Jw[d]     / v_e;
+                out.values[i_lambda + d](k) = int_lambda[d] / V_e;
+            }
+            out.current_volume(k) = v_e;
+          }
+        }
+        return out;
+      }
+
 
       //Print results to plotting file
       template <int dim>
       void Solid<dim>::output_results_to_plot(
                                 const unsigned int timestep,
                                 const double current_time,
-                                TrilinosWrappers::MPI::BlockVector solution_IN,
+                                const TrilinosWrappers::MPI::BlockVector &solution_IN,
                                 std::vector<Point<dim> > &tracked_vertices_IN,
                                 std::ofstream &plotpointfile) const
       {
@@ -10612,6 +10309,12 @@ void Solid<dim>::solve_linear_system(dealii::TrilinosWrappers::MPI::BlockVector 
               return 2;
           }
 
+          // Glued bottom (1) and top (2) meet the free lateral surface (0)
+          virtual std::vector<std::pair<types::boundary_id,types::boundary_id>>
+          get_singular_edge_boundary_ids_for_output() const override
+          {
+              return {{0,1},{0,2}};
+          }
 
           virtual double
           get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
@@ -11667,39 +11370,46 @@ const double scaled_height = height * this->parameters.scale;
     			}
     		}
 
-            virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
+          virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
         	{
-            	if (this->parameters.load_type == "pressure")
-            		//AssertThrow(false, ExcMessage("Pressure loading not implemented for rheometer examples."));
+           	if (this->parameters.load_type == "pressure")
+            	//AssertThrow(false, ExcMessage("Pressure loading not implemented for rheometer examples."));
 
-            	(void)boundary_id;
-            	(void)pt;
-            	(void)N;
-            	return Tensor<1,dim>();
+           	(void)boundary_id;
+           	(void)pt;
+           	(void)N;
+           	return Tensor<1,dim>();
         	}
 
-            virtual types::boundary_id get_reaction_boundary_id_for_output() const override
-            {
-            	return 2;
-            }
+          virtual types::boundary_id get_reaction_boundary_id_for_output() const override
+          {
+           	return 2;
+          }
 
-            virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const override
-            {
-            	(void)pt;
-            	(void)boundary_id;
-            	return 0.0;
-            }
+          // Glued bottom (1) and top (2) meet the free lateral surface (0)
+          virtual std::vector<std::pair<types::boundary_id,types::boundary_id>>
+          get_singular_edge_boundary_ids_for_output() const override
+          {
+              return {{0,1},{0,2}};
+          }
 
-            virtual std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const override
-			{
-            	if (this->parameters.lateral_drained == "drained" && this->parameters.bottom_drained == "drained") {
+          virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const override
+          {
+           	(void)pt;
+           	(void)boundary_id;
+           	return 0.0;
+          }
+
+          virtual std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const override
+			    {
+           	if (this->parameters.lateral_drained == "drained" && this->parameters.bottom_drained == "drained") {
 		        	return std::make_pair(0,1);
 		        } else if (this->parameters.lateral_drained == "drained") {
 		        	return std::make_pair(0,0);
 		        } else {
 		        	return std::make_pair(1,1);
 		        }
-		    }
+		      }
 
     		// Define Dirichlet load, definition in derived classes
     		virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override = 0;
