@@ -2860,6 +2860,12 @@ class Material_Hyperelastic
 
 		virtual double get_viscous_dissipation( ) const = 0;
 
+		// Non-equilibrium Kirchhoff stress of the last material update (zero for purely elastic models)
+		virtual SymmetricTensor<2, dim, double> get_tau_E_neq_stored() const
+		{
+			return SymmetricTensor<2, dim, double>();
+		}
+
 		const double n_OS;
 		const double lambda;
 		std::shared_ptr<Time> time;
@@ -3419,6 +3425,11 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
           double get_viscous_dissipation() const override
           {
             return (tau_neq_1_val * tau_neq_1_val) / (2.0 * viscosity_mode_1);
+          }
+
+          SymmetricTensor<2, dim, double> get_tau_E_neq_stored() const override
+          {
+            return tau_neq_1_val;
           }
 
         protected:
@@ -4536,6 +4547,12 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
                 return solid_material->get_viscous_dissipation();
             }
 
+            SymmetricTensor<2, dim, double>
+            get_tau_E_neq_stored() const
+            {
+                return solid_material->get_tau_E_neq_stored();
+            }
+
             Tensor<1,dim, NumberType>
             get_seepage_velocity_current (const Tensor<2,dim, NumberType> &F,
                                           const Tensor<1,dim, NumberType> &grad_p_fluid) const
@@ -5048,6 +5065,26 @@ private:
             TrilinosWrappers::SparseMatrix tangent_matrix_nb;
             //TrilinosWrappers::SparseMatrix tangent_matrix_precon_nb;
             TrilinosWrappers::MPI::Vector  system_rhs_nb;
+
+            // Residual WITHOUT Dirichlet constraints (only hanging nodes condensed), filled during
+            // assembly with the same cell contributions as system_rhs_nb (i.e. it stores -R).
+            // Used to compute variationally consistent reaction forces and boundary fluid fluxes.
+            TrilinosWrappers::MPI::Vector  rhs_unconstrained_nb;
+
+            struct ConsistentBoundaryQuantities
+            {
+              Tensor<1,dim> reaction_force;          // sum of R_u over the reaction boundary
+              double        fluid_volume_out = 0.0;  // fluid volume leaving through drained boundaries in this step
+              double        mass_balance_defect = 0.0; // sum of R_p over all non-drained pressure DoFs (should be ~0)
+              // Split of reaction_force: r^k = int P^k Grad(phi_R) dV, P^k = tau^k F^{-T}
+              Tensor<1,dim> reaction_eq;
+              Tensor<1,dim> reaction_neq;
+              Tensor<1,dim> reaction_vol;
+              Tensor<1,dim> reaction_fluid;
+              Tensor<1,dim> split_defect;            // reaction_force - sum of split - body force part (should be ~0)
+            };
+            ConsistentBoundaryQuantities
+            compute_consistent_boundary_quantities(const TrilinosWrappers::MPI::BlockVector &solution_total) const;
 
             //We define variables to store norms and update norms and normalisation factors.
             struct Errors
@@ -5622,6 +5659,7 @@ private:
         tangent_matrix_nb.reinit (sp);
         //tangent_matrix_precon_nb.reinit (sp);
         system_rhs_nb.reinit(locally_owned_dofs, mpi_communicator);
+        rhs_unconstrained_nb.reinit(locally_owned_dofs, mpi_communicator);
         MemProbe::report("system_setup", mpi_communicator);
 
         //Set up the quadrature point history
@@ -5823,6 +5861,7 @@ private:
 
             tangent_matrix_nb = 0.0;
             system_rhs_nb = 0.0;
+            rhs_unconstrained_nb = 0.0;
 
             //Apply boundary conditions
             make_constraints(newton_iteration);
@@ -6211,6 +6250,7 @@ if (first_exception)
 	
         tangent_matrix_nb.compress(VectorOperation::add);
         system_rhs_nb.compress(VectorOperation::add);
+        rhs_unconstrained_nb.compress(VectorOperation::add);
 
         for (const auto i : locally_owned_dofs)
           system_rhs(i) = system_rhs_nb(i);
@@ -6237,6 +6277,10 @@ if (first_exception)
             data.local_dof_indices,
             tangent_matrix_nb,
             system_rhs_nb);
+        
+        hanging_node_constraints.distribute_local_to_global(data.cell_rhs,
+                                                            data.local_dof_indices,
+                                                            rhs_unconstrained_nb);
         lap(PhaseProbe::COPY_GLOBAL);
     }
 
@@ -8265,6 +8309,135 @@ void Solid<dim>::solve_linear_system(dealii::TrilinosWrappers::MPI::BlockVector 
         }
       }
 
+      // Consistent boundary quantities from the unconstrained residual of the last assembly
+      template <int dim>
+      typename Solid<dim>::ConsistentBoundaryQuantities
+      Solid<dim>::compute_consistent_boundary_quantities(const TrilinosWrappers::MPI::BlockVector &solution_total) const
+      {
+        ConsistentBoundaryQuantities result;
+
+        // In assemble_system_one_cell: cell_rhs(i) = -R_i  ->  R_i = -rhs_unconstrained_nb(i)
+        const auto R = [this](const types::global_dof_index i)
+                       { return -rhs_unconstrained_nb(i); };
+
+        // Reaction force: sum of the displacement residuals of all DoFs on the reaction boundary
+        const std::set<types::boundary_id> reaction_ids = {get_reaction_boundary_id_for_output()};
+        Tensor<1,dim> reaction_local;
+        for (unsigned int d=0; d<dim; ++d)
+        {
+            ComponentMask mask_u(n_components, false);
+            mask_u.set(first_u_component + d, true);
+            const IndexSet dofs_u
+              = DoFTools::extract_boundary_dofs(dof_handler_ref, mask_u, reaction_ids) & locally_owned_dofs;
+            for (const auto i : dofs_u)
+                reaction_local[d] += R(i);
+        }
+        result.reaction_force = dealii::Utilities::MPI::sum(reaction_local, mpi_communicator);
+
+        // Fluid: sum of the pressure residuals of all DoFs on the drained boundaries
+        const std::pair<types::boundary_id,types::boundary_id> drained = get_drained_boundary_id_for_output();
+        const std::set<types::boundary_id> drained_ids = {drained.first, drained.second};
+        ComponentMask mask_p(n_components, false);
+        mask_p.set(p_fluid_component, true);
+        const IndexSet dofs_p_drained
+          = DoFTools::extract_boundary_dofs(dof_handler_ref, mask_p, drained_ids) & locally_owned_dofs;
+        const IndexSet dofs_p_all = DoFTools::extract_dofs(dof_handler_ref, mask_p);  // locally owned
+
+        double sum_R_drained = 0.0;
+        double sum_R_all     = 0.0;
+        for (const auto i : dofs_p_drained)
+            sum_R_drained += R(i);
+        for (const auto i : dofs_p_all)
+            sum_R_all += R(i);
+        sum_R_drained = dealii::Utilities::MPI::sum(sum_R_drained, mpi_communicator);
+        sum_R_all     = dealii::Utilities::MPI::sum(sum_R_all,     mpi_communicator);
+
+        result.fluid_volume_out    = -sum_R_drained;
+        result.mass_balance_defect = sum_R_all - sum_R_drained;
+
+        // Split of the reaction force. Same cell quadrature and shape functions as in the assembly,
+        // restricted to the displacement DoFs on the reaction boundary (phi_R = sum of their N_a).
+        ComponentMask mask_u_all(n_components, false);
+        for (unsigned int d=0; d<dim; ++d)
+            mask_u_all.set(first_u_component + d, true);
+        const IndexSet reaction_dofs = DoFTools::extract_boundary_dofs(dof_handler_ref, mask_u_all, reaction_ids);
+
+        FEValues<dim> fe_values(fe, qf_cell, update_values | update_gradients | update_JxW_values);
+        std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+        std::vector<unsigned int>            reaction_local_dofs;
+        std::vector<Tensor<2,dim>>           solution_grads_u(n_q_points);
+        std::vector<double>                  solution_values_p(n_q_points);
+
+        Tensor<1,dim> r_eq, r_neq, r_vol, r_fluid, r_body;
+
+        for (const auto &cell : dof_handler_ref.active_cell_iterators())
+        {
+            if (!cell->is_locally_owned())
+                continue;
+
+            cell->get_dof_indices(local_dof_indices);
+            reaction_local_dofs.clear();
+            for (unsigned int i=0; i<dofs_per_cell; ++i)
+                if (fe.system_to_component_index(i).first < first_u_component + dim
+                    && reaction_dofs.is_element(local_dof_indices[i]))
+                    reaction_local_dofs.push_back(i);
+            if (reaction_local_dofs.empty())
+                continue;
+
+            fe_values.reinit(cell);
+            fe_values[u_fe].get_function_gradients(solution_total, solution_grads_u);
+            fe_values[p_fluid_fe].get_function_values(solution_total, solution_values_p);
+
+            const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>>
+                lqph = quadrature_point_history.get_data(cell);
+            Assert(lqph.size() == n_q_points, ExcInternalError());
+
+            for (unsigned int q=0; q<n_q_points; ++q)
+            {
+                const Tensor<2,dim> F       = Physics::Elasticity::Kinematics::F(solution_grads_u[q]);
+                const Tensor<2,dim> F_inv_T = transpose(invert(F));
+                const double        det_F   = determinant(F);
+                const Tensor<2,dim,ADNumberType> F_AD = F;
+
+                // Kirchhoff stress parts (tau_neq is the stored value of the last, i.e. converged, assembly)
+                const SymmetricTensor<2,dim> tau_base = det_F * SymmetricTensor<2,dim,double>(lqph[q]->get_Cauchy_E_base(F_AD));
+                const SymmetricTensor<2,dim> tau_vol  = det_F * SymmetricTensor<2,dim,double>(lqph[q]->get_Cauchy_E_ext_func(F_AD));
+                const SymmetricTensor<2,dim> tau_neq  = lqph[q]->get_tau_E_neq_stored();
+                const SymmetricTensor<2,dim> tau_eq   = tau_base - tau_neq;
+
+                // First Piola-Kirchhoff parts P^k = tau^k F^{-T}, fluid: P^F = -p J F^{-T}
+                const Tensor<2,dim> P_eq    = Tensor<2,dim>(tau_eq)  * F_inv_T;
+                const Tensor<2,dim> P_neq   = Tensor<2,dim>(tau_neq) * F_inv_T;
+                const Tensor<2,dim> P_vol   = Tensor<2,dim>(tau_vol) * F_inv_T;
+                const Tensor<2,dim> P_fluid = (-solution_values_p[q] * det_F) * F_inv_T;
+                const Tensor<1,dim> body    = Tensor<1,dim,double>(lqph[q]->get_overall_body_force(F_AD, parameters));
+
+                const double JxW = fe_values.JxW(q);
+                for (const unsigned int i : reaction_local_dofs)
+                {
+                    const unsigned int  c     = fe.system_to_component_index(i).first - first_u_component;
+                    const Tensor<1,dim> gradN = fe_values.shape_grad(i, q);
+                    r_eq[c]    += (P_eq[c]    * gradN) * JxW;
+                    r_neq[c]   += (P_neq[c]   * gradN) * JxW;
+                    r_vol[c]   += (P_vol[c]   * gradN) * JxW;
+                    r_fluid[c] += (P_fluid[c] * gradN) * JxW;
+                    r_body[c]  -= fe_values.shape_value(i, q) * body[c] * JxW;
+                }
+            }
+        }
+
+        result.reaction_eq    = dealii::Utilities::MPI::sum(r_eq,    mpi_communicator);
+        result.reaction_neq   = dealii::Utilities::MPI::sum(r_neq,   mpi_communicator);
+        result.reaction_vol   = dealii::Utilities::MPI::sum(r_vol,   mpi_communicator);
+        result.reaction_fluid = dealii::Utilities::MPI::sum(r_fluid, mpi_communicator);
+        r_body                = dealii::Utilities::MPI::sum(r_body,  mpi_communicator);
+        result.split_defect   = result.reaction_force
+                              - (result.reaction_eq + result.reaction_neq + result.reaction_vol
+                                 + result.reaction_fluid + r_body);
+        return result;
+      }
+
+
       //Print results to plotting file
       template <int dim>
       void Solid<dim>::output_results_to_plot(
@@ -8409,42 +8582,6 @@ void Solid<dim>::solve_linear_system(dealii::TrilinosWrappers::MPI::BlockVector 
                 for (unsigned int i=0; i<dim; ++i)
                 	seepage[i] = Tensor<0,dim,double>(seepage_vel_AD[i]);
 
-                //test
-/*                 SymmetricTensor<2,dim> sigma_E_ext_func;
-                const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[q_point]->get_Cauchy_E_ext_func(F_AD);
-
-                double det_F_converged = lqph[q_point]->get_converged_det_F();
-
-                for (unsigned int i=0; i<dim; ++i)
-                	for (unsigned int j=0; j<dim; ++j) {
-                		sigma_E_ext_func[i][j] = Tensor<0,dim,double>(sigma_E_ext_func_AD[i][j]);
-                	}
-
-                const Point<dim> gauss_coord2 = fe_values_ref.quadrature_point(q_point);
-                std::ofstream sigma_ext_func_cells;
-                sigma_ext_func_cells.open("sigma_ext_func_cells", std::ofstream::app);
-                sigma_ext_func_cells  << std::setprecision(8) << std::scientific;
-                sigma_ext_func_cells  << std::setw(16) << this->time->get_current() << ","
-                		                  << std::setw(16) << gauss_coord2[0] << ","
-						                          << std::setw(16) << gauss_coord2[1] << ","
-						                          << std::setw(16) << gauss_coord2[2] << ","
-						                          << std::setw(16) << JxW << ","
-						                          << std::setw(16) << det_F << ","
-						                          << std::setw(16) << det_F_converged << ","
-						                          << std::setw(16) << sigma_E_ext_func[0][0] << ","
-						                          << std::setw(16) << sigma_E_ext_func[1][1] << ","
-						                          << std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
-                sigma_ext_func_cells.close(); */
-
-                //if (seepage[2]>0)
-                //	std::cout << seepage[2] << " cell loop" << std::endl;
-
-                //const Point<dim> gauss_coord = fe_values_ref.quadrature_point(q_point);
-                //if (gauss_coord[2] < 0.1) {
-                //	seepage_vec_mpi.push_back (seepage[2]);
-                	//std::cout << seepage[2] << std::endl;
-                //}
-
                 //Dissipations
                 const double porous_dissipation =
                   lqph[q_point]->get_porous_dissipation(F_AD, grad_p_fluid_AD);
@@ -8535,21 +8672,6 @@ void Solid<dim>::solve_linear_system(dealii::TrilinosWrappers::MPI::BlockVector 
                         const SymmetricTensor<2,dim,ADNumberType> sigma_E_base_AD = lqph[f_q_point]->get_Cauchy_E_base(F_AD);
                         SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD;
 
-                        // if (det_F > this->parameters.solid_vol_frac) {
-                        //     sigma_E_ext_func_AD = lqph[f_q_point]->get_Cauchy_E_ext_func(F_AD);
-                        // } else {
-                        //     sigma_E_ext_func_AD = sigma_vol_f_mean * I;
-                        // }
-
-                        // // Check if fqp is on the corner cell
-                        // const Point<dim> f_q_point_coord = fe_face_values_ref.quadrature_point(f_q_point);
-                        // const double f_q_point_radius = std::sqrt(f_q_point_coord[0]*f_q_point_coord[0] + f_q_point_coord[1]*f_q_point_coord[1]);
-                        // //std::cout << f_q_point_radius << std::endl;
-                        // if (f_q_point_radius < 3.75)
-                        //     sigma_E_ext_func_AD = lqph[f_q_point]->get_Cauchy_E_ext_func(F_AD);
-
-                        //double det_F_converged = lqph[f_q_point]->get_converged_det_F();
-
                         for (unsigned int i=0; i<dim; ++i)
                             for (unsigned int j=0; j<dim; ++j) {
                                //sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
@@ -8567,23 +8689,6 @@ void Solid<dim>::solve_linear_system(dealii::TrilinosWrappers::MPI::BlockVector 
                         sum_reaction_extra_mpi += sigma_E * N * JxW_f;
                         sum_reaction_extra_base_mpi += sigma_E_base * N * JxW_f;
                         sum_reaction_extra_ext_func_mpi += sigma_E_ext_func * N * JxW_f;
-
-
-                        /*const Point<dim> gauss_coord2 = fe_face_values_ref.quadrature_point(f_q_point);
-                        std::ofstream sigma_ext_func_reaction_force_boundary;
-                        sigma_ext_func_reaction_force_boundary.open("sigma_ext_func_reaction_force_boundary", std::ofstream::app);
-                        sigma_ext_func_reaction_force_boundary << std::setprecision(8) << std::scientific;
-                        sigma_ext_func_reaction_force_boundary << std::setw(16) << this->time->get_current() << ","
-                        		<< std::setw(16) << gauss_coord2[0] << ","
-								<< std::setw(16) << gauss_coord2[1] << ","
-								<< std::setw(16) << gauss_coord2[2] << ","
-								<< std::setw(16) << JxW_f << ","
-								<< std::setw(16) << det_F << ","
-								<< std::setw(16) << det_F_converged << ","
-                        		<< std::setw(16) << sigma_E_ext_func[0][0] << ","
-                        		<< std::setw(16) << sigma_E_ext_func[1][1] << ","
-								<< std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
-                        sigma_ext_func_reaction_force_boundary.close();*/
 
                         //Transform components of Cauchy stresses into cylindrical coordinates for torque
                         //evaluation under torsional shear loading
@@ -8740,114 +8845,38 @@ void Solid<dim>::solve_linear_system(dealii::TrilinosWrappers::MPI::BlockVector 
         det_F_min_faces_mpi = *std::min_element(det_F_faces_mpi.begin(),det_F_faces_mpi.end());
         det_F_min_faces = dealii::Utilities::MPI::min(det_F_min_faces_mpi, mpi_communicator);
 
-        //if (seepage_vec_mpi.size()>1) {
-        //	seepage_vec_mean_mpi = std::accumulate(seepage_vec_mpi.begin(), seepage_vec_mpi.end(), 0.0) / seepage_vec_mpi.size();
-        //	std::cout << seepage_vec_mean_mpi << std::endl;
-        //	seepage_vec_mean = seepage_vec_mean_mpi;
-        //}
-       // seepage_vec_mean = dealii::Utilities::MPI::sum(seepage_vec_mean_mpi, mpi_communicator) / 6;
+        // 1. KEINE Kopien in Vector<double> machen!
+        // Wir nutzen direkt 'solution_total'. Stelle sicher, dass dieser Ghost-Einträge hat.
+        // Falls nicht, erstelle kurz einen:
+        TrilinosWrappers::MPI::BlockVector solution_relevant;
+        solution_relevant.reinit(locally_owned_partitioning, 
+                                locally_relevant_partitioning, 
+                                mpi_communicator);
+        solution_relevant = solution_total; // Kopiert die Werte und synchronisiert Ghost-Dofs
 
-      // //  Extract solution for tracked vectors
-      // // Copying an MPI::BlockVector into MPI::Vector is not possible,
-      // // so we copy each block of MPI::BlockVector into an MPI::Vector
-      // // And then we copy the MPI::Vector into "normal" Vectors
-      //   TrilinosWrappers::MPI::Vector solution_vector_u_MPI(solution_total.block(u_block));
-      //   TrilinosWrappers::MPI::Vector solution_vector_p_MPI(solution_total.block(p_fluid_block));
-      //   Vector<double> solution_u_vector(solution_vector_u_MPI);
-      //   Vector<double> solution_p_vector(solution_vector_p_MPI);
+        // 2. Erstelle die FEFieldFunction auf ALLEN Kernen
+        // (Sie arbeitet direkt mit dem verteilten BlockVector)
+        Functions::FEFieldFunction<dim, TrilinosWrappers::MPI::BlockVector> 
+            find_solution(dof_handler_ref, solution_relevant);
 
-      //   if (this_mpi_process == 0)
-      //   {
-      //       //Append the pressure solution vector to the displacement solution vector,
-      //       //creating a single solution vector equivalent to the original BlockVector
-      //       //so FEFieldFunction will work with the dof_handler_ref.
-      //       Vector<double> solution_vector(solution_p_vector.size()
-      //                                      +solution_u_vector.size());
-
-      //       for (unsigned int d=0; d<(solution_u_vector.size()); ++d)
-      //           solution_vector[d] = solution_u_vector[d];
-
-      //       for (unsigned int d=0; d<(solution_p_vector.size()); ++d)
-      //           solution_vector[solution_u_vector.size()+d] = solution_p_vector[d];
-
-      //       //Functions::FEFieldFunction<dim,DoFHandler<dim>,Vector<double>>
-      //       Functions::FEFieldFunction<dim,Vector<double>>
-      //       find_solution(dof_handler_ref, solution_vector);
-
-      //       for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
-      //       {
-      //           Vector<double> update(dim+1);
-      //           Point<dim> pt_ref;
-
-      //           pt_ref[0]= tracked_vertices_IN[p][0];
-      //           pt_ref[1]= tracked_vertices_IN[p][1];
-      //           pt_ref[2]= tracked_vertices_IN[p][2];
-
-      //          find_solution.vector_value(pt_ref, update);
-
-      //          for (unsigned int d=0; d<(dim+1); ++d)
-      //          {
-      //              //For values close to zero, set to 0.0
-      //              if (abs(update[d])<1.5*parameters.tol_u)
-      //                  update[d] = 0.0;
-      //              solution_vertices[p][d] = update[d];
-      //          }
-      //       }
-
-      // 1. KEINE Kopien in Vector<double> machen!
-      // Wir nutzen direkt 'solution_total'. Stelle sicher, dass dieser Ghost-Einträge hat.
-      // Falls nicht, erstelle kurz einen:
-      TrilinosWrappers::MPI::BlockVector solution_relevant;
-      solution_relevant.reinit(locally_owned_partitioning, 
-                              locally_relevant_partitioning, 
-                              mpi_communicator);
-      solution_relevant = solution_total; // Kopiert die Werte und synchronisiert Ghost-Dofs
-
-      // 2. Erstelle die FEFieldFunction auf ALLEN Kernen
-      // (Sie arbeitet direkt mit dem verteilten BlockVector)
-      Functions::FEFieldFunction<dim, TrilinosWrappers::MPI::BlockVector> 
-          find_solution(dof_handler_ref, solution_relevant);
-
-      /*
-      // 3. Lokale Datensammlung
-      std::vector<double> local_updates(tracked_vertices_IN.size() * (dim + 1), 0.0);
-
-      for (unsigned int p = 0; p < tracked_vertices_IN.size(); ++p)
+      const unsigned int n_pts = tracked_vertices_IN.size();
+      std::vector<double> local_updates(n_pts*(dim+1), 0.0), local_count(n_pts, 0.0);
+      for (unsigned int p = 0; p < n_pts; ++p)
       {
-          Point<dim> pt_ref(tracked_vertices_IN[p][0], 
-                            tracked_vertices_IN[p][1], 
-                            tracked_vertices_IN[p][2]);
-          Vector<double> update(dim + 1);
-          try {
-              find_solution.vector_value(pt_ref, update);
-              for (unsigned int d = 0; d < (dim + 1); ++d)
-                  local_updates[p * (dim + 1) + d] = (std::abs(update[d]) < 1.5 * parameters.tol_u) ? 0.0 : update[d];
-          } catch (...) {  Punkt nicht hier  }
+        const Point<dim> pt_ref(tracked_vertices_IN[p][0], tracked_vertices_IN[p][1], tracked_vertices_IN[p][2]);
+        Vector<double> update(dim+1);
+        try {
+          find_solution.vector_value(pt_ref, update);
+          for (unsigned int d = 0; d < dim+1; ++d)
+            local_updates[p*(dim+1)+d] = (std::abs(update[d]) < 1.5*parameters.tol_u) ? 0.0 : update[d];
+          local_count[p] = 1.0;
+        } catch (const dealii::ExceptionBase &) { /* Punkt nicht hier */ }
       }
-
-      // 4. Globale Reduktion (nur die kleinen Ergebnis-Arrays werden übertragen)
-      std::vector<double> global_updates(local_updates.size());
+      std::vector<double> global_updates(local_updates.size()), global_count(n_pts);
       dealii::Utilities::MPI::sum(local_updates, mpi_communicator, global_updates);
-      */
-
-const unsigned int n_pts = tracked_vertices_IN.size();
-std::vector<double> local_updates(n_pts*(dim+1), 0.0), local_count(n_pts, 0.0);
-for (unsigned int p = 0; p < n_pts; ++p)
-{
-  const Point<dim> pt_ref(tracked_vertices_IN[p][0], tracked_vertices_IN[p][1], tracked_vertices_IN[p][2]);
-  Vector<double> update(dim+1);
-  try {
-    find_solution.vector_value(pt_ref, update);
-    for (unsigned int d = 0; d < dim+1; ++d)
-      local_updates[p*(dim+1)+d] = (std::abs(update[d]) < 1.5*parameters.tol_u) ? 0.0 : update[d];
-    local_count[p] = 1.0;
-  } catch (const dealii::ExceptionBase &) { /* Punkt nicht hier */ }
-}
-std::vector<double> global_updates(local_updates.size()), global_count(n_pts);
-dealii::Utilities::MPI::sum(local_updates, mpi_communicator, global_updates);
-dealii::Utilities::MPI::sum(local_count,   mpi_communicator, global_count);
-if (n_pts > 0)
-  AssertThrow(*std::min_element(global_count.begin(), global_count.end()) > 0,
+      dealii::Utilities::MPI::sum(local_count,   mpi_communicator, global_count);
+      if (n_pts > 0)
+        AssertThrow(*std::min_element(global_count.begin(), global_count.end()) > 0,
               ExcMessage("tracked point not found on any rank"));
 
       // 5. Nur Prozess 0 speichert final
@@ -8859,6 +8888,10 @@ if (n_pts > 0)
                   solution_vertices[p][d] = global_updates[p*(dim+1)+d] / global_count[p];
       }
 
+      // Consistent quantities (collective call, all ranks)
+      const ConsistentBoundaryQuantities consistent =
+        (current_time > 0.0) ? compute_consistent_boundary_quantities(solution_total)
+                             : ConsistentBoundaryQuantities();
 
       // Write the results to the plotting file.
       if (this_mpi_process == 0)
@@ -8922,6 +8955,9 @@ if (n_pts > 0)
 
                 plotpointfile << std::setw(15) << 1.0 << ",";
                 plotpointfile << std::setw(15) << 1.0 << ",";
+
+                for (unsigned int d=0; d<(6*dim+3); ++d)
+                    plotpointfile << std::setw(15) << 0.0 << ",";
             }
             else
             {
@@ -8956,692 +8992,23 @@ if (n_pts > 0)
 
                 plotpointfile << std::setw(15) << det_F_min_cells << ",";
                 plotpointfile << std::setw(15) << det_F_min_faces << ",";
+
+                for (unsigned int d=0; d<dim; ++d)
+                  plotpointfile << std::setw(15) << consistent.reaction_force[d] << ",";
+                
+                plotpointfile << std::setw(15) << consistent.fluid_volume_out / time->get_delta_t() << ","
+                              << std::setw(15) << consistent.fluid_volume_out << ","
+                              << std::setw(15) << consistent.mass_balance_defect << ",";
+                
+                for (const Tensor<1,dim> &r : {consistent.reaction_eq, consistent.reaction_neq,
+                                               consistent.reaction_vol, consistent.reaction_fluid,
+                                               consistent.split_defect})
+                  for (unsigned int d=0; d<dim; ++d)
+                    plotpointfile << std::setw(15) << r[d] << ",";
             }
             plotpointfile << std::endl;
         }
       }
-
-//    //Output results averaged on nodes to plotting file
-//    template <int dim>
-//    void Solid<dim>::output_results_averaged_on_nodes(
-//    	const unsigned int timestep,
-//		const double current_time,
-//		TrilinosWrappers::MPI::BlockVector solution_IN,
-//		std::vector<Point<dim> > &tracked_vertices_IN,
-//		std::ofstream &plotnodefile) const
-//		{
-//    		TrilinosWrappers::MPI::BlockVector solution_total(locally_owned_partitioning,
-//    														  locally_relevant_partitioning,
-//															  mpi_communicator,
-//															  false);
-//
-//    		(void) timestep;
-//    		solution_total = solution_IN;
-//
-//    		GradientPostprocessor<dim> gradient_postprocessor(p_fluid_component);
-//
-//    		//Declare local variables with number of stress components
-//    		//& assign value according to "dim" value
-//    		unsigned int num_comp_symm_tensor = 6;
-//
-//    		//Variables needed to print the solution file for plotting
-//    		Point<dim> reaction_force;
-//    		Point<dim> reaction_force_pressure;
-//    		Point<dim> reaction_force_extra;
-//    		Point<dim> reaction_force_extra_base;
-//    		Point<dim> reaction_force_extra_ext_func;
-//    		double total_fluid_flow = 0.0;
-//    		double total_porous_dissipation = 0.0;
-//    		double total_viscous_dissipation = 0.0;
-//    		double total_solid_vol = 0.0;
-//    		double total_vol_current = 0.0;
-//    		double total_vol_reference = 0.0;
-//    		std::vector<Point<dim+1>> solution_vertices(tracked_vertices_IN.size());
-//    		double reaction_torque = 0.0;
-//    		double det_F_min = 1.0;
-//    		double seepage_vec_mean = 0.0;
-//
-//    		//Auxiliar variables needed for mpi processing
-//    		Tensor<1,dim> sum_reaction_mpi;
-//    		Tensor<1,dim> sum_reaction_pressure_mpi;
-//    		Tensor<1,dim> sum_reaction_extra_mpi;
-//    		Tensor<1,dim> sum_reaction_extra_base_mpi;
-//    		Tensor<1,dim> sum_reaction_extra_ext_func_mpi;
-//    		sum_reaction_mpi = 0.0;
-//    		sum_reaction_pressure_mpi = 0.0;
-//    		sum_reaction_extra_mpi = 0.0;
-//    		sum_reaction_extra_base_mpi = 0.0;
-//    		sum_reaction_extra_ext_func_mpi = 0.0;
-//    		double sum_total_flow_mpi = 0.0;
-//    		double sum_porous_dissipation_mpi = 0.0;
-//    		double sum_viscous_dissipation_mpi = 0.0;
-//    		double sum_solid_vol_mpi = 0.0;
-//    		double sum_vol_current_mpi = 0.0;
-//    		double sum_vol_reference_mpi = 0.0;
-//    		double sum_torque_mpi = 0.0;
-//    		double det_F_min_mpi = 1.0;
-//    		std::vector<double> det_F_mpi;
-//    		std::vector<double> seepage_vec_mpi;
-//    		double seepage_vec_mean_mpi = 0.0;
-//
-//    		// OUTPUT AVERAGED ON NODES ----------------------------------------------
-//    		// We need to create a new FE space with a single dof per node to avoid
-//    		// duplication of the output on nodes for our problem with dim+1 dofs.
-//    		FE_Q<dim> fe_vertex(1);
-//    		DoFHandler<dim> vertex_handler_ref(triangulation);
-//    		vertex_handler_ref.distribute_dofs(fe_vertex);
-//    		AssertThrow(vertex_handler_ref.n_dofs() == triangulation.n_vertices(),
-//    					ExcDimensionMismatch(vertex_handler_ref.n_dofs(),
-//    					triangulation.n_vertices()));
-//
-//    		Vector<double> counter_on_vertices_mpi(vertex_handler_ref.n_dofs());
-//    		Vector<double> sum_counter_on_vertices(vertex_handler_ref.n_dofs());
-//
-//    		std::vector<Vector<double>> cauchy_stresses_total_vertex_mpi
-//										(num_comp_symm_tensor,
-//										 Vector<double>(vertex_handler_ref.n_dofs()));
-//    		std::vector<Vector<double>> sum_cauchy_stresses_total_vertex
-//										(num_comp_symm_tensor,
-//										 Vector<double>(vertex_handler_ref.n_dofs()));
-//    		std::vector<Vector<double>> cauchy_stresses_E_vertex_mpi
-//										(num_comp_symm_tensor,
-//										 Vector<double>(vertex_handler_ref.n_dofs()));
-//    		std::vector<Vector<double>> sum_cauchy_stresses_E_vertex
-//										(num_comp_symm_tensor,
-//										 Vector<double>(vertex_handler_ref.n_dofs()));
-//    		std::vector<Vector<double>> cauchy_stresses_E_ext_func_vertex_mpi
-//										(num_comp_symm_tensor,
-//										 Vector<double>(vertex_handler_ref.n_dofs()));
-//    		std::vector<Vector<double>> sum_cauchy_stresses_E_ext_func_vertex
-//										(num_comp_symm_tensor,
-//										 Vector<double>(vertex_handler_ref.n_dofs()));
-//
-//    		Vector<double> porous_dissipation_vertex_mpi(vertex_handler_ref.n_dofs());
-//    		Vector<double> sum_porous_dissipation_vertex(vertex_handler_ref.n_dofs());
-//    		Vector<double> viscous_dissipation_vertex_mpi(vertex_handler_ref.n_dofs());
-//    		Vector<double> sum_viscous_dissipation_vertex(vertex_handler_ref.n_dofs());
-//    		Vector<double> solid_vol_fraction_vertex_mpi(vertex_handler_ref.n_dofs());
-//    		Vector<double> sum_solid_vol_fraction_vertex(vertex_handler_ref.n_dofs());
-//    		Vector<double> jacobian_vertex_mpi(vertex_handler_ref.n_dofs());
-//    		Vector<double> sum_jacobian_vertex(vertex_handler_ref.n_dofs());
-//
-//    		// We need to create a new FE space with a dim dof per node to
-//			// be able to ouput data on nodes in vector form
-//			FESystem<dim> fe_vertex_vec(FE_Q<dim>(1),dim);
-//    		DoFHandler<dim> vertex_vec_handler_ref(triangulation);
-//    		vertex_vec_handler_ref.distribute_dofs(fe_vertex_vec);
-//    		AssertThrow(vertex_vec_handler_ref.n_dofs() == (dim*triangulation.n_vertices()),
-//    					ExcDimensionMismatch(vertex_vec_handler_ref.n_dofs(),
-//    					(dim*triangulation.n_vertices())));
-//
-//    		Vector<double> seepage_velocity_vertex_vec_mpi(vertex_vec_handler_ref.n_dofs());
-//    		Vector<double> sum_seepage_velocity_vertex_vec(vertex_vec_handler_ref.n_dofs());
-//    		Vector<double> counter_on_vertices_vec_mpi(vertex_vec_handler_ref.n_dofs());
-//    		Vector<double> sum_counter_on_vertices_vec(vertex_vec_handler_ref.n_dofs());
-//    		// -----------------------------------------------------------------------
-//
-//    		//Declare and initialize local unit vectors (to construct tensor basis)
-//    		std::vector<Tensor<1,dim>> basis_vectors (dim, Tensor<1,dim>() );
-//    		for (unsigned int i=0; i<dim; ++i)
-//    			basis_vectors[i][i] = 1;
-//
-//    		//Declare an instance of the material class object
-//    		if (parameters.mat_type == "Neo-Hooke")
-//    			NeoHooke<dim,ADNumberType> material(parameters,time);
-//    		else if (parameters.mat_type == "Neo-Hooke-PS")
-//    			NeoHookePS<dim,ADNumberType> material(parameters,time);
-//    		else if (parameters.mat_type == "Neo-Hooke-Ehlers")
-//    			NeoHookeEhlers<dim,ADNumberType> material(parameters,time);
-//    		else if (parameters.mat_type == "Ogden")
-//    			Ogden<dim,ADNumberType> material(parameters, time);
-//    		else if (parameters.mat_type == "visco-Ogden")
-//    			visco_Ogden <dim,ADNumberType>material(parameters,time);
-//    		else if (parameters.mat_type == "visco2-Ogden")
-//    			visco2_Ogden <dim,ADNumberType>material(parameters,time);
-//    		else
-//    			Assert (false, ExcMessage("Material type not implemented"));
-//
-//    		//Define a local instance of FEValues to compute updated values required
-//    		//to calculate stresses
-//    		const UpdateFlags uf_cell(update_values | update_gradients |
-//    								  update_JxW_values | update_quadrature_points);
-//    		FEValues<dim> fe_values_ref (mapping, fe, qf_cell, uf_cell);
-//
-//    		//Iterate through elements (cells) and Gauss Points
-//    		dealii::FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
-//    		cell(IteratorFilters::LocallyOwnedCell(),
-//    			 dof_handler_ref.begin_active()),
-//			endc(IteratorFilters::LocallyOwnedCell(),
-//				 dof_handler_ref.end());
-//    		cell_v(IteratorFilters::LocallyOwnedCell(),
-//    		       vertex_handler_ref.begin_active()),
-//    		cell_v_vec(IteratorFilters::LocallyOwnedCell(),
-//    		           vertex_vec_handler_ref.begin_active());
-//		  //start cell loop
-//		  for (; cell!=endc; ++cell)
-//		  {
-//			  Assert(cell->is_locally_owned(), ExcInternalError());
-//			  Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
-//
-//			  fe_values_ref.reinit(cell);
-//
-//			  std::vector<Tensor<2,dim>> solution_grads_u(n_q_points);
-//			  fe_values_ref[u_fe].get_function_gradients(solution_total,
-//					  solution_grads_u);
-//
-//			  std::vector<double> solution_values_p_fluid_total(n_q_points);
-//			  fe_values_ref[p_fluid_fe].get_function_values(solution_total,
-//					  solution_values_p_fluid_total);
-//
-//			  std::vector<Tensor<1,dim >> solution_grads_p_fluid_AD(n_q_points);
-//			  fe_values_ref[p_fluid_fe].get_function_gradients(solution_total,
-//					  solution_grads_p_fluid_AD);
-//
-//			  //start gauss point loop
-//			  for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
-//			  {
-//				  const Tensor<2,dim,ADNumberType>
-//				  F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u[q_point]);
-//				  ADNumberType det_F_AD = determinant(F_AD);
-//				  const double det_F = Tensor<0,dim,double>(det_F_AD);
-//				  det_F_mpi.push_back (det_F);
-//
-//				  const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>>
-//				  lqph = quadrature_point_history.get_data(cell);
-//				  Assert(lqph.size() == n_q_points, ExcInternalError());
-//
-//				  double JxW = fe_values_ref.JxW(q_point);
-//
-//				  //Volumes
-//				  sum_vol_current_mpi  += det_F * JxW;
-//				  sum_vol_reference_mpi += JxW;
-//				  //sum_solid_vol_mpi += parameters.solid_vol_frac * JxW * det_F;
-//				  sum_solid_vol_mpi += parameters.solid_vol_frac * JxW;
-//
-//				  //Seepage velocity
-//				  const Tensor<2,dim,ADNumberType> F_inv = invert(F_AD);
-//				  const Tensor<1,dim,ADNumberType>
-//				  grad_p_fluid_AD =  solution_grads_p_fluid_AD[q_point]*F_inv;
-//				  const Tensor<1,dim,ADNumberType> seepage_vel_AD
-//				  = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p_fluid_AD);
-//
-//				  Tensor<1,dim> seepage;
-//				  for (unsigned int i=0; i<dim; ++i)
-//					  seepage[i] = Tensor<0,dim,double>(seepage_vel_AD[i]);
-//
-//				  /*//test
-//                      SymmetricTensor<2,dim> sigma_E_ext_func;
-//                      const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[q_point]->get_Cauchy_E_ext_func(F_AD);
-//
-//                      double det_F_converged = lqph[q_point]->get_converged_det_F();
-//
-//                      for (unsigned int i=0; i<dim; ++i)
-//                      	for (unsigned int j=0; j<dim; ++j) {
-//                      		sigma_E_ext_func[i][j] = Tensor<0,dim,double>(sigma_E_ext_func_AD[i][j]);
-//                      	}
-//
-//                      const Point<dim> gauss_coord2 = fe_values_ref.quadrature_point(q_point);
-//                      std::ofstream sigma_ext_func_cells;
-//                      sigma_ext_func_cells.open("sigma_ext_func_cells", std::ofstream::app);
-//                      sigma_ext_func_cells << std::setprecision(8) << std::scientific;
-//                      sigma_ext_func_cells << std::setw(16) << this->time->get_current() << ","
-//                      		<< std::setw(16) << gauss_coord2[0] << ","
-//      						<< std::setw(16) << gauss_coord2[1] << ","
-//      						<< std::setw(16) << gauss_coord2[2] << ","
-//      						<< std::setw(16) << JxW << ","
-//      						<< std::setw(16) << det_F << ","
-//      						<< std::setw(16) << det_F_converged << ","
-//      						<< std::setw(16) << sigma_E_ext_func[0][0] << ","
-//      						<< std::setw(16) << sigma_E_ext_func[1][1] << ","
-//      						<< std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
-//                      sigma_ext_func_cells.close();
-//
-//                      //if (seepage[2]>0)
-//                      //	std::cout << seepage[2] << " cell loop" << std::endl;
-//
-//                      //const Point<dim> gauss_coord = fe_values_ref.quadrature_point(q_point);
-//                      //if (gauss_coord[2] < 0.1) {
-//                      //	seepage_vec_mpi.push_back (seepage[2]);
-//                      	//std::cout << seepage[2] << std::endl;
-//                      //}*/
-//
-//				  //Dissipations
-//				  const double porous_dissipation =
-//						  lqph[q_point]->get_porous_dissipation(F_AD, grad_p_fluid_AD);
-//				  sum_porous_dissipation_mpi += porous_dissipation * det_F * JxW;
-//
-//				  const double viscous_dissipation = lqph[q_point]->get_viscous_dissipation();
-//				  sum_viscous_dissipation_mpi += viscous_dissipation * det_F * JxW;
-//
-//				  //---------------------------------------------------------------
-//			  } //end gauss point loop
-//
-//			  // Compute reaction force on load boundary & total fluid flow across
-//			  // drained boundary.
-//			  // Define a local instance of FEFaceValues to compute values required
-//			  // to calculate reaction force
-//			  const UpdateFlags uf_face( update_values | update_gradients |
-//					  update_normal_vectors | update_JxW_values | update_quadrature_points);
-//			  FEFaceValues<dim> fe_face_values_ref(mapping, fe, qf_face, uf_face);
-//
-//			  //start face loop
-//			  for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
-//			  {
-//				  //Reaction force
-//				  if (cell->face(face)->at_boundary() == true &&
-//						  cell->face(face)->boundary_id() == get_reaction_boundary_id_for_output() )
-//				  {
-//					  fe_face_values_ref.reinit(cell, face);
-//
-//					  //Get displacement gradients for current face
-//					  std::vector<Tensor<2,dim> > solution_grads_u_f(n_q_points_f);
-//					  fe_face_values_ref[u_fe].get_function_gradients
-//					  (solution_total,
-//							  solution_grads_u_f);
-//
-//					  //Get pressure for current element
-//					  std::vector< double > solution_values_p_fluid_total_f(n_q_points_f);
-//					  fe_face_values_ref[p_fluid_fe].get_function_values
-//					  (solution_total,
-//							  solution_values_p_fluid_total_f);
-//
-//					  //start gauss points on faces loop
-//					  for (unsigned int f_q_point=0; f_q_point<n_q_points_f; ++f_q_point)
-//					  {
-//						  const Tensor<1,dim> &N = fe_face_values_ref.normal_vector(f_q_point);
-//						  const double JxW_f = fe_face_values_ref.JxW(f_q_point);
-//
-//						  //Compute deformation gradient from displacements gradient
-//						  //(present configuration)
-//						  const Tensor<2,dim,ADNumberType> F_AD =
-//								  Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
-//						  ADNumberType det_F_AD = determinant(F_AD);
-//						  double det_F = Tensor<0,dim,double>(det_F_AD);
-//
-//						  const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>>
-//						  lqph = quadrature_point_history.get_data(cell);
-//						  Assert(lqph.size() == n_q_points, ExcInternalError());
-//
-//						  const double p_fluid = solution_values_p_fluid_total[f_q_point];
-//
-//						  //Cauchy stress
-//						  static const SymmetricTensor<2,dim,double> I (Physics::Elasticity::StandardTensors<dim>::I);
-//						  SymmetricTensor<2,dim> sigma_E;
-//						  SymmetricTensor<2,dim> sigma_E_base;
-//						  SymmetricTensor<2,dim> sigma_E_ext_func;
-//						  const SymmetricTensor<2,dim,ADNumberType> sigma_E_AD = lqph[f_q_point]->get_Cauchy_E(F_AD);
-//						  const SymmetricTensor<2,dim,ADNumberType> sigma_E_base_AD = lqph[f_q_point]->get_Cauchy_E_base(F_AD);
-//						  const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[f_q_point]->get_Cauchy_E_ext_func(F_AD);
-//
-//						  double det_F_converged = lqph[f_q_point]->get_converged_det_F();
-//
-//						  for (unsigned int i=0; i<dim; ++i)
-//							  for (unsigned int j=0; j<dim; ++j) {
-//								  sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
-//								  sigma_E_base[i][j] = Tensor<0,dim,double>(sigma_E_base_AD[i][j]);
-//								  sigma_E_ext_func[i][j] = Tensor<0,dim,double>(sigma_E_ext_func_AD[i][j]);
-//							  }
-//
-//						  SymmetricTensor<2,dim> sigma_fluid_vol(I);
-//						  sigma_fluid_vol *= -1.0*p_fluid;
-//						  const SymmetricTensor<2,dim> sigma = sigma_E+sigma_fluid_vol;
-//						  sum_reaction_mpi += sigma * N * JxW_f;
-//						  sum_reaction_pressure_mpi += sigma_fluid_vol * N * JxW_f;
-//						  sum_reaction_extra_mpi += sigma_E * N * JxW_f;
-//						  sum_reaction_extra_base_mpi += sigma_E_base * N * JxW_f;
-//						  sum_reaction_extra_ext_func_mpi += sigma_E_ext_func * N * JxW_f;
-//
-//
-//						  /*const Point<dim> gauss_coord2 = fe_face_values_ref.quadrature_point(f_q_point);
-//                              std::ofstream sigma_ext_func_reaction_force_boundary;
-//                              sigma_ext_func_reaction_force_boundary.open("sigma_ext_func_reaction_force_boundary", std::ofstream::app);
-//                              sigma_ext_func_reaction_force_boundary << std::setprecision(8) << std::scientific;
-//                              sigma_ext_func_reaction_force_boundary << std::setw(16) << this->time->get_current() << ","
-//                              		<< std::setw(16) << gauss_coord2[0] << ","
-//      								<< std::setw(16) << gauss_coord2[1] << ","
-//      								<< std::setw(16) << gauss_coord2[2] << ","
-//      								<< std::setw(16) << JxW_f << ","
-//      								<< std::setw(16) << det_F << ","
-//      								<< std::setw(16) << det_F_converged << ","
-//                              		<< std::setw(16) << sigma_E_ext_func[0][0] << ","
-//                              		<< std::setw(16) << sigma_E_ext_func[1][1] << ","
-//      								<< std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
-//                              sigma_ext_func_reaction_force_boundary.close();*/
-//
-//						  //Transform components of Cauchy stresses into cylindrical coordinates for torque
-//						  //evaluation under torsional shear loading
-//
-//						  //Obtain spherical coordinates from current Gauss Point
-//						  const std::array<double,dim> gauss_sph = GeometricUtilities::Coordinates::to_spherical(fe_face_values_ref.quadrature_point(f_q_point));
-//						  const Point<dim> gauss_coord = fe_face_values_ref.quadrature_point(f_q_point);
-//						  //Compute azimuth angle and radius
-//						  const double theta = gauss_sph[1];
-//						  //std::cout << theta << std::endl;
-//						  const double r = sqrt(pow(gauss_coord[0],2) + pow(gauss_coord[1],2));
-//						  //Define a new 2nd order tensor to store the cylindrical coordinates of sigma_E
-//						  SymmetricTensor<2,dim> sigma_E_cyl;
-//
-//						  //Compute the components of sigma_E_cyl associated with the corresponding cylindrical
-//						  //coordinate system from sigma_E
-//						  sigma_E_cyl[0][0] = sigma_E[0][0]*pow(cos(theta),2) + sigma_E[1][1]*pow(sin(theta),2) + 2*sigma_E[0][1]*sin(theta)*cos(theta); //sigma_r_r
-//						  sigma_E_cyl[1][1] = sigma_E[0][0]*pow(sin(theta),2) + sigma_E[1][1]*pow(cos(theta),2) - 2*sigma_E[0][1]*sin(theta)*cos(theta); //sigma_theta_theta
-//						  sigma_E_cyl[0][1] = (sigma_E[1][1]-sigma_E[0][0])*sin(theta)*cos(theta) + sigma_E[0][1]*(pow(cos(theta),2)-pow(sin(theta),2)); //sigma_r_theta
-//						  sigma_E_cyl[0][2] = sigma_E[0][2]*cos(theta) + sigma_E[1][2]*sin(theta); //sigma_r_z
-//						  sigma_E_cyl[1][2] = sigma_E[1][2]*cos(theta) - sigma_E[0][2]*sin(theta); //sigma_theta_z
-//						  sigma_E_cyl[2][2] = sigma_E[2][2]; //sigma_zz
-//						  sigma_E_cyl[1][0] = sigma_E_cyl[0][1]; //sigma_theta_r
-//						  sigma_E_cyl[2][0] = sigma_E_cyl[0][2]; //sigma_z_r
-//						  sigma_E_cyl[2][1] = sigma_E_cyl[1][2]; //sigma_z_theta
-//
-//						  //Analogeously define and compute cylindrical components of sigma_fluid_vol
-//						  SymmetricTensor<2,dim> sigma_fluid_vol_cyl;
-//						  sigma_fluid_vol_cyl[0][0] = sigma_fluid_vol[0][0]*pow(cos(theta),2) + sigma_fluid_vol[1][1]*pow(sin(theta),2) + 2*sigma_fluid_vol[0][1]*sin(theta)*cos(theta); //sigma_r_r
-//						  sigma_fluid_vol_cyl[1][1] = sigma_fluid_vol[0][0]*pow(sin(theta),2) + sigma_fluid_vol[1][1]*pow(cos(theta),2) - 2*sigma_fluid_vol[0][1]*sin(theta)*cos(theta); //sigma_theta_theta
-//						  sigma_fluid_vol_cyl[0][1] = (sigma_fluid_vol[1][1]-sigma_fluid_vol[0][0])*sin(theta)*cos(theta) + sigma_fluid_vol[0][1]*(pow(cos(theta),2)-pow(sin(theta),2)); //sigma_r_theta
-//						  sigma_fluid_vol_cyl[0][2] = sigma_fluid_vol[0][2]*cos(theta) + sigma_fluid_vol[1][2]*sin(theta); //sigma_r_z
-//						  sigma_fluid_vol_cyl[1][2] = sigma_fluid_vol[1][2]*cos(theta) - sigma_fluid_vol[0][2]*sin(theta); //sigma_theta_z
-//						  sigma_fluid_vol_cyl[2][2] = sigma_fluid_vol[2][2]; //sigma_zz
-//						  sigma_fluid_vol_cyl[1][0] = sigma_fluid_vol_cyl[0][1]; //sigma_theta_r
-//						  sigma_fluid_vol_cyl[2][0] = sigma_fluid_vol_cyl[0][2]; //sigma_z_r
-//						  sigma_fluid_vol_cyl[2][1] = sigma_fluid_vol_cyl[1][2]; //sigma_z_theta
-//
-//						  //Add solid and fluid component to get total Cauchy stress
-//						  const SymmetricTensor<2,dim> sigma_cyl = sigma_E_cyl + sigma_fluid_vol_cyl;
-//
-//						  //Compute torque contribution from z_theta component, the according weighted area JxW_f
-//						  //and the distance r to center of rotation
-//						  sum_torque_mpi += sigma_cyl[2][1] * r * JxW_f;
-//					  }//end gauss points on faces loop
-//				  }
-//
-//
-//
-//				  //Fluid flow
-//				  if (cell->face(face)->at_boundary() == true &&
-//						  (cell->face(face)->boundary_id() ==
-//								  get_drained_boundary_id_for_output().first ||
-//								  cell->face(face)->boundary_id() ==
-//										  get_drained_boundary_id_for_output().second ) )
-//				  {
-//					  fe_face_values_ref.reinit(cell, face);
-//
-//					  //Get displacement gradients for current face
-//					  std::vector<Tensor<2,dim>> solution_grads_u_f(n_q_points_f);
-//					  fe_face_values_ref[u_fe].get_function_gradients
-//					  (solution_total,
-//							  solution_grads_u_f);
-//
-//					  //Get pressure gradients for current face
-//					  std::vector<Tensor<1,dim>> solution_grads_p_f(n_q_points_f);
-//					  fe_face_values_ref[p_fluid_fe].get_function_gradients
-//					  (solution_total,
-//							  solution_grads_p_f);
-//
-//					  //start gauss points on faces loop
-//					  for (unsigned int f_q_point=0; f_q_point<n_q_points_f; ++f_q_point)
-//					  {
-//						  const Tensor<1,dim> &N = fe_face_values_ref.normal_vector(f_q_point);
-//						  const double JxW_f = fe_face_values_ref.JxW(f_q_point);
-//
-//						  //Deformation gradient and inverse from displacements gradient
-//						  //(present configuration)
-//						  const Tensor<2,dim,ADNumberType> F_AD
-//						  = Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
-//
-//						  const Tensor<2,dim,ADNumberType> F_inv_AD = invert(F_AD);
-//						  ADNumberType det_F_AD = determinant(F_AD);
-//						  const Tensor<2,dim,ADNumberType> F_inv_AD_trans = transpose(F_inv_AD); //added-1.10.21
-//
-//						  const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>>
-//						  lqph = quadrature_point_history.get_data(cell);
-//						  Assert(lqph.size() == n_q_points, ExcInternalError());
-//
-//						  //Seepage velocity
-//						  Tensor<1,dim> seepage;
-//						  //double det_F = Tensor<0,dim,double>(det_F_AD);
-//						  const Tensor<1,dim,ADNumberType> grad_p
-//						  = solution_grads_p_f[f_q_point]*F_inv_AD;
-//						  const Tensor<1,dim,ADNumberType> seepage_AD
-//						  = lqph[f_q_point]->get_seepage_velocity_current(F_AD, grad_p);
-//
-//						  for (unsigned int i=0; i<dim; ++i)
-//							  seepage[i] = Tensor<0,dim,double>(seepage_AD[i]);
-//
-//						  //sum_total_flow_mpi += seepage * N * JxW_f;
-//						  //if (seepage[2]>0)
-//						  //	std::cout << seepage[2] << " face loop" << std::endl;
-//						  //sum_total_flow_mpi += (seepage/det_F) * N * JxW_f;
-//						  const Tensor<1,dim> temp1 = contract<0,0>(seepage,F_inv_AD_trans);
-//						  sum_total_flow_mpi += temp1 * N * JxW_f; //added-1.10.21
-//					  }//end gauss points on faces loop
-//				  }
-//
-//
-//				  // Minimal Jacobian
-//				  if (cell->face(face)->at_boundary() == true) {
-//					  fe_face_values_ref.reinit(cell, face);
-//
-//					  //Get displacement gradients for current face
-//					  std::vector<Tensor<2,dim> > solution_grads_u_f(n_q_points_f);
-//					  fe_face_values_ref[u_fe].get_function_gradients(solution_total, solution_grads_u_f);
-//
-//					  //start Gauss points loop on faces
-//					  for (unsigned int f_q_point=0; f_q_point<n_q_points_f; ++f_q_point) {
-//						  //Compute deformation gradient from displacements gradient and its Jacobian
-//						  const Tensor<2,dim,ADNumberType> F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
-//						  ADNumberType det_F_AD = determinant(F_AD);
-//						  det_F_mpi.push_back(Tensor<0,dim,double>(det_F_AD));
-//
-//						  /*//test
-//                      		const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>>
-//                      		                            lqph = quadrature_point_history.get_data(cell);
-//                      		Assert(lqph.size() == n_q_points, ExcInternalError());
-//
-//                              SymmetricTensor<2,dim> sigma_E_ext_func;
-//                              const SymmetricTensor<2,dim,ADNumberType> sigma_E_ext_func_AD = lqph[f_q_point]->get_Cauchy_E_ext_func(F_AD);
-//
-//                              double det_F_converged = lqph[f_q_point]->get_converged_det_F();
-//                              double det_F = Tensor<0,dim,double>(det_F_AD);
-//                              const double JxW_f = fe_face_values_ref.JxW(f_q_point);
-//
-//                              for (unsigned int i=0; i<dim; ++i)
-//                              	for (unsigned int j=0; j<dim; ++j) {
-//                              		sigma_E_ext_func[i][j] = Tensor<0,dim,double>(sigma_E_ext_func_AD[i][j]);
-//                              	}
-//
-//                              const Point<dim> gauss_coord2 = fe_face_values_ref.quadrature_point(f_q_point);
-//                              std::ofstream sigma_ext_func_faces;
-//                              sigma_ext_func_faces.open("sigma_ext_func_faces", std::ofstream::app);
-//                              sigma_ext_func_faces << std::setprecision(8) << std::scientific;
-//                              sigma_ext_func_faces << std::setw(16) << this->time->get_current() << ","
-//                              		<< std::setw(16) << gauss_coord2[0] << ","
-//              						<< std::setw(16) << gauss_coord2[1] << ","
-//              						<< std::setw(16) << gauss_coord2[2] << ","
-//              						<< std::setw(16) << JxW_f << ","
-//              						<< std::setw(16) << det_F << ","
-//              						<< std::setw(16) << det_F_converged << ","
-//              						<< std::setw(16) << sigma_E_ext_func[0][0] << ","
-//              						<< std::setw(16) << sigma_E_ext_func[1][1] << ","
-//              						<< std::setw(16) << sigma_E_ext_func[2][2] << std::endl;
-//                              sigma_ext_func_faces.close();*/
-//					  }
-//				  }
-//			  }//end face loop
-//		  }//end cell loop
-//
-//		  //Sum the results from different MPI process and then add to the reaction_force vector
-//		  //In theory, the solution on each surface (each cell) only exists in one MPI process
-//		  //so, we add all MPI process, one will have the solution and the others will be zero
-//		  for (unsigned int d=0; d<dim; ++d)
-//		  {
-//			  reaction_force[d] = dealii::Utilities::MPI::sum(sum_reaction_mpi[d], mpi_communicator);
-//			  reaction_force_pressure[d] = dealii::Utilities::MPI::sum(sum_reaction_pressure_mpi[d], mpi_communicator);
-//			  reaction_force_extra[d] = dealii::Utilities::MPI::sum(sum_reaction_extra_mpi[d], mpi_communicator);
-//			  reaction_force_extra_base[d] = dealii::Utilities::MPI::sum(sum_reaction_extra_base_mpi[d], mpi_communicator);
-//			  reaction_force_extra_ext_func[d] = dealii::Utilities::MPI::sum(sum_reaction_extra_ext_func_mpi[d], mpi_communicator);
-//		  }
-//
-//		  //Same for total fluid flow, and for porous and viscous dissipations
-//		  total_fluid_flow = dealii::Utilities::MPI::sum(sum_total_flow_mpi, mpi_communicator);
-//		  total_porous_dissipation = dealii::Utilities::MPI::sum(sum_porous_dissipation_mpi, mpi_communicator);
-//		  total_viscous_dissipation = dealii::Utilities::MPI::sum(sum_viscous_dissipation_mpi, mpi_communicator);
-//		  total_solid_vol = dealii::Utilities::MPI::sum(sum_solid_vol_mpi, mpi_communicator);
-//		  total_vol_current = dealii::Utilities::MPI::sum(sum_vol_current_mpi, mpi_communicator);
-//		  total_vol_reference = dealii::Utilities::MPI::sum(sum_vol_reference_mpi, mpi_communicator);
-//		  reaction_torque = dealii::Utilities::MPI::sum(sum_torque_mpi, mpi_communicator);
-//
-//		  det_F_min_mpi = *std::min_element(det_F_mpi.begin(),det_F_mpi.end());
-//		  det_F_min = dealii::Utilities::MPI::min(det_F_min_mpi, mpi_communicator);
-//
-//		  //if (seepage_vec_mpi.size()>1) {
-//			  //	seepage_vec_mean_mpi = std::accumulate(seepage_vec_mpi.begin(), seepage_vec_mpi.end(), 0.0) / seepage_vec_mpi.size();
-//		  //	std::cout << seepage_vec_mean_mpi << std::endl;
-//		  //	seepage_vec_mean = seepage_vec_mean_mpi;
-//		  //}
-//		  // seepage_vec_mean = dealii::Utilities::MPI::sum(seepage_vec_mean_mpi, mpi_communicator) / 6;
-//
-//		  //  Extract solution for tracked vectors
-//		  // Copying an MPI::BlockVector into MPI::Vector is not possible,
-//		  // so we copy each block of MPI::BlockVector into an MPI::Vector
-//		  // And then we copy the MPI::Vector into "normal" Vectors
-//		  TrilinosWrappers::MPI::Vector solution_vector_u_MPI(solution_total.block(u_block));
-//		  TrilinosWrappers::MPI::Vector solution_vector_p_MPI(solution_total.block(p_fluid_block));
-//		  Vector<double> solution_u_vector(solution_vector_u_MPI);
-//		  Vector<double> solution_p_vector(solution_vector_p_MPI);
-//
-//		  if (this_mpi_process == 0)
-//		  {
-//			  //Append the pressure solution vector to the displacement solution vector,
-//			  //creating a single solution vector equivalent to the original BlockVector
-//			  //so FEFieldFunction will work with the dof_handler_ref.
-//			  Vector<double> solution_vector(solution_p_vector.size()
-//					  +solution_u_vector.size());
-//
-//			  for (unsigned int d=0; d<(solution_u_vector.size()); ++d)
-//				  solution_vector[d] = solution_u_vector[d];
-//
-//			  for (unsigned int d=0; d<(solution_p_vector.size()); ++d)
-//				  solution_vector[solution_u_vector.size()+d] = solution_p_vector[d];
-//
-//			  Functions::FEFieldFunction<dim,DoFHandler<dim>,Vector<double>>
-//			  find_solution(dof_handler_ref, solution_vector);
-//
-//			  for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
-//			  {
-//				  Vector<double> update(dim+1);
-//				  Point<dim> pt_ref;
-//
-//				  pt_ref[0]= tracked_vertices_IN[p][0];
-//				  pt_ref[1]= tracked_vertices_IN[p][1];
-//				  pt_ref[2]= tracked_vertices_IN[p][2];
-//
-//				  find_solution.vector_value(pt_ref, update);
-//
-//				  for (unsigned int d=0; d<(dim+1); ++d)
-//				  {
-//					  //For values close to zero, set to 0.0
-//					  if (abs(update[d])<1.5*parameters.tol_u)
-//						  update[d] = 0.0;
-//					  solution_vertices[p][d] = update[d];
-//				  }
-//			  }
-//			  // Write the results to the plotting file.
-//			  // Add two blank lines between cycles in the cyclic loading examples so GNUPLOT can detect each cycle as a different block
-//			  if ((parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
-//					  (parameters.geom_type == "Budday_cube_tension_compression")||
-//					  (parameters.geom_type == "Budday_cube_shear_fully_fixed")){
-//				  const double delta_time = time->get_delta_t();
-//				  const double end_time   = time->get_end();
-//
-//				  // This was previously called from parameters.
-//				  // Current time is passed into the function, maybe it can be called from time-> too?
-//
-//				  if (( (parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
-//						  (parameters.geom_type == "Budday_cube_tension_compression")||
-//						  (parameters.geom_type == "Budday_cube_shear_fully_fixed")                ) &&
-//						  ( (abs(current_time - end_time/3.)   <0.9*delta_time)||
-//								  (abs(current_time - 2.*end_time/3.)<0.9*delta_time)   ) &&
-//								  parameters.num_cycle_sets == 1 )
-//				  {
-//					  plotpointfile << std::endl<< std::endl;
-//				  }
-//				  if (( (parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
-//						  (parameters.geom_type == "Budday_cube_tension_compression")||
-//						  (parameters.geom_type == "Budday_cube_shear_fully_fixed")             ) &&
-//						  ( (abs(current_time - end_time/9.)   <0.9*delta_time)||
-//								  (abs(current_time - 2.*end_time/9.)<0.9*delta_time)||
-//								  (abs(current_time - 3.*end_time/9.)<0.9*delta_time)||
-//								  (abs(current_time - 5.*end_time/9.)<0.9*delta_time)||
-//								  (abs(current_time - 7.*end_time/9.)<0.9*delta_time) ) &&
-//								  parameters.num_cycle_sets == 2 )
-//				  {
-//					  plotpointfile << std::endl<< std::endl;
-//				  }
-//			  }
-//
-//			  plotpointfile <<  std::setprecision(6) << std::scientific;
-//			  plotpointfile << std::setw(16) << current_time        << ","
-//					  << std::setw(15) << total_vol_reference << ","
-//					  << std::setw(15) << total_vol_current   << ","
-//					  << std::setw(15) << total_solid_vol     << ",";
-//
-//			  if (current_time == 0.0)
-//			  {
-//				  for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
-//				  {
-//					  for (unsigned int d=0; d<dim; ++d)
-//						  plotpointfile << std::setw(15) << 0.0 << ",";
-//
-//					  plotpointfile << std::setw(15) << parameters.drained_pressure << ",";
-//				  }
-//				  for (unsigned int d=0; d<(3*dim+2); ++d)
-//					  plotpointfile << std::setw(15) << 0.0 << ",";
-//
-//				  plotpointfile << std::setw(15) << 0.0 << ","
-//						  << std::setw(15) << 0.0 << ",";
-//
-//				  for (unsigned int d=0; d<(2*dim); ++d)
-//					  plotpointfile << std::setw(15) << 0.0 << ",";
-//
-//				  plotpointfile << std::setw(15) << 1.0 << ",";
-//			  }
-//			  else
-//			  {
-//				  for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
-//					  for (unsigned int d=0; d<(dim+1); ++d)
-//						  plotpointfile << std::setw(15) << solution_vertices[p][d]<< ",";
-//
-//				  if (parameters.geom_type == "brain_rheometer_cyclic_tension_compression_exp_quarter" || parameters.geom_type == "hydro_nano_graz_compression_exp_relax"){
-//					  for (unsigned int d=0; d<dim; ++d)
-//						  plotpointfile << std::setw(15) << reaction_force[d]*(4e-6) << ",";
-//				  } else {
-//					  for (unsigned int d=0; d<dim; ++d)
-//						  plotpointfile << std::setw(15) << reaction_force[d] << ",";
-//				  }
-//
-//				  for (unsigned int d=0; d<dim; ++d)
-//					  plotpointfile << std::setw(15) << reaction_force_pressure[d] << ",";
-//
-//				  for (unsigned int d=0; d<dim; ++d)
-//					  plotpointfile << std::setw(15) << reaction_force_extra[d] << ",";
-//
-//				  plotpointfile << std::setw(15) << total_fluid_flow << ","
-//						  //<< std::setw(15) << seepage_vec_mean << ","
-//						  << std::setw(15) << total_porous_dissipation << ","
-//						  << std::setw(15) << total_viscous_dissipation << ","
-//						  << std::setw(15) << reaction_torque << ",";
-//
-//				  for (unsigned int d=0; d<dim; ++d)
-//					  plotpointfile << std::setw(15) << reaction_force_extra_base[d] << ",";
-//				  for (unsigned int d=0; d<dim; ++d)
-//					  plotpointfile << std::setw(15) << reaction_force_extra_ext_func[d] << ",";
-//
-//				  plotpointfile << std::setw(15) << det_F_min << ",";
-//			  }
-//			  plotpointfile << std::endl;
-//		  }
-//			  }
-
 
     //Header for console output file
     template <int dim>
@@ -9683,7 +9050,7 @@ if (n_pts > 0)
 					  << std::endl
 					  << "#";
 
-		unsigned int columns = 33;
+		unsigned int columns = 54;
 		for (unsigned int d=1; d<columns; ++d)
 			plotpointfile << std::setw(15)<< d <<",";
 
@@ -9721,7 +9088,19 @@ if (n_pts > 0)
 
 		plotpointfile << std::right<< std::setw(16)<< "J_min_cell,";
 		plotpointfile << std::right<< std::setw(16)<< "J_min_face,";
-		plotpointfile << std::endl;
+
+    for (unsigned int d=0; d<dim; ++d)
+			plotpointfile << std::right << std::setw(13) << "reac_cons [" << d << "],";
+		
+    plotpointfile << std::right<< std::setw(16)<< "flow_cons,"
+		         		  << std::right<< std::setw(16)<< "dV_flow_cons,"
+			            << std::right<< std::setw(16)<< "mass_defect,";
+		
+    for (const char *name : {"r_eq [", "r_neq [", "r_vol [", "r_fluid [", "split_def ["})
+			for (unsigned int d=0; d<dim; ++d)
+				plotpointfile << std::right << std::setw(13) << name << d << "],";
+		
+     plotpointfile << std::endl;
     }
 
     //Footer for console output file
