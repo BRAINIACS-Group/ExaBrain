@@ -1630,6 +1630,8 @@ namespace NonLinearPoroViscoElasticity
         std::string  lateral_confined;
         double       height;
         double       radius;
+        unsigned int mapping_degree;
+        unsigned int edge_refinement;
 
         static void
         declare_parameters(ParameterHandler &prm);
@@ -1682,7 +1684,12 @@ namespace NonLinearPoroViscoElasticity
           prm.declare_entry("Global refinement", "1",
                             Patterns::Integer(0),
                             "Global refinement level");
-
+          prm.declare_entry("Mapping degree", "1", 
+                            Patterns::Integer(1), 
+                            "Degree of MappingQ");
+          prm.declare_entry("Edge refinement", "0", 
+                            Patterns::Integer(0),
+                            "Local refinement levels at the glued edges r=R, z=0/H (quarter geometries)");
           prm.declare_entry("Grid scale", "1.0",
                             Patterns::Double(0.0),
                             "Global grid scaling factor");
@@ -1747,6 +1754,8 @@ namespace NonLinearPoroViscoElasticity
           scale = prm.get_double("Grid scale");
           height = prm.get_double("height");
           radius = prm.get_double("radius");
+          mapping_degree  = prm.get_integer("Mapping degree");
+          edge_refinement = prm.get_integer("Edge refinement");
         }
         prm.leave_subsection();
         prm.enter_subsection("testing_device@[type=porous_tension_compression_testing_device,instance=1]");
@@ -2056,6 +2065,11 @@ namespace NonLinearPoroViscoElasticity
         double       tol_u;
         double       tol_p_fluid;
         std::string  lin_solver;
+        unsigned int precon_update_interval; // maximales Alter in Zeitschritten
+        double       lin_rel_tol;            // bisher fest 1e-4
+        double       lin_rel_tol_tight;      // engere Toleranz im Problemfall
+        double       newton_stag_ratio;      // Stagnationsschwelle
+        unsigned int precon_refresh_its;     // FGMRES-Iterationen, ab denen neu faktorisiert wird
 
         static void
         declare_parameters(ParameterHandler &prm);
@@ -2083,9 +2097,30 @@ namespace NonLinearPoroViscoElasticity
           prm.declare_entry("Tolerance pore pressure", "1.0e-6",
                             Patterns::Double(0.0),
                             "Pore pressure error tolerance");
+
           prm.declare_entry("Linear solver", "MumpsDirect",
                             Patterns::Selection("MumpsDirect|AmesosMumpsDirect|SuperLUdist|BLRGmres|BLRNewt"),
                             "Type of linear solver");
+
+          prm.declare_entry("Preconditioner update interval", "3", 
+                            Patterns::Integer(1),
+                            "Refactorize the BLRNewt preconditioner every n time steps");
+
+          prm.declare_entry("Linear relative tolerance", "1e-6", 
+                            Patterns::Double(0.0),
+                            "FGMRES tolerance relative to the nonlinear residual (BLRNewt)");
+
+          prm.declare_entry("Linear relative tolerance tight", "1e-8", 
+                            Patterns::Double(0.0),
+                            "Tolerance used after Newton stagnation or FGMRES failure");
+
+          prm.declare_entry("Newton stagnation ratio", "0.25", 
+                            Patterns::Double(0.0),
+                            "Residual contraction above which the linear solve is tightened");
+
+          prm.declare_entry("Preconditioner refresh iterations", "15", 
+                            Patterns::Integer(1),
+                            "Refactorize at the next time step if FGMRES needed more iterations");
         }
         prm.leave_subsection();
       }
@@ -2094,11 +2129,16 @@ namespace NonLinearPoroViscoElasticity
       {
         prm.enter_subsection("Nonlinear solver");
         {
-          max_iterations_NR = prm.get_integer("Max iterations Newton-Raphson");
-          tol_f = prm.get_double("Tolerance force");
-          tol_u = prm.get_double("Tolerance displacement");
-          tol_p_fluid =  prm.get_double("Tolerance pore pressure");
-          lin_solver = prm.get("Linear solver");
+          max_iterations_NR       = prm.get_integer("Max iterations Newton-Raphson");
+          tol_f                   = prm.get_double("Tolerance force");
+          tol_u                   = prm.get_double("Tolerance displacement");
+          tol_p_fluid             =  prm.get_double("Tolerance pore pressure");
+          lin_solver              = prm.get("Linear solver");
+          precon_update_interval  = prm.get_integer("Preconditioner update interval");
+          lin_rel_tol             = prm.get_double("Linear relative tolerance");
+          lin_rel_tol_tight       = prm.get_double("Linear relative tolerance tight");
+          newton_stag_ratio       = prm.get_double("Newton stagnation ratio");
+          precon_refresh_its      = prm.get_integer("Preconditioner refresh iterations");
         }
         prm.leave_subsection();
       }
@@ -2236,7 +2276,7 @@ namespace NonLinearPoroViscoElasticity
       void AllParameters::declare_parameters(ParameterHandler &prm)
       {
         Global::declare_parameters(prm);
-    	FESystem::declare_parameters(prm);
+    	  FESystem::declare_parameters(prm);
         Geometry::declare_parameters(prm);
         Materials::declare_parameters(prm);
         NonlinearSolver::declare_parameters(prm);
@@ -4602,6 +4642,7 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
             Solid(const Parameters::AllParameters &parameters);
             virtual ~Solid();
             void run();
+            void run_impl();
 
           protected:
             using ADNumberType = Sacado::Fad::DFad<double>;
@@ -4669,9 +4710,8 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
 
             //Solve the linearized equations using a direct solver
             void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT);
-            //void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, SparseDirectMUMPS &precon, const double current_nonlinear_residual);
-            void solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, MumpsReuse &precon, const double current_nonlinear_residual);
-
+            unsigned int solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, MumpsReuse &precon,
+                                             const double current_nonlinear_residual, const double rel_tol);
             //Retrieve the  solution
             TrilinosWrappers::MPI::BlockVector
             get_total_solution(const TrilinosWrappers::MPI::BlockVector &solution_delta_IN) const;
@@ -4900,6 +4940,9 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
             //std::unique_ptr<SparseDirectMUMPS> preconditioner;
             MumpsReuse::AdditionalData data_mumps;
             std::unique_ptr<MumpsReuse> preconditioner;
+            unsigned int steps_since_precon_refresh = 0;
+            bool precon_refresh_now                 = true;   // erste Faktorisierung
+            bool precon_refresh_next_step           = false;
 
             // NOTE: In all functions, we pass by reference (&), so these functions work on the original copy (not a clone copy),
             // modifying the input variables inside the functions will change them outside the function.
@@ -4930,7 +4973,7 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
         degree_pore(parameters.poly_degree_pore),
         fe( FE_Q<dim>(parameters.poly_degree_displ), dim,
             FE_Q<dim>(parameters.poly_degree_pore), 1 ),
-		    mapping(1),
+		    mapping(parameters.mapping_degree),
         dof_handler_ref(triangulation),
         dofs_per_cell (fe.dofs_per_cell),
         u_fe(first_u_component),
@@ -4968,6 +5011,23 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
 //Runs the 3D solid problem
     template <int dim>
     void Solid<dim>::run()
+    {
+      try
+        {
+          run_impl();
+        }
+      catch (const std::exception &exc)
+        {
+          std::cerr << std::endl << "[Rank " << Utilities::MPI::this_mpi_process(mpi_communicator)
+                    << "] Exception in Solid::run():" << std::endl << exc.what() << std::endl;
+          if (Utilities::MPI::n_mpi_processes(mpi_communicator) > 1)
+            MPI_Abort(mpi_communicator, 1);
+          throw;
+        }
+    }
+
+    template <int dim>
+    void Solid<dim>::run_impl()
     {
           //The current solution increment is defined as a block vector to reflect the structure
           //of the PDE system, with multiple solution components
@@ -5186,18 +5246,14 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
 
         std::vector<NumberType> residual_ad;
 
-        ScratchData_ASM(const FiniteElement<dim> &fe_cell,
+        ScratchData_ASM(const Mapping<dim> &mapping, const FiniteElement<dim> &fe_cell,
                         const QGauss<dim> &qf_cell, const UpdateFlags uf_cell,
                         const QGauss<dim - 1> & qf_face, const UpdateFlags uf_face,
-						//const QGaussLobatto<dim> &qf_cell, const UpdateFlags uf_cell,
-						//const QGaussLobatto<dim - 1> & qf_face, const UpdateFlags uf_face,
-						//const QGaussLobattoChebyshev<dim> &qf_cell, const UpdateFlags uf_cell,
-						//const QGaussLobattoChebyshev<dim - 1> & qf_face, const UpdateFlags uf_face,
-                        const TrilinosWrappers::MPI::BlockVector &solution_total    )
+                        const TrilinosWrappers::MPI::BlockVector &solution_total)
           :
           solution_total (solution_total),
-          fe_values_ref(fe_cell, qf_cell, uf_cell),
-          fe_face_values_ref(fe_cell, qf_face, uf_face),
+          fe_values_ref(mapping, fe_cell, qf_cell, uf_cell),
+          fe_face_values_ref(mapping, fe_cell, qf_face, uf_face),
           local_dof_values(fe_cell.dofs_per_cell),
           solution_grads_u_total(qf_cell.size()),
           solution_values_p_fluid_total(qf_cell.size()),
@@ -5213,10 +5269,12 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
         ScratchData_ASM(const ScratchData_ASM &rhs)
           :
           solution_total (rhs.solution_total),
-          fe_values_ref(rhs.fe_values_ref.get_fe(),
+          fe_values_ref(rhs.fe_values_ref.get_mapping(),
+                        rhs.fe_values_ref.get_fe(),
                         rhs.fe_values_ref.get_quadrature(),
                         rhs.fe_values_ref.get_update_flags()),
-          fe_face_values_ref(rhs.fe_face_values_ref.get_fe(),
+          fe_face_values_ref(rhs.fe_face_values_ref.get_mapping(),
+                             rhs.fe_face_values_ref.get_fe(),
                              rhs.fe_face_values_ref.get_quadrature(),
                              rhs.fe_face_values_ref.get_update_flags()),
           // WICHTIG: Wir erzeugen komplett frische Vektoren mit der richtigen Größe,
@@ -5609,8 +5667,10 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
 
         //Declare and initialize iterator for the Newton-Raphson algorithm steps
         unsigned int newton_iteration = 0;
-        double rhs_l2_0 = 0.0;
-        const double tol_rhs_rel = 1e-8;
+        double rhs_l2_0               = 0.0;
+        const double tol_rhs_rel      = 1e-8;
+        double lin_rel_tol_current    = parameters.lin_rel_tol;
+        double residual_prev          = -1.0;
 
         //Iterate until error is below tolerance or max number iterations are reached
         while(newton_iteration < parameters.max_iterations_NR)
@@ -5679,33 +5739,58 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
                 break;
               }
 
-//            if (newton_iteration > 0 && error_residual_norm.norm > error_residual_norm_last.norm) {
-//            	break;
-//            } else {
-//            	error_residual_norm_last = error_residual_norm;
-//            }
-
             //Solve the linearized system
             if (this->parameters.lin_solver == "BLRNewt") {
-                    if ((time->get_timestep() % 3 == 1) && newton_iteration == 0) {
-                    //if (newton_iteration == 0) {
-                        TimerOutput::Scope timing_section(timerconsole, "Preconditioner");
-                        TimerOutput::Scope timer_section(timerfile, "Preconditioner");
-                        if (!preconditioner->analysis_is_done())
-                          {
-                          MemProbe::report("compute_permutation_1", mpi_communicator);
-                          NodeND::Options nd;                 // Standard: seed -1, symmetrize true
-                          preconditioner->set_user_ordering(
-                          NodeND::compute_permutation(dof_handler_ref, tangent_matrix_nb, mpi_communicator, nd));
-                          MemProbe::report("compute_permutation_2", mpi_communicator);
-                          }
-                        preconditioner->initialize(tangent_matrix_nb);
+                // 1) Schutz gegen Stagnation: nur wenn Newton nicht mehr kontrahiert
+                if (newton_iteration >= 2 && residual_prev > 0.0
+                    && error_residual.norm > parameters.newton_stag_ratio * residual_prev
+                    && lin_rel_tol_current > parameters.lin_rel_tol_tight) {
+                    lin_rel_tol_current = parameters.lin_rel_tol_tight;
+                    precon_refresh_now  = true;
+                    pcout << " [ETA-TIGHT] " << std::flush;  outfile << " [ETA-TIGHT] " << std::flush;
+                }
+                residual_prev = error_residual.norm;
+
+                // 2) Adaptive Wiederverwendung: neu faktorisieren bei Bedarf oder Altersgrenze
+                if (newton_iteration == 0) {
+                    ++steps_since_precon_refresh;
+                    if (precon_refresh_next_step
+                        || steps_since_precon_refresh >= parameters.precon_update_interval)
+                        precon_refresh_now = true;
+                }
+                if (precon_refresh_now) {
+                    TimerOutput::Scope timing_section(timerconsole, "Preconditioner");
+                    TimerOutput::Scope timer_section(timerfile, "Preconditioner");
+                    if (!preconditioner->analysis_is_done()) {
+                        MemProbe::report("compute_permutation_1", mpi_communicator);
+                        NodeND::Options nd;                 // Standard: seed -1, symmetrize true
+                        preconditioner->set_user_ordering(
+                        NodeND::compute_permutation(dof_handler_ref, tangent_matrix_nb, mpi_communicator, nd));
+                        MemProbe::report("compute_permutation_2", mpi_communicator);
                     }
-                    solve_linear_system(newton_update, *preconditioner, error_residual.norm);
+                    preconditioner->initialize(tangent_matrix_nb);
+                    precon_refresh_now = precon_refresh_next_step = false;
+                    steps_since_precon_refresh = 0;
+                }
+
+                // 3) Lösen; bei Fehlschlag frisch faktorisieren und genau lösen
+                unsigned int n_its = 0;
+                try {
+                    n_its = solve_linear_system(newton_update, *preconditioner, error_residual.norm, lin_rel_tol_current);
+                } catch (const SolverControl::NoConvergence &) {
+                    pcout << " [PRECON-REFRESH] " << std::flush;  outfile << " [PRECON-REFRESH] " << std::flush;
+                    preconditioner->initialize(tangent_matrix_nb);
+                    steps_since_precon_refresh = 0;
+                    lin_rel_tol_current = parameters.lin_rel_tol_tight;
+                    n_its = solve_linear_system(newton_update, *preconditioner, error_residual.norm, lin_rel_tol_current);
+                }
+                if (n_its > parameters.precon_refresh_its)
+                    precon_refresh_next_step = true;       // Vorkonditionierer altert
             } else {
                 solve_linear_system(newton_update);
             }
-                constraints.distribute(newton_update);
+
+            constraints.distribute(newton_update);
 
             //Compute the displacement error
             get_error_update(newton_update, error_update);
@@ -5913,7 +5998,7 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
         //memory addresses of the assembly functions to the WorkStream object for processing
         PerTaskData_ASM per_task_data(dofs_per_cell);
         
-        ScratchData_ASM<ADNumberType> scratch_data(fe, qf_cell, uf_cell,
+        ScratchData_ASM<ADNumberType> scratch_data(mapping, fe, qf_cell, uf_cell,
                                                    qf_face, uf_face,
                                                    solution_total);
 	
@@ -6702,7 +6787,8 @@ lap(PhaseProbe::RESIDUAL);
 
     //Solve the linearized equations
     template <int dim>
-    void Solid<dim>::solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, MumpsReuse &precon, const double current_nonlinear_residual)
+    unsigned int Solid<dim>::solve_linear_system(TrilinosWrappers::MPI::BlockVector &newton_update_OUT, MumpsReuse &precon,
+                                     const double current_nonlinear_residual, const double rel_tol)
     {
         TimerOutput::Scope timing_section(timerconsole, "Linear solver");
         TimerOutput::Scope timer_section(timerfile, "Linear solver");
@@ -6711,9 +6797,10 @@ lap(PhaseProbe::RESIDUAL);
 
         TrilinosWrappers::MPI::Vector newton_update_nb;
         newton_update_nb.reinit(locally_owned_dofs, mpi_communicator);
+        unsigned int n_its = 0;
 
         if (this->parameters.lin_solver == "BLRNewt") {
-            double dynamic_tolerance = std::max(1e-11, 1e-4 * current_nonlinear_residual);
+            double dynamic_tolerance = std::max(1e-11, rel_tol * current_nonlinear_residual);
             SolverControl solver_control(120, dynamic_tolerance, true, true);
             
             // Wechsel von SolverGMRES auf SolverFGMRES
@@ -6721,18 +6808,9 @@ lap(PhaseProbe::RESIDUAL);
             fgmres_data.max_basis_size = 30;          // Leicht erhöht, um alternde Schritte abzufangen
                         
             SolverFGMRES<TrilinosWrappers::MPI::Vector> solver(solver_control, fgmres_data);
-            //deallog.depth_file(0); // Verhindert übermäßiges Schreiben in Dateien
-            //deallog.depth_console(2); // Erlaubt das Drucken der Solver-Iterationen auf der Konsole
             pcout << " (LinTol: " << dynamic_tolerance << ") " << std::flush;
             solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb, precon);
-
-            /*SolverControl solver_control(120, 1e-12);
-            SolverGMRES<TrilinosWrappers::MPI::Vector>::AdditionalData gmres_data;
-            gmres_data.right_preconditioning = false;
-            gmres_data.max_basis_size = 20; // default
-            gmres_data.use_default_residual = true;
-            SolverGMRES<TrilinosWrappers::MPI::Vector> solver(solver_control, gmres_data);
-            solver.solve(tangent_matrix_nb, newton_update_nb, system_rhs_nb, precon);*/
+            n_its = solver_control.last_step();
         }
 
         // Copy the non-block solution back to block system
@@ -6743,6 +6821,7 @@ lap(PhaseProbe::RESIDUAL);
         newton_update_OUT.compress(VectorOperation::insert);
        
         preconditioner->print_solve_stats(pcout);
+        return n_its;
     }
 
 
@@ -7288,7 +7367,7 @@ lap(PhaseProbe::RESIDUAL);
             mask_u_all.set(first_u_component + d, true);
         const IndexSet reaction_dofs = DoFTools::extract_boundary_dofs(dof_handler_ref, mask_u_all, reaction_ids);
 
-        FEValues<dim> fe_values(fe, qf_cell, update_values | update_gradients | update_JxW_values);
+        FEValues<dim> fe_values(mapping, fe, qf_cell, update_values | update_gradients | update_JxW_values);
         std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
         std::vector<unsigned int>            reaction_local_dofs;
         std::vector<Tensor<2,dim>>           solution_grads_u(n_q_points);
@@ -8087,23 +8166,20 @@ lap(PhaseProbe::RESIDUAL);
                 for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
                     for (unsigned int d=0; d<(dim+1); ++d)
                         plotpointfile << std::setw(15) << solution_vertices[p][d]<< ",";
-
-                if (parameters.geom_type == "brain_rheometer_cyclic_tension_compression_exp_quarter" || parameters.geom_type == "hydro_nano_graz_compression_exp_relax"){
-                	for (unsigned int d=0; d<dim; ++d)
-                		plotpointfile << std::setw(15) << reaction_force[d]*(4e-6) << ",";
-                } else {
-                	for (unsigned int d=0; d<dim; ++d)
-                		plotpointfile << std::setw(15) << reaction_force[d] << ",";
-                }
+                
+                // Viertelmodell -> Vollzylinder (x4), Pa*mm^2 -> N (x1e-6)
+                const bool   exp_scaled = (parameters.geom_type == "brain_rheometer_cyclic_tension_compression_exp_quarter"
+                                        || parameters.geom_type == "hydro_nano_graz_compression_exp_relax");
+                const double ff = exp_scaled ? 4e-6 : 1.0;
 
                 for (unsigned int d=0; d<dim; ++d)
-                    plotpointfile << std::setw(15) << reaction_force_pressure[d] << ",";
-
+                    plotpointfile << std::setw(15) << ff * reaction_force[d] << ",";
                 for (unsigned int d=0; d<dim; ++d)
-                    plotpointfile << std::setw(15) << reaction_force_extra[d] << ",";
+                    plotpointfile << std::setw(15) << ff * reaction_force_pressure[d] << ",";
+                for (unsigned int d=0; d<dim; ++d)
+                    plotpointfile << std::setw(15) << ff * reaction_force_extra[d] << ",";
 
                 plotpointfile << std::setw(15) << total_fluid_flow << ","
-                			  //<< std::setw(15) << seepage_vec_mean << ","
                               << std::setw(15) << total_porous_dissipation << ","
                               << std::setw(15) << total_viscous_dissipation << ","
 							  << std::setw(15) << reaction_torque << ",";
@@ -8117,7 +8193,7 @@ lap(PhaseProbe::RESIDUAL);
                 plotpointfile << std::setw(15) << det_F_min_faces << ",";
 
                 for (unsigned int d=0; d<dim; ++d)
-                  plotpointfile << std::setw(15) << consistent.reaction_force[d] << ",";
+                  plotpointfile << std::setw(15) << ff * consistent.reaction_force[d] << ",";
                 
                 plotpointfile << std::setw(15) << consistent.fluid_volume_out / time->get_delta_t() << ","
                               << std::setw(15) << consistent.fluid_volume_out << ","
@@ -8127,7 +8203,7 @@ lap(PhaseProbe::RESIDUAL);
                                                consistent.reaction_vol, consistent.reaction_fluid,
                                                consistent.split_defect})
                   for (unsigned int d=0; d<dim; ++d)
-                    plotpointfile << std::setw(15) << r[d] << ",";
+                    plotpointfile << std::setw(15) << ff * r[d] << ",";   // Split eq/neq/vol/fluid/defect
             }
             plotpointfile << std::endl;
         }
@@ -10456,136 +10532,27 @@ lap(PhaseProbe::RESIDUAL);
                 // CRITICAL FIX 3: Dem parallelen Gitter mitteilen, wo das Manifold-Objekt im Speicher liegt
                 this->triangulation.set_manifold(cylinder_id, *cylinder_3d);
 
-
-                
                 // 6. Erst JETZT global verfeinern! 
                 // p4est verfeinert nun hochparallel, absolut synchron und mathematisch exakt,
                 // da jeder Kern die Zylinderkrümmung auch für seine Ghost Cells kennt.
                 this->triangulation.refine_global(std::max(1U, this->parameters.global_refinement));
                 
+                // refinement around the edges
+                for (unsigned int k = 0; k < this->parameters.edge_refinement; ++k)
+                {
+                  for (const auto &cell : this->triangulation.active_cell_iterators())
+                    if (cell->is_locally_owned())
+                    {
+                      const Point<dim> c = cell->center();
+                      const double dr = scaled_radius - std::hypot(c[0], c[1]);
+                      const double dz = std::min(c[2], scaled_height - c[2]);
+                      if (std::hypot(dr, dz) < cell->diameter())   // ~2 Zellschichten um beide Kanten
+                        cell->set_refine_flag();
+                    }
+                  this->triangulation.execute_coarsening_and_refinement();
+                }
 
             }
-
-
-
-
-            /*virtual void make_grid() override
-            {
-            	const Point<dim-1> mesh_center(0.0, 0.0);
-            	//const Point<dim> mesh_center2(0.0, 0.0, 0.0);
-            	const double radius = this->parameters.radius;
-            	const double height = this->parameters.height;
-
-            	// Create a quarter_hyper_ball in 2d, i.e. a quarter-circle and extrude it to obtain a quarter cylinder
-            	Triangulation<dim-1> triangulation_in;
-            	GridGenerator::quarter_hyper_ball(triangulation_in, mesh_center, radius);
-
-            	// Add a square to the quarter circle mesh
-            	// Triangulation<dim-1> square;
-            	// const std::vector<unsigned int> repetitions = {2, 2};
-            	// const Point<dim-1> outer_edge(-4,4);
-            	// GridGenerator::subdivided_hyper_rectangle(square, repetitions, mesh_center, outer_edge);
-
-            	// Triangulation<dim-1> final_tria;
-            	// GridGenerator::merge_triangulations(triangulation_in, square, final_tria, 0.5, true);
-
-            	if (this->parameters.radius == 8)
-            		triangulation_in.refine_global(1);
-            	if (this->parameters.radius == 16)
-            	    triangulation_in.refine_global(1);
-
-              // 2. SCHRITT: Eine TEMPORÄRE, SEQUENTIELLE 3D-Triangulation erstellen
-              // "Triangulation<dim>" erzeugt eine normale, serielle Triangulation im Speicher
-              Triangulation<dim> serial_triangulation;
-              GridGenerator::extrude_triangulation(triangulation_in, 3, height, serial_triangulation);
-
-              // 3. SCHRITT: Das sequentielle Gitter sauber in die verteilte Triangulation kopieren
-              // Dieser Befehl initialisiert die parallele p4est-Struktur korrekt auf allen Kernen!
-              this->triangulation.copy_triangulation(serial_triangulation);
-
-GridTools::scale(this->parameters.scale, this->triangulation);
-const double scaled_height = height * this->parameters.scale;
-            	//GridGenerator::extrude_triangulation(triangulation_in, 3, height, this->triangulation);
-            	// Assign a cylindrical manifold to the geometry
-            	// const CylindricalManifold<dim> cylinder_3d(2);
-            	// const types::manifold_id cylinder_id = 0;
-            	// this->triangulation.set_manifold(cylinder_id, cylinder_3d);
-
-              const types::manifold_id cylinder_id = 0;
-              cylinder_3d = std::make_unique<CylindricalManifold<dim>>(2);
-              this->triangulation.set_manifold(cylinder_id, *cylinder_3d);
-
-            	// Assign proper boundary ids
-            	for (auto cell : this->triangulation.active_cell_iterators()) {
-                if (cell->is_locally_owned() || cell->is_ghost()) {
-                  for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
-                    if (cell->face(face)->at_boundary() == true) {
-                      if (cell->face(face)->center()[2] == 0.0)
-                        cell->face(face)->set_boundary_id(1); //bottom
-                      else if (cell->face(face)->center()[2] == scaled_height)
-                        cell->face(face)->set_boundary_id(2); //top
-                      else if (cell->face(face)->center()[0] == 0.0) //-4.0
-                        cell->face(face)->set_boundary_id(3); //left
-                      else if (cell->face(face)->center()[1] == 0.0)
-                        cell->face(face)->set_boundary_id(4); //front
-                      else {
-                        cell->face(face)->set_boundary_id(0);
-                        cell->face(face)->set_all_manifold_ids(cylinder_id);
-                      }
-                    }
-                  }
-                }
-            	}
-          // std::cout << "Here" << std::endl;
-            	// GridTools::scale(this->parameters.scale, this->triangulation);
-                        // std::cout << "Here2" << std::endl;
-            	this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
-          // std::cout << "Here3" << std::endl;
-                //std::ofstream mesh_out(this->parameters.output_directory + "/" + "grid-very-fine.msh");
-                //GridOut       grid_out;
-                //grid_out.write_msh(this->triangulation, mesh_out);
-
-				// for (const auto &cell : this->triangulation.active_cell_iterators()) {
-				// 	if ((cell->center()[2] < 0.125*this->parameters.height || cell->center()[2] > 0.875*this->parameters.height) && std::sqrt((cell->center()[0])*(cell->center()[0]) + (cell->center()[1])*(cell->center()[1])) > 0.8*this->parameters.radius)
-				// 		cell->set_refine_flag();
-				// }
-				// this->triangulation.execute_coarsening_and_refinement();
-
-				// for (const auto &cell : this->triangulation.active_cell_iterators()) {
-				// 	if ((cell->center()[2] < 0.1*this->parameters.height || cell->center()[2] > 0.9*this->parameters.height) && std::sqrt((cell->center()[0])*(cell->center()[0]) + (cell->center()[1])*(cell->center()[1])) > 0.9*this->parameters.radius)
-				// 		cell->set_refine_flag();
-				// }
-				// this->triangulation.execute_coarsening_and_refinement();
-//
-//				for (const auto &cell : this->triangulation.active_cell_iterators()) {
-//					if ((cell->center()[2] < 0.05*this->parameters.height || cell->center()[2] > 0.95*this->parameters.height) && std::sqrt((cell->center()[0])*(cell->center()[0]) + (cell->center()[1])*(cell->center()[1])) > 0.95*this->parameters.radius)
-//						cell->set_refine_flag();
-//				}
-//				this->triangulation.execute_coarsening_and_refinement();
-
-
-            	// Assign proper boundary ids
-            	for (auto cell : this->triangulation.active_cell_iterators()) {
-                if (cell->is_locally_owned() || cell->is_ghost()) {
-                  for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) {
-                    if (cell->face(face)->at_boundary() == true) {
-                      if (cell->face(face)->center()[2] == 0.0)
-                        cell->face(face)->set_boundary_id(1); //bottom
-                        else if (cell->face(face)->center()[2] == height)
-                          cell->face(face)->set_boundary_id(2); //top
-                        else if (cell->face(face)->center()[0] < 1e-12) //-4.0
-                          cell->face(face)->set_boundary_id(3); //left
-                        else if (cell->face(face)->center()[1] < 1e-12)
-                          cell->face(face)->set_boundary_id(4); //front
-                        else {
-                          cell->face(face)->set_boundary_id(0);
-                          cell->face(face)->set_all_manifold_ids(cylinder_id);
-                        }
-                    }
-                  }
-                }
-              }
-            }*/
 
 
             virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override

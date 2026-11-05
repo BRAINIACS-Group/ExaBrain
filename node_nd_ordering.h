@@ -411,6 +411,15 @@ namespace NodeND
                   dealii::ExcMessage("NodeND: DoF der Matrix ist in keiner lokalen/Ghost-Zelle."));
       return it->second;
     };
+    // Bei haengenden Knoten koennen Spalten ausserhalb der lokalen/Ghost-Zellen liegen
+    // (Master-DoFs einer groben Zelle hinter einer Ghost-Zelle). Diese Kopplungen werden
+    // fuer die Ordnung ignoriert; MUMPS analysiert ohnehin das echte Matrixmuster.
+    auto rep_of_or_none = [&](const long long d) -> int {
+      auto it = std::lower_bound(pairs.begin(),
+                                 pairs.end(),
+                                 std::make_pair(static_cast<int>(d), INT_MIN));
+      return (it != pairs.end() && it->first == d) ? it->second : -1;
+    };
 
     // 2) Matrix: Repraesentanten der Spalten und Zeilen
     const auto &M      = A.trilinos_matrix();
@@ -428,8 +437,16 @@ namespace NodeND
         g.rep_of_row[r] = rep_of(gr);
       }
     std::vector<int> rep_of_col(n_cols);
+    long long n_unknown_cols = 0;
     for (int c = 0; c < n_cols; ++c)
-      rep_of_col[c] = rep_of(dealii::TrilinosWrappers::global_column_index(M, c));
+      {
+        rep_of_col[c] = rep_of_or_none(dealii::TrilinosWrappers::global_column_index(M, c));
+        if (rep_of_col[c] < 0)
+          ++n_unknown_cols;
+      }
+    if (n_unknown_cols > 0)
+      std::cout << "NodeND: " << n_unknown_cols
+                << " Spalten ausserhalb lokaler/Ghost-Zellen ignoriert" << std::endl;
 
     // 3) Knoten = eindeutige Repraesentanten der eigenen Zeilen
     g.node_reps = g.rep_of_row;
@@ -468,7 +485,8 @@ namespace NodeND
             const int ierr = M.ExtractMyRowView(rows_sorted[s], num_entries, values, local_cols);
             AssertThrow(ierr == 0, dealii::ExcInternalError());
             for (int j = 0; j < num_entries; ++j)
-              tmp.push_back(rep_of_col[local_cols[j]]);
+              if (rep_of_col[local_cols[j]] >= 0)
+                tmp.push_back(rep_of_col[local_cols[j]]);
           }
         std::sort(tmp.begin(), tmp.end());
         tmp.erase(std::unique(tmp.begin(), tmp.end()), tmp.end());
