@@ -3957,390 +3957,309 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
 // Reese & Govindjee (1998) doi:10.1016/S0020-7683(97)00217-5
 // The algorithm for the implicit exponential time integration is given in
 // Budday et al. (2017) doi: 10.1016/j.actbio.2017.06.024
+// Wie visco_Ogden (lokales Newton in double, Ableitungen ueber implizite Funktion, gespeichertes tau_neq),
+// aber mit zwei parallelen Maxwell-Aesten m = 0, 1 (Parameter *_1 und *_2).
     template <int dim, typename NumberType = Sacado::Fad::DFad<double> >
     class visco2_Ogden : public Material_Hyperelastic < dim, NumberType >
     {
-    public:
-    	visco2_Ogden(const Parameters::AllParameters &parameters, const std::shared_ptr<Time> time)
-    :
-    	Material_Hyperelastic< dim, NumberType > (parameters,time),
-		mu_infty({parameters.mu1_infty, parameters.mu2_infty, parameters.mu3_infty}),
-		alpha_infty({parameters.alpha1_infty, parameters.alpha2_infty, parameters.alpha3_infty}),
-		// first viscous mode
-		mu_mode_1({parameters.mu1_mode_1, parameters.mu2_mode_1, parameters.mu3_mode_1}),
-		alpha_mode_1({parameters.alpha1_mode_1, parameters.alpha2_mode_1, parameters.alpha3_mode_1}),
-		viscosity_mode_1(parameters.viscosity_mode_1),
-		Cinv_v_1(Physics::Elasticity::StandardTensors<dim>::I),
-		Cinv_v_1_converged(Physics::Elasticity::StandardTensors<dim>::I),
-		// second viscous mode
-		mu_mode_2({parameters.mu1_mode_2, parameters.mu2_mode_2, parameters.mu3_mode_2}),
-		alpha_mode_2({parameters.alpha1_mode_2, parameters.alpha2_mode_2, parameters.alpha3_mode_2}),
-		viscosity_mode_2(parameters.viscosity_mode_2),
-		Cinv_v_2(Physics::Elasticity::StandardTensors<dim>::I),
-		Cinv_v_2_converged(Physics::Elasticity::StandardTensors<dim>::I)
-		{}
-    	virtual ~visco2_Ogden()
-    	{}
+        public:
+            visco2_Ogden(const Parameters::AllParameters &parameters, const std::shared_ptr<Time> time)
+            :
+            Material_Hyperelastic< dim, NumberType > (parameters,time),
+            mu_infty({parameters.mu1_infty,parameters.mu2_infty,parameters.mu3_infty}),
+            alpha_infty({parameters.alpha1_infty,parameters.alpha2_infty,parameters.alpha3_infty}),
+            mu_mode{{{parameters.mu1_mode_1,parameters.mu2_mode_1,parameters.mu3_mode_1},
+                     {parameters.mu1_mode_2,parameters.mu2_mode_2,parameters.mu3_mode_2}}},
+            alpha_mode{{{parameters.alpha1_mode_1,parameters.alpha2_mode_1,parameters.alpha3_mode_1},
+                        {parameters.alpha1_mode_2,parameters.alpha2_mode_2,parameters.alpha3_mode_2}}},
+            viscosity_mode{{parameters.viscosity_mode_1, parameters.viscosity_mode_2}}
+            {
+              for (unsigned int m = 0; m < 2; ++m)
+                {
+                  Cinv_v[m]           = Physics::Elasticity::StandardTensors<dim>::I;
+                  Cinv_v_converged[m] = Physics::Elasticity::StandardTensors<dim>::I;
+                }
+            }
+            virtual ~visco2_Ogden()
+            {}
 
-    	void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F ) override
-    	{
-    		Material_Hyperelastic < dim, NumberType >::update_internal_equilibrium(F);
+          void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F ) override
+          {
+            Material_Hyperelastic < dim, NumberType >::update_internal_equilibrium(F);
 
-    		// update right Cauchy-Green strain and compute the elastic left Cauchy-Green trial strain
-    		this->Cinv_v_1 = this->Cinv_v_1_converged;
-    		SymmetricTensor<2, dim, NumberType> B_e_1_tr = symmetrize(F * this->Cinv_v_1 * transpose(F));
-    		this->Cinv_v_2 = this->Cinv_v_2_converged;
-    		SymmetricTensor<2, dim, NumberType> B_e_2_tr = symmetrize(F * this->Cinv_v_2 * transpose(F));
+            auto &nw = ws();
+            nw.owner = this;
+            for (unsigned int m = 0; m < 2; ++m)
+              {
+                const SymmetricTensor<2, dim, NumberType> tau_m = update_mode(F, m);
+                if (m == 0) nw.tau  = tau_m;
+                else        nw.tau += tau_m;
+              }
+            for (unsigned int a = 0; a < dim; ++a)
+              for (unsigned int b = a; b < dim; ++b)
+                this->tau_neq_val[a][b] = this->tau_neq_mode_val[0][a][b] + this->tau_neq_mode_val[1][a][b];
+          }
 
-    		// Compute eigenvalues and eigenvectors of the trail strain tensors and store them in an array of pairs
-    		const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B_e_1_tr = eigenvectors(B_e_1_tr, this->eigen_solver);
-    		const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B_e_2_tr = eigenvectors(B_e_2_tr, this->eigen_solver);
+          void update_end_timestep() override
+          {
+            Material_Hyperelastic < dim, NumberType >::update_end_timestep();
+            for (unsigned int m = 0; m < 2; ++m)
+              this->Cinv_v_converged[m] = this->Cinv_v[m];
+          }
 
-    		// Compute elastic trial eigenvalues lambda and logarithmic principal stretches epsilon and store them as vectors
-    		Tensor< 1, dim, NumberType > lambdas_e_1_tr, lambdas_e_2_tr;
-    		Tensor< 1, dim, NumberType > epsilon_e_1_tr, epsilon_e_2_tr;
+          double get_viscous_dissipation() const override
+          {
+            double d = 0.0;
+            for (unsigned int m = 0; m < 2; ++m)
+              d += (tau_neq_mode_val[m] * tau_neq_mode_val[m]) / (2.0 * viscosity_mode[m]);
+            return d;
+          }
 
-    		for (int a = 0; a < dim; ++a) {
-    			lambdas_e_1_tr[a] = std::sqrt(eigen_B_e_1_tr[a].first);
-    			epsilon_e_1_tr[a] = std::log(lambdas_e_1_tr[a]);
-    			lambdas_e_2_tr[a] = std::sqrt(eigen_B_e_2_tr[a].first);
-    			epsilon_e_2_tr[a] = std::log(lambdas_e_2_tr[a]);
-    		}
+          SymmetricTensor<2, dim, double> get_tau_E_neq_stored() const override
+          {
+            return tau_neq_val;
+          }
 
-    		// Define tolerace and check values for the local Newton method.
-    		// Declare a vector for the residual and a 2nd order tensor for the tangent.
-    		// Compute the elastic Jacobian based on the elastic left Cauchy-Green trial strain.
-    		const double tolerance = 1e-8;
-    		double residual_check = tolerance*10.0;
-    		Tensor< 1, dim, NumberType > residual_1, residual_2;
-    		Tensor< 2, dim, NumberType > tangent_1, tangent_2;
-    		static const SymmetricTensor< 2, dim, double> I(Physics::Elasticity::StandardTensors<dim>::I);
-    		NumberType J_e_1 = std::sqrt(determinant(B_e_1_tr));
-    		NumberType J_e_2 = std::sqrt(determinant(B_e_2_tr));
+        protected:
+          std::vector<double> mu_infty;
+          std::vector<double> alpha_infty;
+          std::array<std::array<double, 3>, 2> mu_mode;
+          std::array<std::array<double, 3>, 2> alpha_mode;
+          std::array<double, 2> viscosity_mode;
+          std::array<SymmetricTensor<2, dim, double>, 2> Cinv_v;
+          std::array<SymmetricTensor<2, dim, double>, 2> Cinv_v_converged;
+          std::array<SymmetricTensor<2, dim, double>, 2> tau_neq_mode_val;
+          SymmetricTensor<2, dim, double> tau_neq_val;
 
-    		// Declare a vector to store the isochoric elastic principal stretches, a 2nd order tensor for the
-    		// actual left Cauchy-Green strain, an iteration counter, vectors for the actual principal stretches
-    		// and logarithmic principal stretches (set to its trial values).
-    		std::vector<NumberType> lambdas_e_1_iso(dim), lambdas_e_2_iso(dim);
-    		SymmetricTensor<2, dim, NumberType> B_e_1, B_e_2;
-    		int iteration = 0;
+          // Ein Maxwell-Ast m: Zeitintegration (Reese & Govindjee) wie in visco_Ogden.
+          // Speichert Cinv_v[m] und tau_neq_mode_val[m], gibt tau_neq des Astes (mit Ableitungen) zurueck.
+          SymmetricTensor<2, dim, NumberType> update_mode(const Tensor<2, dim, NumberType> &F, const unsigned int m)
+          {
+            this->Cinv_v[m] = this->Cinv_v_converged[m];
+            // compute trial elastic left Cauchy-Green strain from viscous right Cauchy-Green strain at t-1
+            SymmetricTensor<2, dim, NumberType> B_e_tr = symmetrize(F * this->Cinv_v[m] * transpose(F));
 
-    		Tensor< 1, dim, NumberType > lambdas_e_1, lambdas_e_2;
-    		Tensor< 1, dim, NumberType > epsilon_e_1, epsilon_e_2;
-    		epsilon_e_1 = epsilon_e_1_tr;
-    		epsilon_e_2 = epsilon_e_2_tr;
+            // compute eigenvalues and eigenvectors of the elastic left Cauchy-Green trial strain
+            const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B_e_tr = eigenvectors(B_e_tr, this->eigen_solver);
 
-    		while(residual_check > tolerance) {
-    			// Compute the updated elastic Jacobians with the help of auxiliary variables
-    			NumberType aux_J_e_1 = 1.0;
+            // logarithmic elastic trial principal stretches
+            Tensor< 1, dim, NumberType > epsilon_e_tr;
+            for (int a = 0; a < dim; ++a)
+              epsilon_e_tr[a] = std::log(std::sqrt(eigen_B_e_tr[a].first));
 
-    			for (unsigned int a = 0; a < dim; ++a) {
-    				lambdas_e_1[a] = std::exp(epsilon_e_1[a]);
-    				aux_J_e_1 *= lambdas_e_1[a];
-    			}
-    			J_e_1 = aux_J_e_1;
+            const double tolerance = 1e-8;
+            const double c_dt = this->time->get_delta_t() / (2.0 * viscosity_mode[m]);
 
-    			// Compute the isochoric elastic principal stretches
-    			for (unsigned int a = 0; a < dim; ++a)
-    				lambdas_e_1_iso[a] = lambdas_e_1[a]*std::pow(J_e_1,-1.0/dim);
+            // (1) lokales Newton in double
+            Tensor<1, dim, double> eps_tr_d;
+            for (unsigned int a = 0; a < dim; ++a)
+              eps_tr_d[a] = Tensor<0, dim, double>(epsilon_e_tr[a]);
 
-    			for (unsigned int a = 0; a < dim; ++a) {
-    				residual_1[a] = get_beta_mode_1(lambdas_e_1_iso, a);
-    				residual_1[a] *= this->time->get_delta_t()/(2.0*viscosity_mode_1);
-    				residual_1[a] += epsilon_e_1[a];
-    				residual_1[a] -= epsilon_e_1_tr[a];
+            Tensor<1, dim, double> eps = eps_tr_d;
+            Tensor<1, dim, double> res;
+            Tensor<2, dim, double> tang;
 
-    				for (unsigned int b = 0; b < dim; ++b) {
-    					tangent_1[a][b]  = get_gamma_mode_1(lambdas_e_1_iso, a, b);
-    					tangent_1[a][b] *= this->time->get_delta_t()/(2.0*viscosity_mode_1);
-    					tangent_1[a][b] += I[a][b];
-    				}
+            auto eval_local = [&](const Tensor<1, dim, double> &e)
+            {
+              Tensor<1, dim, double> lam, lam_iso, beta_d;
+              Tensor<2, dim, double> gamma_d;
+              double J = 1.0;
+              for (unsigned int a = 0; a < dim; ++a) { lam[a] = std::exp(e[a]); J *= lam[a]; }
+              for (unsigned int a = 0; a < dim; ++a) lam_iso[a] = lam[a] * std::pow(J, -1.0 / dim);
+              get_beta_gamma_mode<double>(m, lam_iso, beta_d, &gamma_d);
+              for (unsigned int a = 0; a < dim; ++a)
+              {
+                res[a] = beta_d[a]; res[a] *= c_dt; res[a] += e[a]; res[a] -= eps_tr_d[a];
+                for (unsigned int b = 0; b < dim; ++b)
+                {
+                  tang[a][b] = gamma_d[a][b]; tang[a][b] *= c_dt; tang[a][b] += (a == b ? 1.0 : 0.0);
+                }
+              }
+            };
 
-    			}
-    			epsilon_e_1 -= invert(tangent_1)*residual_1;
+            double residual_check = tolerance * 10.0;
+            int iteration = 0;
+            while (residual_check > tolerance)
+            {
+              eval_local(eps);
+              eps -= invert(tang) * res;
+              residual_check = 0.0;
+              for (unsigned int a = 0; a < dim; ++a)
+                residual_check = std::max(residual_check, std::abs(res[a]));
+              ++iteration;
+              if (iteration > 15)
+                AssertThrow(false, ExcMessage("No convergence in local Newton iteration for the viscoelastic exponential time integration algorithm (visco2-Ogden)."));
+            }
+            PhaseProbe::count_newton(iteration);
 
-    			residual_check = 0.0;
-    			for (unsigned int a = 0; a < dim; ++a) {
-    				if ( std::abs(residual_1[a]) > residual_check)
-    					residual_check = std::abs(Tensor<0,dim,double>(residual_1[a]));
-    			}
-    			iteration += 1;
-    			if (iteration > 15 )
-    				AssertThrow(false, ExcMessage("No convergence in local Newton iteration for the "
-    						"first viscoelastic exponential time integration algorithm."));
-    		}
+            // (2) ein Schritt mit Ableitungen (implizite Funktion):
+            //     eps_AD = eps - K^-1 R + K^-1 (eps_tr_AD - eps_tr_d)
+            eval_local(eps);
+            const Tensor<2, dim, double> Kinv = invert(tang);
+            const Tensor<1, dim, double> newton_step = Kinv * res;
 
-    		residual_check = tolerance*10.0;
-    		while(residual_check > tolerance) {
-    			// Compute the updated elastic Jacobians with the help of auxiliary variables
-    			NumberType aux_J_e_2 = 1.0;
+            Tensor<1, dim, NumberType> d_eps_tr;
+            for (unsigned int b = 0; b < dim; ++b)
+            {
+              d_eps_tr[b] = epsilon_e_tr[b];
+              d_eps_tr[b] -= eps_tr_d[b];                 // Wert 0, Ableitungen von eps_tr
+            }
 
-    			for (unsigned int a = 0; a < dim; ++a) {
-    				lambdas_e_2[a] = std::exp(epsilon_e_2[a]);
-    				aux_J_e_2 *= lambdas_e_2[a];
-    			}
-    			J_e_2 = aux_J_e_2;
+            Tensor<1, dim, NumberType> epsilon_e;
+            for (unsigned int a = 0; a < dim; ++a)
+            {
+              NumberType e_a = eps[a] - newton_step[a];
+              for (unsigned int b = 0; b < dim; ++b)
+                e_a += Kinv[a][b] * d_eps_tr[b];
+              epsilon_e[a] = e_a;
+            }
 
-    			// Compute the isochoric elastic principal stretches
-    			for (unsigned int a = 0; a < dim; ++a)
-    				lambdas_e_2_iso[a] = lambdas_e_2[a]*std::pow(J_e_2,-1.0/dim);
+            Tensor<1, dim, NumberType> lambdas_e_iso;
+            SymmetricTensor<2, dim, NumberType> B_e;
+            Tensor<1, dim, NumberType> lambdas_e;
 
-    			for (unsigned int a = 0; a < dim; ++a) {
-    				residual_2[a] = get_beta_mode_2(lambdas_e_2_iso, a);
-    				residual_2[a] *= this->time->get_delta_t()/(2.0*viscosity_mode_2);
-    				residual_2[a] += epsilon_e_2[a];
-    				residual_2[a] -= epsilon_e_2_tr[a];
+            NumberType J_e = 1.0;
+            for (unsigned int a = 0; a < dim; ++a) {
+              lambdas_e[a] = std::exp(epsilon_e[a]);
+              J_e *= lambdas_e[a];
+            }
+            for (unsigned int a = 0; a < dim; ++a)
+              lambdas_e_iso[a] = lambdas_e[a]*std::pow(J_e,-1.0/dim);
 
-    				for (unsigned int b = 0; b < dim; ++b) {
-    					tangent_2[a][b]  = get_gamma_mode_2(lambdas_e_2_iso, a, b);
-    					tangent_2[a][b] *= this->time->get_delta_t()/(2.0*viscosity_mode_2);
-    					tangent_2[a][b] += I[a][b];
-    				}
+            for (unsigned int a = 0; a < dim; ++a) {
+              SymmetricTensor<2, dim, NumberType> B_e_aux = symmetrize(outer_product(eigen_B_e_tr[a].second,eigen_B_e_tr[a].second));
+              B_e_aux *= lambdas_e[a] * lambdas_e[a];
+              B_e += B_e_aux;
+            }
 
-    			}
-    			epsilon_e_2 -= invert(tangent_2)*residual_2;
+            Tensor<2, dim, NumberType> Cinv_v_AD = symmetrize(invert(F) * B_e * invert(transpose(F)));
 
-    			residual_check = 0.0;
-    			for (unsigned int a = 0; a < dim; ++a) {
-    				if ( std::abs(residual_2[a]) > residual_check)
-    					residual_check = std::abs(Tensor<0,dim,double>(residual_2[a]));
-    			}
-    			iteration += 1;
-    			if (iteration > 15 )
-    				AssertThrow(false, ExcMessage("No convergence in local Newton iteration for the "
-    						"second viscoelastic exponential time integration algorithm."));
-    		}
+            Tensor<1, dim, NumberType> beta;
+            get_beta_gamma_mode<NumberType>(m, lambdas_e_iso, beta, nullptr);
+            SymmetricTensor<2, dim, NumberType> tau_m;
+            for (unsigned int a = 0; a < dim; ++a) {
+              SymmetricTensor<2, dim, NumberType> tau_aux = symmetrize(outer_product(eigen_B_e_tr[a].second, eigen_B_e_tr[a].second));
+              tau_aux *= beta[a];
+              tau_m += tau_aux;
+            }
+            for (unsigned int a = 0; a < dim; ++a)
+              for (unsigned int b = a; b < dim; ++b)
+                this->tau_neq_mode_val[m][a][b] = Tensor<0, dim, double>(tau_m[a][b]);
 
-    		NumberType aux_J_e_1 = 1.0, aux_J_e_2 = 1.0;
-    		for (unsigned int a = 0; a < dim; ++a) {
-    			lambdas_e_1[a] = std::exp(epsilon_e_1[a]);
-    			aux_J_e_1 *= lambdas_e_1[a];
-    			lambdas_e_2[a] = std::exp(epsilon_e_2[a]);
-    			aux_J_e_2 *= lambdas_e_2[a];
-    		}
-    		J_e_1 = aux_J_e_1;
-    		J_e_2 = aux_J_e_2;
+            // Store history
+            for (unsigned int a = 0; a < dim; ++a)
+              for (unsigned int b = 0; b < dim; ++b)
+                this->Cinv_v[m][a][b]= Tensor<0,dim,double>(Cinv_v_AD[a][b]);
 
-    		for (unsigned int a = 0; a < dim; ++a) {
-    			lambdas_e_1_iso[a] = lambdas_e_1[a]*std::pow(J_e_1,-1.0/dim);
-    			lambdas_e_2_iso[a] = lambdas_e_2[a]*std::pow(J_e_2,-1.0/dim);
-    		}
+            return tau_m;
+          }
 
-    		for (unsigned int a = 0; a < dim; ++a) {
-    			SymmetricTensor<2, dim, NumberType> B_e_1_aux = symmetrize(outer_product(eigen_B_e_1_tr[a].second,eigen_B_e_1_tr[a].second));
-    			B_e_1_aux *= lambdas_e_1[a] * lambdas_e_1[a];
-    			B_e_1 += B_e_1_aux;
-    			SymmetricTensor<2, dim, NumberType> B_e_2_aux = symmetrize(outer_product(eigen_B_e_2_tr[a].second,eigen_B_e_2_tr[a].second));
-    			B_e_2_aux *= lambdas_e_2[a] * lambdas_e_2[a];
-    			B_e_2 += B_e_2_aux;
-    		}
+          SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const override
+          {
+              return ( get_tau_E_neq(F) + get_tau_E_eq(F) );
+          }
 
-    		Tensor<2, dim, NumberType> Cinv_v_1_AD = symmetrize(invert(F) * B_e_1 * invert(transpose(F)));
-    		Tensor<2, dim, NumberType> Cinv_v_2_AD = symmetrize(invert(F) * B_e_2 * invert(transpose(F)));
+          // Gleichgewichtsast: identisch zu visco_Ogden
+          SymmetricTensor<2, dim, NumberType> get_tau_E_eq(const Tensor<2,dim, NumberType> &F) const
+          {
+        	  const SymmetricTensor<2, dim, NumberType> B = symmetrize(F * transpose(F));
+        	  std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B;
+        	  eigen_B = eigenvectors(B, this->eigen_solver);
 
-    		this->tau_neq_1 = 0;
-    		this->tau_neq_2 = 0;
-    		for (unsigned int a = 0; a < dim; ++a) {
-    			SymmetricTensor<2, dim, NumberType> tau_neq_1_aux = symmetrize(outer_product(eigen_B_e_1_tr[a].second,eigen_B_e_1_tr[a].second));
-    			tau_neq_1_aux *=  get_beta_mode_1(lambdas_e_1_iso, a);
-    			this->tau_neq_1 += tau_neq_1_aux;
-    			SymmetricTensor<2, dim, NumberType> tau_neq_2_aux = symmetrize(outer_product(eigen_B_e_2_tr[a].second,eigen_B_e_2_tr[a].second));
-    			tau_neq_2_aux *=  get_beta_mode_2(lambdas_e_2_iso, a);
-    			this->tau_neq_2 += tau_neq_2_aux;
-    		}
+        	  Tensor<1, dim, NumberType> lambda;
+        	  for (unsigned int a = 0; a < dim; ++a)
+        		  lambda[a] = std::sqrt(eigen_B[a].first);
 
-    		// Print eigenvalues to file
-    		/*std::ofstream tau_neq;
-    		tau_neq.open("tau_neq", std::ofstream::app);
-    		tau_neq << std::setprecision(6) << std::scientific;
-    		tau_neq << std::setw(16) << this->time->get_current() << ","
-    				<< std::setw(16) << tau_neq_1 << ","
-					<< std::setw(16) << tau_neq_2 << std::endl;
-    		tau_neq.close();*/
+        	  SymmetricTensor<2, dim, NumberType>  tau_E_eq;
+        	  for (unsigned int A = 0; A < dim; ++A) {
+        		  SymmetricTensor<2, dim, NumberType>  ev_basis = symmetrize(outer_product(eigen_B[A].second,eigen_B[A].second));
+        		  tau_E_eq += get_beta_infty(lambda, A) * ev_basis;
+        	  }
+        	  return tau_E_eq;
+          }
 
-    		// Store history
-    		for (unsigned int a = 0; a < dim; ++a)
-    			for (unsigned int b = 0; b < dim; ++b) {
-    				this->Cinv_v_1[a][b]= Tensor<0,dim,double>(Cinv_v_1_AD[a][b]);
-    				this->Cinv_v_2[a][b]= Tensor<0,dim,double>(Cinv_v_2_AD[a][b]);
-    			}
-    	}
+          static NeqWorkspace<dim, NumberType> &ws()
+          {
+            static thread_local NeqWorkspace<dim, NumberType> nw;
+            return nw;
+          }
 
-    	void update_end_timestep() override
-    	{
-    		Material_Hyperelastic < dim, NumberType >::update_end_timestep();
-    		this->Cinv_v_1_converged = this->Cinv_v_1;
-    		this->Cinv_v_2_converged = this->Cinv_v_2;
-    	}
+          SymmetricTensor<2, dim, NumberType> get_tau_E_neq(const Tensor<2, dim, NumberType> &F) const
+          {
+            const auto &nw = ws();
+            if (nw.owner == this && n_deriv(nw.tau[0][0]) == n_deriv(F[0][0]))
+              return nw.tau;
+            SymmetricTensor<2, dim, NumberType> t;
+            for (unsigned int a = 0; a < dim; ++a)
+              for (unsigned int b = a; b < dim; ++b)
+                t[a][b] = tau_neq_val[a][b];
+            return t;
+          }
 
-    	double get_viscous_dissipation() const override
-    	{
-    		NumberType dissipation_term_1 = this->tau_neq_1 * this->tau_neq_1; //Double contract the two SymmetricTensor
-    		dissipation_term_1 /= (2*viscosity_mode_1);
-    		NumberType dissipation_term_2 = this->tau_neq_2 * this->tau_neq_2; //Double contract the two SymmetricTensor
-    		dissipation_term_2 /= (2*viscosity_mode_2);
+          NumberType get_beta_infty(Tensor<1, dim, NumberType> &lambda, const unsigned int &A) const
+          {
+        	  NumberType beta = 0.0;
+        	  for (unsigned int i = 0; i < 3; ++i) {     // 3rd-order Ogden model
+        		  NumberType aux = 0.0;
+        		  aux += std::pow(lambda[A], alpha_infty[i]);
+              aux -= 1;
+        		  aux *= mu_infty[i];
+        		  beta  += aux;
+        	  }
+        	  return beta;
+          }
 
-    		return dissipation_term_1.val() + dissipation_term_2.val();
-    	}
+          // beta_a (und optional gamma_ab) des Astes m, wie get_beta_gamma_mode_1 in visco_Ogden
+          template <typename T>
+          void get_beta_gamma_mode(const unsigned int m,
+                                  const Tensor<1, dim, T> &lambda_iso,
+                                  Tensor<1, dim, T> &beta,
+                                  Tensor<2, dim, T> *gamma) const
+          {
+            for (unsigned int a = 0; a < dim; ++a) beta[a] = 0.0;
+            if (gamma)
+              for (unsigned int a = 0; a < dim; ++a)
+                for (unsigned int b = 0; b < dim; ++b)
+                  (*gamma)[a][b] = 0.0;
 
-    protected:
-    	std::vector<double> mu_infty;
-    	std::vector<double> alpha_infty;
-    	std::vector<double> mu_mode_1;
-    	std::vector<double> alpha_mode_1;
-    	double viscosity_mode_1;
-    	SymmetricTensor<2, dim, double> Cinv_v_1;
-    	SymmetricTensor<2, dim, double> Cinv_v_1_converged;
-    	SymmetricTensor<2, dim, NumberType> tau_neq_1;
-    	std::vector<double> mu_mode_2;
-    	std::vector<double> alpha_mode_2;
-    	double viscosity_mode_2;
-    	SymmetricTensor<2, dim, double> Cinv_v_2;
-    	SymmetricTensor<2, dim, double> Cinv_v_2_converged;
-    	SymmetricTensor<2, dim, NumberType> tau_neq_2;
-
-    	SymmetricTensor<2, dim, NumberType>
-    	get_tau_E_base(const Tensor<2,dim, NumberType> &F) const override
-		{
-    		return ( get_tau_E_neq() + get_tau_E_eq(F) );
-		}
-
-    	SymmetricTensor<2, dim, NumberType>
-    	get_tau_E_eq(const Tensor<2,dim, NumberType> &F) const
-		{
-    		const SymmetricTensor<2, dim, NumberType> B = symmetrize(F * transpose(F));
-
-    		std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B;
-    		eigen_B = eigenvectors(B, this->eigen_solver);
-
-    		SymmetricTensor<2, dim, NumberType>  tau;
-    		static const SymmetricTensor< 2, dim, double>
-    		I (Physics::Elasticity::StandardTensors<dim>::I);
-
-    		for (unsigned int i = 0; i < 3; ++i)
-    		{
-    			for (unsigned int A = 0; A < dim; ++A)
-    			{
-    				SymmetricTensor<2, dim, NumberType>  tau_aux1 = symmetrize(
-    						outer_product(eigen_B[A].second,eigen_B[A].second));
-    				tau_aux1 *= mu_infty[i]*std::pow(eigen_B[A].first, (alpha_infty[i]/2.) );
-    				tau += tau_aux1;
-    			}
-    			SymmetricTensor<2, dim, NumberType>  tau_aux2 (I);
-    			tau_aux2 *= mu_infty[i];
-    			tau -= tau_aux2;
-    		}
-    		return tau;
-		}
-
-    	SymmetricTensor<2, dim, NumberType>
-    	get_tau_E_neq() const
-		{
-    		return tau_neq_1 + tau_neq_2;
-		}
-
-    	NumberType get_beta_mode_1(std::vector< NumberType > &lambda, const int &A) const
-    	{
-    		NumberType beta = 0.0;
-    		//3rd-order Ogden model
-    		for (unsigned int i = 0; i < 3; ++i) {
-    			NumberType aux = 0.0;
-    			for (int p = 0; p < dim; ++p)
-    				aux += std::pow(lambda[p],alpha_mode_1[i]);
-
-    			aux *= -1.0/dim;
-    			aux += std::pow(lambda[A], alpha_mode_1[i]);
-    			aux *= mu_mode_1[i];
-
-    			beta  += aux;
-    		}
-    		return beta;
-    	}
-
-    	NumberType get_beta_mode_2(std::vector< NumberType > &lambda, const int &A) const
-    	{
-    		NumberType beta = 0.0;
-    		//3rd-order Ogden model
-    		for (unsigned int i = 0; i < 3; ++i) {
-    			NumberType aux = 0.0;
-    			for (int p = 0; p < dim; ++p)
-    				aux += std::pow(lambda[p],alpha_mode_2[i]);
-
-    			aux *= -1.0/dim;
-    			aux += std::pow(lambda[A], alpha_mode_2[i]);
-    			aux *= mu_mode_2[i];
-
-    			beta  += aux;
-    		}
-    		return beta;
-    	}
-
-    	NumberType get_gamma_mode_1(std::vector< NumberType > &lambda, const int &A, const int &B) const
-    	{
-    		NumberType gamma = 0.0;
-
-    		if (A==B) {
-    			for (unsigned int i = 0; i < 3; ++i) {
-    				NumberType aux = 0.0;
-    				for (int p = 0; p < dim; ++p)
-    					aux += std::pow(lambda[p],alpha_mode_1[i]);
-
-    				aux *= 1.0/(dim*dim);
-    				aux += 1.0/dim * std::pow(lambda[A], alpha_mode_1[i]);
-    				aux *= mu_mode_1[i]*alpha_mode_1[i];
-
-    				gamma += aux;
-    			}
-    		} else {
-    			for (unsigned int i = 0; i < 3; ++i) {
-    				NumberType aux = 0.0;
-    				for (int p = 0; p < dim; ++p)
-    					aux += std::pow(lambda[p],alpha_mode_1[i]);
-
-    				aux *= 1.0/(dim*dim);
-    				aux -= 1.0/dim * std::pow(lambda[A], alpha_mode_1[i]);
-    				aux -= 1.0/dim * std::pow(lambda[B], alpha_mode_1[i]);
-    				aux *= mu_mode_1[i]*alpha_mode_1[i];
-
-    				gamma += aux;
-    			}
-    		}
-    		return gamma;
-    	}
-
-    	NumberType get_gamma_mode_2(std::vector< NumberType > &lambda, const int &A, const int &B) const
-    	{
-    		NumberType gamma = 0.0;
-
-    		if (A==B) {
-    			for (unsigned int i = 0; i < 3; ++i) {
-    				NumberType aux = 0.0;
-    				for (int p = 0; p < dim; ++p)
-    					aux += std::pow(lambda[p],alpha_mode_2[i]);
-
-    				aux *= 1.0/(dim*dim);
-    				aux += 1.0/dim * std::pow(lambda[A], alpha_mode_2[i]);
-    				aux *= mu_mode_2[i]*alpha_mode_2[i];
-
-    				gamma += aux;
-    			}
-    		} else {
-    			for (unsigned int i = 0; i < 3; ++i) {
-    				NumberType aux = 0.0;
-    				for (int p = 0; p < dim; ++p)
-    					aux += std::pow(lambda[p],alpha_mode_2[i]);
-
-    				aux *= 1.0/(dim*dim);
-    				aux -= 1.0/dim * std::pow(lambda[A], alpha_mode_2[i]);
-    				aux -= 1.0/dim * std::pow(lambda[B], alpha_mode_2[i]);
-    				aux *= mu_mode_2[i]*alpha_mode_2[i];
-
-    				gamma += aux;
-    			}
-    		}
-    		return gamma;
-    	}
+            for (unsigned int i = 0; i < 3; ++i)
+              {
+                T pw[dim];
+                T S = 0.0;
+                for (unsigned int p = 0; p < dim; ++p)
+                  {
+                    pw[p] = std::pow(lambda_iso[p], alpha_mode[m][i]);
+                    S += pw[p];
+                  }
+                T Sb = S;
+                Sb *= -1.0 / dim;
+                for (unsigned int A = 0; A < dim; ++A)
+                  {
+                    T aux = Sb;
+                    aux += pw[A];
+                    aux *= mu_mode[m][i];
+                    beta[A] += aux;
+                  }
+                if (gamma)
+                  for (unsigned int A = 0; A < dim; ++A)
+                    for (unsigned int B = 0; B < dim; ++B)
+                      {
+                        T aux = S;
+                        aux *= 1.0 / (dim * dim);
+                        if (A == B)
+                          aux += 1.0 / dim * pw[A];
+                        else
+                          {
+                            aux -= 1.0 / dim * pw[A];
+                            aux -= 1.0 / dim * pw[B];
+                          }
+                        aux *= mu_mode[m][i] * alpha_mode[m][i];
+                        (*gamma)[A][B] += aux;
+                      }
+              }
+          }
     };
+
 
 
 // @sect3{Constitutive equation for the fluid component of the biphasic material}
