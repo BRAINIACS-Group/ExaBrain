@@ -1675,7 +1675,8 @@ namespace NonLinearPoroViscoElasticity
                                                  "|hydro_nano_graz_compression_relax_sphere"
                                                  "|odeometer_graz"
                                                  "|sliding_indenter"
-                                                 "|full_brain_indenter"),
+                                                 "|full_brain_indenter"
+                                                 "|full_brain_retraction_spatula"),
                                 "Type of geometry used. "
                                 "For Ehlers verification examples see Ehlers and Eipper (1999). "
                                 "For Franceschini brain consolidation see Franceschini et al. (2006)"
@@ -13860,6 +13861,198 @@ lap(PhaseProbe::RESIDUAL);
             return displ_incr;  
             };
     };
+
+
+    template <int dim>
+    class FullBrainRetractionBase : public Solid<dim>
+    {
+        public:
+            FullBrainRetractionBase (const Parameters::AllParameters &parameters) : Solid<dim> (parameters) {}
+            virtual ~FullBrainRetractionBase () {}
+
+        private:
+            virtual void make_grid() override
+            {
+              // TODO: Pfad anpassen, sobald das Inzisions-Mesh existiert.
+              // Konvention der Boundary-IDs: 200 = Hirnboden (fest), 0 = restliche
+              // freie Hirnoberflaeche (drained), 11 = Spatel A, 12 = Spatel B
+              // (beide undrained/no-flow).
+              std::ifstream input_path("/home/hpc/iwtm/iwtm107h/full-brain/retraction/OAS1_0002_MR1_UCD_HR_incision.inp");
+              dealii::GridIn<dim> gridIn;
+              gridIn.attach_triangulation(this->triangulation);
+              gridIn.read_ucd(input_path);
+
+              std::set<types::material_id> unique_material_ids;
+              std::set<types::boundary_id> unique_boundary_ids;
+
+              for (const auto &cell : this->triangulation.active_cell_iterators()) {
+                  unique_material_ids.insert(cell->material_id());
+                  for (const auto &face : cell->face_iterators()) {
+                      if (face->at_boundary()) {
+                          unique_boundary_ids.insert(face->boundary_id());
+                      }
+                  }
+              }
+
+              std::cout << "Vergebene Material-IDs: ";
+              for (auto id : unique_material_ids)
+                  std::cout << static_cast<unsigned int>(id) << " ";
+              std::cout << std::endl;
+
+              std::cout << "Vergebene Boundary-IDs: ";
+              for (auto id : unique_boundary_ids)
+                  std::cout << static_cast<unsigned int>(id) << " ";
+              std::cout << std::endl;
+            }
+
+            virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
+            {
+              const types::boundary_id target_id = 11; // Spatel A
+              std::set<unsigned int> vertex_indices;
+
+              for (const auto &cell : this->triangulation.active_cell_iterators()) {
+                  if (cell->at_boundary()) {
+                      for (const auto &face : cell->face_iterators()) {
+                          if (face->at_boundary() && face->boundary_id() == target_id) {
+                              for (unsigned int v = 0; v < GeometryInfo<dim>::vertices_per_face; ++v)
+                                  vertex_indices.insert(face->vertex_index(v));
+                          }
+                      }
+                  }
+              }
+
+              auto it = vertex_indices.begin();
+              std::advance(it, 4);
+              unsigned int fifth_v_idx = *it;
+              tracked_vertices[0] = this->triangulation.get_vertices()[fifth_v_idx];
+            }
+
+            virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
+            {
+              // Brain bottom is fully fixed in space
+              VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                       200,
+                                                       Functions::ZeroFunction<dim>(this->n_components),
+                                                       constraints,
+                                                       (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
+
+              // Brain surface drained except from the two spatula contact surfaces
+              if (this->time->get_timestep() < 2) {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          0,
+                                                          Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+              } else {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          0,
+                                                          Functions::ZeroFunction<dim>(this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+              }
+              if (this->time->get_timestep() < 2) {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          200,
+                                                          Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+              } else {
+                  VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                          200,
+                                                          Functions::ZeroFunction<dim>(this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->pressure));
+              }
+              // Boundary IDs 11 and 12 (spatula contact surfaces): keine Druck-RB
+              // -> natuerliche no-flow/undrained Randbedingung.
+
+              // Apply displacement to the two spatula surfaces (opposite z-direction)
+              if (this->parameters.load_type == "displacement") {
+                  const std::vector<double> valueA = get_dirichlet_load(11,2);
+                  VectorTools::interpolate_boundary_values(
+                      this->dof_handler_ref,
+                          11,
+                          Functions::ConstantFunction<dim>(valueA[2],this->n_components),
+                          constraints,
+                          this->fe.component_mask(this->z_displacement));
+
+                  const std::vector<double> valueB = get_dirichlet_load(12,2);
+                  VectorTools::interpolate_boundary_values(
+                      this->dof_handler_ref,
+                          12,
+                          Functions::ConstantFunction<dim>(valueB[2],this->n_components),
+                          constraints,
+                          this->fe.component_mask(this->z_displacement));
+              }
+            }
+
+            virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
+            {
+                if (this->parameters.load_type == "pressure")
+                    AssertThrow(false, ExcMessage("Pressure loading not implemented for full-brain retraction examples."));
+
+                (void)boundary_id;
+                (void)pt;
+                (void)N;
+                return Tensor<1,dim>();
+            }
+
+            virtual types::boundary_id get_reaction_boundary_id_for_output() const override
+            {
+                return 11; // Spatel A; Spatel B (id 12) bei Bedarf separat auswerten
+            }
+
+            virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const override
+            {
+                (void)pt;
+                (void)boundary_id;
+                return 0.0;
+            }
+
+            virtual std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const override
+            {
+                // Spatelflaechen (11,12) sind undrained, nur 0 und 200 sind drained
+                return std::make_pair(0,200);
+            }
+
+            virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override = 0;
+    };
+
+    template <int dim>
+    class FullBrainRetractionSpatula : public FullBrainRetractionBase<dim>
+    {
+        public:
+            FullBrainRetractionSpatula (const Parameters::AllParameters &parameters) : FullBrainRetractionBase<dim> (parameters) {}
+            virtual ~FullBrainRetractionSpatula () {}
+
+        private:
+            virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
+            {
+                std::vector<double> displ_incr (dim, 0.0);
+
+                if ((boundary_id == 11 || boundary_id == 12) && (direction == 2)) {
+                    const double sign = (boundary_id == 11) ? 1.0 : -1.0;
+                    const double final_displ = sign * this->parameters.load;
+                    const double final_load_time = this->parameters.end_load_time;
+                    const double current_time = this->time->get_current();
+                    const double delta_time = this->time->get_delta_t();
+
+                    double current_displ = 0.0;
+                    double previous_displ = 0.0;
+
+                    if (current_time <= final_load_time) {
+                        current_displ = (current_time/final_load_time) * final_displ;
+
+                        if (current_time > delta_time)
+                              previous_displ = ((current_time-delta_time)/final_load_time) * final_displ;
+
+                        displ_incr[direction] = current_displ - previous_displ;
+                    } else
+                        displ_incr[direction] = sign * 0.000000001;
+                }
+            return displ_incr;
+            };
+    };
 }
 
 // @sect3{Main function}
@@ -14041,6 +14234,11 @@ int main (int argc, char *argv[])
       else if (parameters.geom_type == "full_brain_indenter")
       {
         FullBrainIndenter<3> solid_3d(parameters);
+        solid_3d.run();
+      }
+      else if (parameters.geom_type == "full_brain_retraction_spatula")
+      {
+        FullBrainRetractionSpatula<3> solid_3d(parameters);
         solid_3d.run();
       }
       else
