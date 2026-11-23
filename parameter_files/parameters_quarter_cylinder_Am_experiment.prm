@@ -1,0 +1,268 @@
+# Forward simulation: quarter cylinder (R = 4 mm, H = 4.667 mm), Am (amygdala) loading protocol
+# from the rheometer experiment (averaged over 12 specimens): cyclic compression/tension,
+# compression relaxation, tension relaxation, ~960 s, +-0.7 mm (~15 % strain).
+#  - Load path: parameter_files/data/Am_load_path.csv (time,displacement in s/mm; one time step per row,
+#    978 steps, strain increment <= 0.34 %/step, growing steps during holds).
+#  - Experimental force for comparison: parameter_files/data/Am_experiment.csv (force in N, full cylinder;
+#    empty = not measured). Compare with column "reac_cons [2]" in data-for-gnuplot.sol (already in N, x4).
+#  - Material: visco-Ogden, two-term Ogden equilibrium + one Ogden Maxwell branch, parameters from
+#    the Am fit (series T11).
+# Run from the repository root, the output directory must exist:
+#   mkdir -p out_Am_experiment
+#   mpirun -np 8 ./nonlinear-poro-viscoelasticity 1 parameter_files/parameters_quarter_cylinder_Am_experiment.prm
+subsection global
+  # input directory path (relative to the directory you start the program from)
+  set input directory = parameter_files/data
+end  
+
+subsection Finite element system
+  # Displacement system polynomial order
+  set Polynomial degree displ = 2
+
+  # Pore pressure system polynomial order
+  set Polynomial degree pore  = 1
+
+  # Gauss quadrature order (should be at least an order higher than the polynomial order)
+  set Quadrature order        = 3
+end
+
+
+subsection geometry@[type=hydro_graz]
+  # Type of geometry:  Ehlers_tube_step_load | Ehlers_tube_increase_load | Ehlers_cube_consolidation
+  #                  | Franceschini_consolidation
+  #                  | Budday_cube_tension_compression | Budday_cube_tension_compression_fully_fixed 
+  #                  | Budday_cube_shear_fully_fixed 
+  #                  | Budday_cube_consolidation
+  #                  | brain_rheometer_shear_lateral_drained
+  #                  | brain_nanoindentation_sinus | brain_nanoindentation_ramp
+  #                  | brain_rheometer_cyclic_trapezoidal_tension_compression_quarter
+  #                  | brain_rheometer_relaxation_tension_compression_quarter
+  #                  | hydro_nano_graz_compression_relax
+  set Geometry type       = brain_rheometer_cyclic_tension_compression_exp_quarter
+
+  # Global refinement level (higher value means finer mesh)
+  # Introduce 0 for no refinement (only in case of externally defined mesh)
+  set Global refinement   = 2
+
+  # Local refinement levels at the glued edges r=R, z=0/H (quarter geometries)
+  set Edge refinement     = 0
+
+  # Degree of MappingQ (mesh study: 2)
+  set Mapping degree      = 2
+
+  # Global grid scaling factor (scales geometry size)
+  set Grid scale          = 1.0
+
+  set height = 4.667
+
+  set radius = 4.0
+
+end
+
+subsection testing_device@[type=porous_tension_compression_testing_device,instance=1]
+
+  #  Type of loading: pressure | displacement | none
+  set Load type           = displacement
+
+  set input files = Am_load_path.csv
+
+  # Value of loading [Pa] for pressure and [mm] for displacements
+  # For "brain_nanoindentation_test", radius of indenter (max displacement is 10% of radius)
+  set Load value          = 0.6
+
+  # Number of times each set of 3 cycles is repeated, only for "Budday_cube_tension_compression": 1 or 2
+  # (Load value is doubled in second set, load rate is kept constant. Final time indicates end of second cycle set.)
+  set Number of cycle sets = 3
+
+  # Value of the prescribed fluid flow [mm/s], Q* = w*·N should include + or - sign.
+  set Fluid flow value    = 0
+
+  # Increase of pressure at drained boundary [Pa] w.r.t. atmospheric pressure
+  set Drained pressure    = 0
+
+  # Set lateral surfaces to be drained or undrained: drained | undrained
+  set Lateral drained     = drained
+
+  # Set bottom surface to be drained or undrained: drained | undrained
+  set Bottom drained      = undrained
+
+  # Switch between confined and unconfined compression: confined | unconfined
+  set Lateral confined    = unconfined 
+end
+
+
+
+subsection Material properties
+
+  # ------------------------ SOLID ----------------------------------
+
+  # Type of material:  Neo-Hooke, Ogden or visco-Ogden
+  set material        = visco-Ogden
+
+  # First Lame parameter [Pa] (for extension function related to compactation point)
+  set lambda          = 1.288e4
+
+  # ===== Neo-Hooke only =====
+
+  # Shear modulus [Pa] (Second Lame parameter)  -- Neo-Hooke
+  set shear modulus  = 1000 #{mu}
+
+  # ===== Split isochoric/volumetric formulations only =====
+  set poisson ratio = -1 #{nu}
+
+  # ===== Ogden  + Visco-Ogden only =====
+
+  # Type of eigen solver for Ogden models: QL Implicit Shifts | Jacobi
+  set eigen solver    = QL Implicit Shifts
+
+  # Shear modulus mu1  [Pa]
+  set mu1             = -16.16
+
+  # Shear modulus mu2  [Pa]
+  set mu2             = 1.0
+
+  # Shear modulus mu3  [Pa]
+  set mu3             = 0.0
+
+  # Stiffening parameter alpha 1  [-]
+  set alpha1          = -13.83
+
+  # Stiffening parameter alpha 2  [-]
+  set alpha2          = 26.22
+
+  # Stiffening parameter alpha 3  [-]
+  set alpha3          = 1.0
+
+  # ===== Visco-Ogden only =====
+
+  # Shear modulus mu1  [Pa]
+  set mu1_1           = -45.38
+
+  # Shear modulus mu2  [Pa]
+  set mu2_1             = 0.0
+
+  # Shear modulus mu3  [Pa]
+  set mu3_1             = 0.0
+
+  # Stiffening parameter alpha 1  [-]
+  set alpha1_1          = -13.28
+
+  # Stiffening parameter alpha 2  [-]
+  set alpha2_1          = 1.0
+
+  # Stiffening parameter alpha 3  [-]
+  set alpha3_1          = 1.0
+
+  # Deformation-independent viscosity parameter [Pa·s]
+  set viscosity_1       = 8595.0
+
+  # ------------------------ FLUID ----------------------------------
+
+  # Choose between Markert formulation of deformation-dependent intrinsic permeability (Markert)
+  # and Ehlers formulation of deformation-dependent Darcy flow coefficient (Ehlers)
+  # to define the seepage velocity
+  set seepage definition = Markert
+
+  # Initial porosity (solid volume fraction)
+  set initial solid volume fraction    = 0.75
+  set compaction point                 = 0.75
+
+  # Deformation-dependency control parameter for specific permeability [kappa >= 0]
+  set kappa                            = 1
+
+  # ===== Markert only =====
+
+  # Initial intrinsic permeability parameter of the solid (isotropic permeability) [mm²]
+  # To be used with Markert formulation of deformation-dependent intrinsic permeability
+  set initial intrinsic permeability   = 1.811e-8
+
+  # Effective shear viscosity parameter of the fluid [Pa·s = 1e-6·N·s/mm³]
+  # To be used with Markert formulation of deformation-dependent intrinsic permeability
+  set fluid viscosity                  = 0.89e-3
+
+  # ===== Ehlers only =====
+
+  # Initial Darcy flow coefficient [mm/s]
+  # To be used with Ehlers formulation of deformation-dependent Darcy flow coefficient
+  set initial Darcy coefficient   = 2.42e-7
+
+  # Effective weight of fluid [1e-6·N/mm³]
+  # To be used with Ehlers formulation of deformation-dependent Darcy flow coefficient
+  set fluid weight                = 9.777
+
+  # ------------------------ GRAVITY ----------------------------------
+
+  # Gravity term considered (true) or neglected (false)
+  set gravity term      = false
+
+  # ===== gravity true only =====
+
+  # If gravity term is considered, define the (real or effective) density of the fluid [g/mm³]
+  set fluid density     = 0.997e-3
+
+  # If gravity term is considered, define the (real or effective) density of the solid [g/mm³]
+  set solid density     = 0.997e-3
+
+  # If gravity term is considered, define the direction of gravity (unit vector 0 for x, 1 for y, 2 for z)
+  set gravity direction = 2
+
+  # If gravity term is considered, define the value of gravity ("minus" indicates negative sense of direction) [mm/s²]
+  set gravity value     = -9810
+end
+
+subsection Nonlinear solver
+  # Number of Newton-Raphson iterations allowed
+  set Max iterations Newton-Raphson = 50
+
+  # Force residual tolerance
+  set Tolerance force               = 1.0e-8
+
+  # Displacement error tolerance
+  set Tolerance displacement        = 1.0e-8
+
+  # Pore pressure error tolerance
+  set Tolerance pore pressure       = 1.0e-8
+
+  # Type of linear solver: MumpsDirect | AmesosMumpsDirect | SuperLUdist | BLRGmres | BLRNewt
+  set Linear solver                     = MumpsDirect
+
+  # BLRNewt only, ignored by MumpsDirect (defaults from the code)
+  set Preconditioner update interval    = 3      # refactorize every n time steps
+  set Linear relative tolerance         = 1e-6   # FGMRES relative to the nonlinear residual
+  set Linear relative tolerance tight   = 1e-8   # after Newton stagnation or FGMRES failure
+  set Newton stagnation ratio           = 0.25
+  set Preconditioner refresh iterations = 15
+end
+
+
+subsection Time
+  # End time [s]
+  set End time            = 18
+
+  # End loading time [s] 
+  # Only for brain_nanoindentation_ramp. 
+  # Step size for loading is different to the relaxation period.
+  # It is computed automatically as dt=(end load time)/4.
+  set End load time            = 6.0
+
+  # Time step size [s]
+  set Time step size      =  1.0
+end
+
+
+subsection Output parameters
+  
+  set output directory = out_Am_experiment
+  
+  # Paraview output files to generate: none | bcs | solution | all
+  set Output files               = solution
+  
+  # Output data every given time step number for Paraview output files ("bcs" and "solution")
+  set Time step number output    = 10
+  
+  # For "solution" file output data associated with integration point values averaged on:  elements | nodes
+  set Averaged results           = nodes  
+
+  # Write output files for eigenvalue analysis: true | false
+  set Eigenvalue analysis        = false
+end
