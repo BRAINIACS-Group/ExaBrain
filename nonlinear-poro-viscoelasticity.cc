@@ -1632,6 +1632,13 @@ namespace NonLinearPoroViscoElasticity
         double       radius;
         unsigned int mapping_degree;
         unsigned int edge_refinement;
+        // full_brain_retraction_channel: Netz und Kanalachse (wie beim
+        // Schneiden mit apply_mesh_spec.py: 'entry', 'direction', Radius)
+        std::string         mesh_file;
+        std::vector<double> channel_axis_point;
+        std::vector<double> channel_axis_direction;
+        double              channel_radius;
+        double              channel_tip_center_depth;
 
         static void
         declare_parameters(ParameterHandler &prm);
@@ -1676,7 +1683,8 @@ namespace NonLinearPoroViscoElasticity
                                                  "|odeometer_graz"
                                                  "|sliding_indenter"
                                                  "|full_brain_indenter"
-                                                 "|full_brain_retraction_spatula"),
+                                                 "|full_brain_retraction_spatula"
+                                                 "|full_brain_retraction_channel"),
                                 "Type of geometry used. "
                                 "For Ehlers verification examples see Ehlers and Eipper (1999). "
                                 "For Franceschini brain consolidation see Franceschini et al. (2006)"
@@ -1698,6 +1706,23 @@ namespace NonLinearPoroViscoElasticity
                             Patterns::Double(0.0));
           prm.declare_entry("radius", "4.0",
                             Patterns::Double(0.0));
+          prm.declare_entry("Mesh file", "",
+                            Patterns::Anything(),
+                            "UCD-Netz (.inp) fuer full_brain_retraction_channel");
+          prm.declare_entry("Channel axis point", "0,0,0",
+                            Patterns::List(Patterns::Double(), 3, 3),
+                            "Punkt auf der Kanalachse (Spec: 'entry')");
+          prm.declare_entry("Channel axis direction", "0,1,0",
+                            Patterns::List(Patterns::Double(), 3, 3),
+                            "Richtung der Kanalachse ins Gewebe (Spec: 'direction')");
+          prm.declare_entry("Channel radius", "2.2",
+                            Patterns::Double(0.0),
+                            "Startradius des Kanals [mm] (Spec: 'start_radius')");
+          prm.declare_entry("Channel tip center depth", "-1",
+                            Patterns::Double(),
+                            "Halbkugel-Spitze: Tiefe des Kugelmittelpunkts auf der Achse ab "
+                            "'Channel axis point' [mm] (apply_mesh_spec.py druckt 'centre at t=...'); "
+                            "< 0: flacher Boden ohne Manifold");
         }
         prm.leave_subsection();
 
@@ -1757,6 +1782,13 @@ namespace NonLinearPoroViscoElasticity
           radius = prm.get_double("radius");
           mapping_degree  = prm.get_integer("Mapping degree");
           edge_refinement = prm.get_integer("Edge refinement");
+          mesh_file = prm.get("Mesh file");
+          channel_axis_point = Utilities::string_to_double(
+            Utilities::split_string_list(prm.get("Channel axis point")));
+          channel_axis_direction = Utilities::string_to_double(
+            Utilities::split_string_list(prm.get("Channel axis direction")));
+          channel_radius = prm.get_double("Channel radius");
+          channel_tip_center_depth = prm.get_double("Channel tip center depth");
         }
         prm.leave_subsection();
         prm.enter_subsection("testing_device@[type=porous_tension_compression_testing_device,instance=1]");
@@ -14053,6 +14085,317 @@ lap(PhaseProbe::RESIDUAL);
             return displ_incr;
             };
     };
+
+
+template <int dim>
+class get_dirichlet_bc_ChannelDilation : public Function<dim>
+{
+public:
+    get_dirichlet_bc_ChannelDilation (const Point<dim> &axis_point,
+                                       const Tensor<1,dim> &axis_direction,
+                                       const double delta_radius)
+    :
+    Function<dim> (dim+1),
+    axis_point(axis_point),
+    axis_direction(axis_direction),
+    delta_radius(delta_radius)
+    {}
+
+    void vector_value (const Point<dim> &pt, Vector<double> &values) const override
+    {
+        Assert (values.size() == (dim+1), ExcDimensionMismatch (values.size(), (dim+1)));
+        values = 0.0;
+
+        const Tensor<1,dim> rel = pt - axis_point;
+        const double t = rel * axis_direction;
+        const Tensor<1,dim> perp = rel - t * axis_direction;
+        const double r = perp.norm();
+
+        // auf der Achse selbst ist "radial" nicht definiert -- sollte am
+        // Kanalrand ohnehin nie auftreten, aber zur Sicherheit abgefangen.
+        if (r < 1e-10)
+            return;
+
+        const Tensor<1,dim> radial_unit = perp / r;
+        for (unsigned int d = 0; d < dim; ++d)
+            values(d) = radial_unit[d] * delta_radius;
+    }
+
+    void vector_value_list (const std::vector<Point<dim>> &points,
+                            std::vector<Vector<double>>    &value_list) const override
+    {
+        const unsigned int n_points = points.size();
+        Assert (value_list.size() == n_points, ExcDimensionMismatch (value_list.size(), n_points));
+        for (unsigned int p = 0; p < n_points; ++p)
+            get_dirichlet_bc_ChannelDilation<dim>::vector_value (points[p], value_list[p]);
+    }
+
+private:
+    const Point<dim> axis_point;
+    const Tensor<1,dim> axis_direction;
+    const double delta_radius;
+};
+
+
+template <int dim>
+class FullBrainRetractionChannel : public Solid<dim>
+{
+    public:
+        FullBrainRetractionChannel (const Parameters::AllParameters &parameters)
+          : Solid<dim> (parameters),
+            channel_axis_point(to_point(parameters.channel_axis_point)),
+            channel_axis_direction(to_point(parameters.channel_axis_direction)),
+            channel_start_radius(parameters.channel_radius)
+        {}
+        virtual ~FullBrainRetractionChannel () {}
+
+    private:
+        static Point<dim> to_point(const std::vector<double> &v)
+        {
+            AssertThrow(v.size() == dim, ExcMessage("Channel axis: need dim values"));
+            Point<dim> p;
+            for (unsigned int d = 0; d < dim; ++d)
+                p[d] = v[d];
+            return p;
+        }
+
+        // Kanal-Achse/Radius aus dem Parameterfile (subsection geometry):
+        // dieselben Werte wie beim Schneiden mit apply_mesh_spec.py
+        // (operation "channel": 'entry', 'direction', 'start_radius').
+        const Point<dim> channel_axis_point;
+        const Tensor<1,dim> channel_axis_direction;
+        const double channel_start_radius;
+        static constexpr types::boundary_id channel_boundary_id = 30;
+        static constexpr types::boundary_id channel_cap_boundary_id = 31;
+        static constexpr types::boundary_id ventricle_boundary_id = 40;
+
+        virtual void make_grid() override
+        {
+            // Das brain-Netz ist unregelmaessig: mit der globalen Einstellung
+            // maximum_smoothing stuerzt p::d::Triangulation ab der dritten
+            // Verfeinerungsstufe mit mehreren MPI-Prozessen ab (in
+            // prepare_coarsening_and_refinement). Fuer diesen Lastfall nur die
+            // noetige Glaettung verwenden; geht nur bei leerer Triangulation.
+            this->triangulation.set_mesh_smoothing(Triangulation<dim>::limit_level_difference_at_vertices);
+
+            std::ifstream input_path(this->parameters.mesh_file);
+            AssertThrow(input_path.good(),
+                        ExcMessage("Mesh file <" + this->parameters.mesh_file + "> not found"));
+            dealii::GridIn<dim> gridIn;
+            gridIn.attach_triangulation(this->triangulation);
+            gridIn.read_ucd(input_path);
+
+            // Zylinder-Manifold auf die neue Kanalwand legen (falls spaeter
+            // doch nochmal in deal.II verfeinert werden soll).
+            const types::manifold_id channel_manifold_id = 1;
+            for (const auto &cell : this->triangulation.active_cell_iterators())
+              for (const auto &face : cell->face_iterators())
+                if (face->at_boundary() && face->boundary_id() == channel_boundary_id)
+                  face->set_all_manifold_ids(channel_manifold_id);
+
+            this->triangulation.set_manifold(channel_manifold_id,
+            CylindricalManifold<dim>(channel_axis_direction, channel_axis_point));
+
+            // Halbkugel-Spitze (apply_mesh_spec.py, "tip": "hemisphere"): die
+            // Flaechen mit channel_cap_boundary_id liegen auf einer Kugel mit
+            // dem Kanalradius um den Achsenpunkt in Tiefe
+            // 'Channel tip center depth'. Die Kanten am Uebergang liegen auf
+            // Zylinder und Kugel zugleich (tangential), beide Manifolds
+            // liefern dort denselben Punkt.
+            if (this->parameters.channel_tip_center_depth >= 0.0)
+            {
+                const types::manifold_id tip_manifold_id = 2;
+                const Point<dim> tip_center = channel_axis_point
+                    + (this->parameters.channel_tip_center_depth / channel_axis_direction.norm()) * channel_axis_direction;
+                for (const auto &cell : this->triangulation.active_cell_iterators())
+                  for (const auto &face : cell->face_iterators())
+                    if (face->at_boundary() && face->boundary_id() == channel_cap_boundary_id)
+                      face->set_all_manifold_ids(tip_manifold_id);
+                this->triangulation.set_manifold(tip_manifold_id, SphericalManifold<dim>(tip_center));
+            }
+
+            // Lokal um den Kanal verfeinern, damit die Rundung auch sichtbar
+            // wird. (Frueher crashte das: unser Python-Schnitt hatte
+            // "Pinch"-Stellen erzeugt -- uebrig gebliebene Zellen, die sich
+            // nur noch an einer Kante/einem Punkt beruehren statt ueber eine
+            // Flaeche, was p4ests Konnektivitaetspruefung
+            // (p8est_connectivity_is_valid) verletzt. apply_mesh_spec.py
+            // erkennt und entfernt solche Stellen jetzt automatisch
+            // (eliminate_pinches), danach funktioniert refine() normal.)
+            for (unsigned int cycle = 0; cycle < 2; ++cycle)
+            {
+                // Alle Zellen verfeinern, die mit mindestens einem Knoten
+                // an Kanalwand oder -boden liegen (nicht nur ueber eine
+                // Flaeche): sonst bleiben Zellen, die die Wand nur ueber
+                // eine Kante/Ecke beruehren (z.B. am Rand der Oeffnung),
+                // grob.
+                std::set<unsigned int> channel_vertices;
+                for (const auto &cell : this->triangulation.active_cell_iterators())
+                    if (!cell->is_artificial())
+                        for (const auto &face : cell->face_iterators())
+                            if (face->at_boundary() && (face->boundary_id() == channel_boundary_id || face->boundary_id() == channel_cap_boundary_id))
+                                for (unsigned int v = 0; v < face->n_vertices(); ++v)
+                                    channel_vertices.insert(face->vertex_index(v));
+                for (const auto &cell : this->triangulation.active_cell_iterators())
+                    if (cell->is_locally_owned())
+                        for (unsigned int v = 0; v < cell->n_vertices(); ++v)
+                            if (channel_vertices.count(cell->vertex_index(v)))
+                            {
+                                cell->set_refine_flag();
+                                break;
+                            }
+                this->triangulation.execute_coarsening_and_refinement();
+            }
+
+            std::set<types::material_id> unique_material_ids;
+            std::set<types::boundary_id> unique_boundary_ids;
+            for (const auto &cell : this->triangulation.active_cell_iterators()) {
+                unique_material_ids.insert(cell->material_id());
+                for (const auto &face : cell->face_iterators())
+                    if (face->at_boundary())
+                        unique_boundary_ids.insert(face->boundary_id());
+            }
+            std::cout << "Vergebene Material-IDs: ";
+            for (auto id : unique_material_ids)
+                std::cout << static_cast<unsigned int>(id) << " ";
+            std::cout << std::endl;
+            std::cout << "Vergebene Boundary-IDs: ";
+            for (auto id : unique_boundary_ids)
+                std::cout << static_cast<unsigned int>(id) << " ";
+            std::cout << std::endl;
+        }
+
+        virtual void define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices) override
+        {
+            // Der Achsenpunkt liegt im entfernten Kanal und damit nicht im Netz
+            // ("tracked point not found on any rank"). Stattdessen zwei Punkte
+            // im Gewebe 0.5 mm hinter der Kanalwand, 5 mm unter dem Eingang,
+            // auf gegenueberliegenden Seiten.
+            Tensor<1,dim> axis = channel_axis_direction / channel_axis_direction.norm();
+            Tensor<1,dim> perp;
+            perp[0] = 1.0;
+            perp -= (perp * axis) * axis;
+            if (perp.norm() < 1e-6) {
+                perp = Tensor<1,dim>();
+                perp[1] = 1.0;
+                perp -= (perp * axis) * axis;
+            }
+            perp /= perp.norm();
+            const Point<dim> p_mid = channel_axis_point + 5.0 * axis;
+            tracked_vertices[0] = p_mid + (channel_start_radius + 0.5) * perp;
+            tracked_vertices[1] = p_mid - (channel_start_radius + 0.5) * perp;
+        }
+
+        virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) override
+        {
+            // Brain bottom is fully fixed in space
+            VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                     200,
+                                                     Functions::ZeroFunction<dim>(this->n_components),
+                                                     constraints,
+                                                     (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
+
+            // Brain surface drained except from the channel wall
+            if (this->time->get_timestep() < 2) {
+                VectorTools::interpolate_boundary_values(this->dof_handler_ref, 0,
+                    Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
+                    constraints, this->fe.component_mask(this->pressure));
+                VectorTools::interpolate_boundary_values(this->dof_handler_ref, 200,
+                    Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
+                    constraints, this->fe.component_mask(this->pressure));
+                VectorTools::interpolate_boundary_values(this->dof_handler_ref, channel_cap_boundary_id,       // NEU
+                    Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),   // NEU
+                    constraints, this->fe.component_mask(this->pressure));                                     // NEU
+                VectorTools::interpolate_boundary_values(this->dof_handler_ref, ventricle_boundary_id,
+                    Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
+                    constraints, this->fe.component_mask(this->pressure));
+            } else {
+                VectorTools::interpolate_boundary_values(this->dof_handler_ref, 0,
+                    Functions::ZeroFunction<dim>(this->n_components), constraints,
+                    this->fe.component_mask(this->pressure));
+                VectorTools::interpolate_boundary_values(this->dof_handler_ref, 200,
+                    Functions::ZeroFunction<dim>(this->n_components), constraints,
+                    this->fe.component_mask(this->pressure));
+                VectorTools::interpolate_boundary_values(this->dof_handler_ref, channel_cap_boundary_id,        // NEU
+                    Functions::ZeroFunction<dim>(this->n_components), constraints,                              // NEU
+                    this->fe.component_mask(this->pressure));                                                   // NEU
+                VectorTools::interpolate_boundary_values(this->dof_handler_ref, ventricle_boundary_id,
+                    Functions::ZeroFunction<dim>(this->n_components), constraints,
+                    this->fe.component_mask(this->pressure));
+            }
+            // Boundary-ID channel_boundary_id (Kanalwand): keine Druck-RB
+            // -> natuerliche no-flow/undrained Randbedingung.
+            // Boundary-ID channel_cap_boundary_id (Kanalboden): frei/dräniert wie die   // NEU
+            // übrige Hirnoberfläche (id 0) -- siehe oben.                              // NEU
+
+            // Radiale Dilatation der Kanalwand
+            if (this->parameters.load_type == "displacement") {
+                const double delta_r = get_dirichlet_load(channel_boundary_id, 0)[0];
+                get_dirichlet_bc_ChannelDilation<dim> dilation_bc(
+                    channel_axis_point, channel_axis_direction, delta_r);
+                VectorTools::interpolate_boundary_values(
+                    this->dof_handler_ref,
+                    channel_boundary_id,
+                    dilation_bc,
+                    constraints,
+                    (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
+            }
+        }
+
+        virtual Tensor<1,dim> get_neumann_traction (const types::boundary_id &boundary_id, const Point<dim> &pt, const Tensor<1,dim> &N) const override
+        {
+            if (this->parameters.load_type == "pressure")
+                AssertThrow(false, ExcMessage("Pressure loading not implemented for full-brain channel retraction."));
+            (void)boundary_id;
+            (void)pt;
+            (void)N;
+            return Tensor<1,dim>();
+        }
+
+        virtual types::boundary_id get_reaction_boundary_id_for_output() const override
+        {
+            return channel_boundary_id;
+        }
+
+        virtual double get_prescribed_fluid_flow (const types::boundary_id &boundary_id, const Point<dim> &pt) const override
+        {
+            (void)pt;
+            (void)boundary_id;
+            return 0.0;
+        }
+
+        virtual std::pair<types::boundary_id,types::boundary_id> get_drained_boundary_id_for_output() const override
+        {
+            return std::make_pair(0,200);
+        }
+
+        // "load" = maximale zusaetzliche Aufweitung ueber channel_start_radius [mm],
+        // linear gerampt ueber "end_load_time" -- analog FullBrainIndenter.
+        virtual std::vector<double> get_dirichlet_load(const types::boundary_id &boundary_id, const int &direction) const override
+        {
+            std::vector<double> displ_incr (dim, 0.0);
+
+            if (boundary_id == channel_boundary_id) {
+                const double final_load_time = this->parameters.end_load_time;
+                const double current_time = this->time->get_current();
+                const double delta_time = this->time->get_delta_t();
+
+                double current_r = 0.0;
+                double previous_r = 0.0;
+
+                if (current_time <= final_load_time) {
+                    current_r = (current_time/final_load_time) * this->parameters.load;
+                    if (current_time > delta_time)
+                        previous_r = ((current_time-delta_time)/final_load_time) * this->parameters.load;
+                    displ_incr[0] = current_r - previous_r;
+                } else
+                    displ_incr[0] = 0.000000001;
+            }
+            (void)direction;
+            return displ_incr;
+        }
+};
+
 }
 
 // @sect3{Main function}
@@ -14239,6 +14582,11 @@ int main (int argc, char *argv[])
       else if (parameters.geom_type == "full_brain_retraction_spatula")
       {
         FullBrainRetractionSpatula<3> solid_3d(parameters);
+        solid_3d.run();
+      }
+      else if (parameters.geom_type == "full_brain_retraction_channel")
+      {
+        FullBrainRetractionChannel<3> solid_3d(parameters);
         solid_3d.run();
       }
       else
