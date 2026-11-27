@@ -1853,6 +1853,26 @@ namespace NonLinearPoroViscoElasticity
         double density_SR;
         enum SymmetricTensorEigenvectorMethod eigen_solver;
 
+        // Regionsweise Materialparameter (Zuordnung über cell->material_id())
+        static constexpr unsigned int max_material_regions = 12;
+        struct MaterialRegion
+        {
+          std::string name;
+          std::vector<std::pair<unsigned int, unsigned int>> label_ranges;
+          std::map<std::string, double> overrides;   // Eintragsname -> Wert
+
+          bool contains(const types::material_id id) const
+          {
+            for (const auto &range : label_ranges)
+              if (id >= range.first && id <= range.second)
+                return true;
+            return false;
+          }
+        };
+        std::vector<MaterialRegion> material_regions;
+
+        static const std::map<std::string, double Materials::*> &regional_entries();
+
         static void
         declare_parameters(ParameterHandler &prm);
 
@@ -2017,8 +2037,40 @@ namespace NonLinearPoroViscoElasticity
           prm.declare_entry("gravity value", "-9.81",
                             Patterns::Double(),
                             "Value of gravity (be careful to have consistent units!)");
+
+          for (unsigned int r = 1; r <= max_material_regions; ++r)
+          {
+            prm.enter_subsection("Region " + std::to_string(r));
+            {
+              prm.declare_entry("name", "", Patterns::Anything(), "Name der Region (nur fuer die Ausgabe).");
+              prm.declare_entry("labels", "", Patterns::Anything(),
+                                "Material-IDs, kommagetrennt, Bereiche mit '-' (z.B. 11, 12, 13 oder 1000-1035). Leer = Region unbenutzt.");
+              for (const auto &entry : regional_entries())
+                prm.declare_entry(entry.first, "", Patterns::Anything(),
+                                  "Regionaler Wert; leer = globaler Wert aus 'Material properties'.");
+            }
+            prm.leave_subsection();
+          }
         }
         prm.leave_subsection();
+      }
+
+      const std::map<std::string, double Materials::*> &Materials::regional_entries()
+      {
+        static const std::map<std::string, double Materials::*> entries = {
+          {"lambda", &Materials::lambda},
+          {"mu1", &Materials::mu1_infty}, {"mu2", &Materials::mu2_infty}, {"mu3", &Materials::mu3_infty},
+          {"alpha1", &Materials::alpha1_infty}, {"alpha2", &Materials::alpha2_infty}, {"alpha3", &Materials::alpha3_infty},
+          {"mu1_1", &Materials::mu1_mode_1}, {"mu2_1", &Materials::mu2_mode_1}, {"mu3_1", &Materials::mu3_mode_1},
+          {"alpha1_1", &Materials::alpha1_mode_1}, {"alpha2_1", &Materials::alpha2_mode_1}, {"alpha3_1", &Materials::alpha3_mode_1},
+          {"viscosity_1", &Materials::viscosity_mode_1},
+          {"mu1_2", &Materials::mu1_mode_2}, {"mu2_2", &Materials::mu2_mode_2}, {"mu3_2", &Materials::mu3_mode_2},
+          {"alpha1_2", &Materials::alpha1_mode_2}, {"alpha2_2", &Materials::alpha2_mode_2}, {"alpha3_2", &Materials::alpha3_mode_2},
+          {"viscosity_2", &Materials::viscosity_mode_2},
+          {"kappa", &Materials::kappa_darcy},
+          {"initial intrinsic permeability", &Materials::init_intrinsic_perm},
+          {"initial Darcy coefficient", &Materials::init_darcy_coef}};
+        return entries;
       }
 
       void Materials::parse_parameters(ParameterHandler &prm)
@@ -2082,6 +2134,44 @@ namespace NonLinearPoroViscoElasticity
           else
           {
             AssertThrow(false, ExcMessage("Unknown eigen solver selected."));
+          }
+
+          material_regions.clear();
+          for (unsigned int r = 1; r <= max_material_regions; ++r)
+          {
+            prm.enter_subsection("Region " + std::to_string(r));
+            {
+              const std::string labels = Utilities::trim(prm.get("labels"));
+              if (!labels.empty())
+              {
+                MaterialRegion region;
+                region.name = Utilities::trim(prm.get("name"));
+                if (region.name.empty())
+                  region.name = "Region " + std::to_string(r);
+                for (const std::string &token : Utilities::split_string_list(labels, ','))
+                {
+                  const auto dash = token.find('-');
+                  const unsigned int first = Utilities::string_to_int(Utilities::trim(token.substr(0, dash)));
+                  const unsigned int last  = (dash == std::string::npos) ? first
+                                           : Utilities::string_to_int(Utilities::trim(token.substr(dash + 1)));
+                  AssertThrow(first <= last, ExcMessage(region.name + ": ungueltiger Label-Bereich '" + token + "'"));
+                  region.label_ranges.emplace_back(first, last);
+                }
+                for (const auto &entry : regional_entries())
+                {
+                  const std::string value = Utilities::trim(prm.get(entry.first));
+                  if (!value.empty())
+                    region.overrides[entry.first] = Utilities::string_to_double(value);
+                }
+                for (const auto &other : material_regions)
+                  for (const auto &a : region.label_ranges)
+                    for (const auto &b : other.label_ranges)
+                      AssertThrow(a.second < b.first || b.second < a.first,
+                                  ExcMessage("Labels von '" + region.name + "' und '" + other.name + "' ueberlappen."));
+                material_regions.push_back(region);
+              }
+            }
+            prm.leave_subsection();
           }
         }
         prm.leave_subsection();
@@ -5491,35 +5581,23 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
         pcout     << "\nSetting up quadrature point data..." << std::endl;
         outfile   << "\nSetting up quadrature point data..." << std::endl;
 
-        // //Create QPH data objects.
-        // quadrature_point_history.initialize(triangulation.begin_active(),
-        //                                     triangulation.end(), n_q_points);
-
-        // //Setup the initial quadrature point data using the info stored in parameters
-        // dealii::FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
-        // cell (IteratorFilters::LocallyOwnedCell(),
-        //       dof_handler_ref.begin_active()),
-        // endc (IteratorFilters::LocallyOwnedCell(),
-        //       dof_handler_ref.end());
-        // for (; cell!=endc; ++cell)
-        //   {
-        //     Assert(cell->is_locally_owned(), ExcInternalError());
-        //     Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
-
-        //     const std::vector<std::shared_ptr<PointHistory<dim, ADNumberType> > >
-        //         lqph = quadrature_point_history.get_data(cell);
-        //     Assert(lqph.size() == n_q_points, ExcInternalError());
-
-        //     for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
-        //       lqph[q_point]->setup_lqp(parameters, time);
-        //   }
-
         // 1. Initialisierung: Überprüfe, ob deine Speicherklasse MPI-fähig ist.
         // Falls es eine dealii::CellDataStorage ist, ist sie meist okay.
         quadrature_point_history.initialize(triangulation.begin_active(),
                                             triangulation.end(), n_q_points);
 
         // 2. Loop über lokale Zellen
+        // Je Region eine Kopie von parameters mit den regionalen Werten
+        std::vector<Parameters::AllParameters> region_parameters;
+        for (const auto &region : parameters.material_regions)
+        {
+            region_parameters.push_back(parameters);
+            for (const auto &value : region.overrides)
+                region_parameters.back().*(Parameters::Materials::regional_entries().at(value.first)) = value.second;
+        }
+        std::vector<double> cells_per_region(parameters.material_regions.size(), 0.0);
+        std::set<types::material_id> labels_without_region;
+
         for (const auto &cell : dof_handler_ref.active_cell_iterators())
         {
             if (cell->is_locally_owned()) // Diese Abfrage ist bei parallel::distributed PFLICHT
@@ -5527,14 +5605,47 @@ Tensor<1, dim, T> get_beta_mode_1_all(const Tensor<1, dim, T> &lambda_iso) const
                 const std::vector<std::shared_ptr<PointHistory<dim, ADNumberType>>>
                     lqph = quadrature_point_history.get_data(cell);
 
+                // Region der Zelle über ihre Material-ID suchen; ohne Region gelten die globalen Werte
+                const Parameters::AllParameters *cell_parameters_ptr = &parameters;
+                for (unsigned int r = 0; r < parameters.material_regions.size(); ++r)
+                    if (parameters.material_regions[r].contains(cell->material_id()))
+                    {
+                        cell_parameters_ptr = &region_parameters[r];
+                        cells_per_region[r] += 1.0;
+                        break;
+                    }
+                if (cell_parameters_ptr == &parameters)
+                    labels_without_region.insert(cell->material_id());
+                const Parameters::AllParameters &cell_parameters = *cell_parameters_ptr;
+
                 for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
                 {
                     // Hier springt er in die Material-Konstruktoren.
                     // Prüfe: Nutzen diese Materialien intern Funktionen, 
                     // die auf globale Daten zugreifen?
-                    lqph[q_point]->setup_lqp(parameters, time);
+                    lqph[q_point]->setup_lqp(cell_parameters, time);
                 }
             }
+        }
+
+        // Kontrolle der Regionszuordnung (Zellen je Region über alle Prozesse)
+        for (unsigned int r = 0; r < parameters.material_regions.size(); ++r)
+        {
+            const double n_cells = Utilities::MPI::sum(cells_per_region[r], mpi_communicator);
+            pcout << "Materialregion " << parameters.material_regions[r].name << ": "
+                  << static_cast<unsigned long>(n_cells) << " Zellen, "
+                  << parameters.material_regions[r].overrides.size() << " regionale Werte" << std::endl;
+        }
+        const std::vector<types::material_id> labels_without_region_global =
+            Utilities::MPI::compute_set_union(std::vector<types::material_id>(labels_without_region.begin(),
+                                                                              labels_without_region.end()),
+                                              mpi_communicator);
+        if (!parameters.material_regions.empty() && !labels_without_region_global.empty())
+        {
+            pcout << "WARNUNG: Material-IDs ohne Region (globale Parameter):";
+            for (const auto id : labels_without_region_global)
+                pcout << " " << id;
+            pcout << std::endl;
         }
 
     if (!preconditioner)
@@ -7782,6 +7893,14 @@ lap(PhaseProbe::RESIDUAL);
                     std::vector<double> J_qp;
                     double J_mean = 0;
                     double lambda = this->parameters.lambda;
+                    for (const auto &region : this->parameters.material_regions)
+                        if (region.contains(cell->material_id()))
+                        {
+                            const auto it = region.overrides.find("lambda");
+                            if (it != region.overrides.end())
+                                lambda = it->second;
+                            break;
+                        }
                     double J_cp = this->parameters.compaction_point;
 
                     // loop over gp on faces to check if J>n_0S
