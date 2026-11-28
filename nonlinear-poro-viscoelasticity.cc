@@ -3495,17 +3495,34 @@ class OgdenIso : public Material_Hyperelastic < dim, NumberType >
               }
             };
 
-            double residual_check = tolerance * 10.0;
+            // Lokales Newton mit Rueckschritt: voller Schritt wird halbiert, solange
+            // das Residuum nicht sinkt (grosse |alpha| -> beta exponentiell steil).
+            auto res_norm = [&]() {
+              double m = 0.0;
+              for (unsigned int a = 0; a < dim; ++a)
+                m = std::max(m, std::abs(res[a]));
+              return m;
+            };
+            eval_local(eps);
+            double residual_check = res_norm();
             int iteration = 0;
             while (residual_check > tolerance)
             {
-              eval_local(eps);
-              eps -= invert(tang) * res;
-              residual_check = 0.0;
-              for (unsigned int a = 0; a < dim; ++a)
-                residual_check = std::max(residual_check, std::abs(res[a]));
+              const Tensor<1, dim, double> step = invert(tang) * res;
+              const Tensor<1, dim, double> eps_old = eps;
+              double s = 1.0;
+              for (int ls = 0; ls < 30; ++ls)
+              {
+                eps = eps_old - s * step;
+                eval_local(eps);
+                const double r = res_norm();
+                if (std::isfinite(r) && r < (1.0 - 1e-4 * s) * residual_check)
+                  break;
+                s *= 0.5;
+              }
+              residual_check = res_norm();
               ++iteration;
-              if (iteration > 15)
+              if (iteration > 50)
                 AssertThrow(false, ExcMessage("No convergence in local Newton iteration for the viscoelastic exponential time integration algorithm."));
             }
             PhaseProbe::count_newton(iteration);
@@ -14458,9 +14475,6 @@ class FullBrainRetractionChannel : public Solid<dim>
                 VectorTools::interpolate_boundary_values(this->dof_handler_ref, 200,
                     Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
                     constraints, this->fe.component_mask(this->pressure));
-                VectorTools::interpolate_boundary_values(this->dof_handler_ref, channel_cap_boundary_id,       // NEU
-                    Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),   // NEU
-                    constraints, this->fe.component_mask(this->pressure));                                     // NEU
                 VectorTools::interpolate_boundary_values(this->dof_handler_ref, ventricle_boundary_id,
                     Functions::ConstantFunction<dim>(this->parameters.drained_pressure, this->n_components),
                     constraints, this->fe.component_mask(this->pressure));
@@ -14471,17 +14485,14 @@ class FullBrainRetractionChannel : public Solid<dim>
                 VectorTools::interpolate_boundary_values(this->dof_handler_ref, 200,
                     Functions::ZeroFunction<dim>(this->n_components), constraints,
                     this->fe.component_mask(this->pressure));
-                VectorTools::interpolate_boundary_values(this->dof_handler_ref, channel_cap_boundary_id,        // NEU
-                    Functions::ZeroFunction<dim>(this->n_components), constraints,                              // NEU
-                    this->fe.component_mask(this->pressure));                                                   // NEU
                 VectorTools::interpolate_boundary_values(this->dof_handler_ref, ventricle_boundary_id,
                     Functions::ZeroFunction<dim>(this->n_components), constraints,
                     this->fe.component_mask(this->pressure));
             }
             // Boundary-ID channel_boundary_id (Kanalwand): keine Druck-RB
             // -> natuerliche no-flow/undrained Randbedingung.
-            // Boundary-ID channel_cap_boundary_id (Kanalboden): frei/dräniert wie die   // NEU
-            // übrige Hirnoberfläche (id 0) -- siehe oben.                              // NEU
+            // Boundary-ID channel_cap_boundary_id (Kanalspitze): ebenfalls keine Druck-RB
+            // -> undrainiert wie die Wand (Werkzeugkontakt).
 
             // Radiale Dilatation der Kanalwand
             if (this->parameters.load_type == "displacement") {
