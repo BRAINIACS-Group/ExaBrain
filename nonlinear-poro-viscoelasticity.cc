@@ -14255,6 +14255,42 @@ private:
     const double delta_radius;
 };
 
+template <int dim>
+class get_dirichlet_bc_CapDilation : public Function<dim>
+{
+public:
+    get_dirichlet_bc_CapDilation (const Point<dim> &center, const double delta_radius)
+    :
+    Function<dim> (dim+1),
+    center(center),
+    delta_radius(delta_radius)
+    {}
+
+    void vector_value (const Point<dim> &pt, Vector<double> &values) const override
+    {
+        Assert (values.size() == (dim+1), ExcDimensionMismatch (values.size(), (dim+1)));
+        values = 0.0;
+        const Tensor<1,dim> rel = pt - center;
+        const double r = rel.norm();
+        if (r < 1e-10)
+            return;
+        for (unsigned int d = 0; d < dim; ++d)
+            values(d) = rel[d] / r * delta_radius;
+    }
+
+    void vector_value_list (const std::vector<Point<dim>> &points,
+                            std::vector<Vector<double>>    &value_list) const override
+    {
+        Assert (value_list.size() == points.size(), ExcDimensionMismatch (value_list.size(), points.size()));
+        for (unsigned int p = 0; p < points.size(); ++p)
+            vector_value (points[p], value_list[p]);
+    }
+
+private:
+    const Point<dim> center;
+    const double delta_radius;
+};
+
 
 template <int dim>
 class FullBrainRetractionChannel : public Solid<dim>
@@ -14458,6 +14494,21 @@ class FullBrainRetractionChannel : public Solid<dim>
                     dilation_bc,
                     constraints,
                     (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
+
+                // Halbkugel-Spitze waechst mit: Kugel um den festen Spitzenmittelpunkt,
+                // Radius r0 -> r0 + delta_r (stetig zur Wand am Uebergang)
+                if (this->parameters.channel_tip_center_depth >= 0.0)
+                {
+                    const Point<dim> tip_center = channel_axis_point
+                        + (this->parameters.channel_tip_center_depth / channel_axis_direction.norm()) * channel_axis_direction;
+                    get_dirichlet_bc_CapDilation<dim> cap_bc(tip_center, delta_r);
+                    VectorTools::interpolate_boundary_values(
+                        this->dof_handler_ref,
+                        channel_cap_boundary_id,
+                        cap_bc,
+                        constraints,
+                        (this->fe.component_mask(this->x_displacement) | this->fe.component_mask(this->y_displacement) | this->fe.component_mask(this->z_displacement)));
+                }
             }
         }
 
